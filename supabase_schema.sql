@@ -1,0 +1,94 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Cogito SaaS — Supabase Postgres schema
+-- Run this in the Supabase SQL editor to set up the database.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Subscriptions: one row per user, updated by Stripe webhook.
+CREATE TABLE IF NOT EXISTS subscriptions (
+  user_id              UUID REFERENCES auth.users PRIMARY KEY,
+  stripe_customer_id   TEXT,
+  stripe_subscription_id TEXT,
+  status               TEXT NOT NULL DEFAULT 'inactive', -- active | cancelled | past_due
+  plan                 TEXT NOT NULL DEFAULT 'creator',  -- creator | pro
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- RLS: users can read their own row; service_role (backend) can write.
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users_read_own_subscription"
+  ON subscriptions FOR SELECT
+  USING (auth.uid() = user_id);
+-- Writes go through service_role key (backend only) — no client INSERT/UPDATE policy needed.
+
+-- Jobs: one row per video generation request.
+CREATE TABLE IF NOT EXISTS jobs (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID NOT NULL REFERENCES auth.users,
+  status           TEXT NOT NULL DEFAULT 'queued', -- queued | running | done | failed | deleted
+  progress_message TEXT,
+  config           JSONB NOT NULL DEFAULT '{}',
+  output_url       TEXT,         -- 48hr signed URL; nulled after expiry cleanup
+  error_message    TEXT,
+  batch_title      TEXT,         -- human-readable job name from NEXT - <title> syntax
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS jobs_user_id_created_at ON jobs (user_id, created_at DESC);
+
+-- RLS: users can read/delete their own jobs; service_role writes.
+ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users_read_own_jobs"
+  ON jobs FOR SELECT
+  USING (auth.uid() = user_id);
+CREATE POLICY "users_delete_own_jobs"
+  ON jobs FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- Usage: tracks renders per user per calendar month.
+CREATE TABLE IF NOT EXISTS usage (
+  user_id      UUID NOT NULL REFERENCES auth.users,
+  month        TEXT NOT NULL,   -- "2026-03"
+  render_count INT  NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, month)
+);
+
+-- RLS: users read own; service_role writes.
+ALTER TABLE usage ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users_read_own_usage"
+  ON usage FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- Atomic usage increment RPC (avoids race conditions under concurrent requests).
+CREATE OR REPLACE FUNCTION increment_render_count(p_user_id UUID, p_month TEXT)
+RETURNS VOID AS $$
+BEGIN
+  INSERT INTO usage (user_id, month, render_count)
+  VALUES (p_user_id, p_month, 1)
+  ON CONFLICT (user_id, month)
+  DO UPDATE SET render_count = usage.render_count + 1;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Supabase Storage
+-- Create a private bucket called 'outputs' in the Supabase dashboard.
+-- Add the following RLS policy so users can read only their own files:
+-- ─────────────────────────────────────────────────────────────────────────────
+-- (Run in Storage > Policies, not SQL editor)
+--
+-- Policy name: users_read_own_output
+-- Bucket:      outputs
+-- Operation:   SELECT
+-- Expression:  (storage.foldername(name))[1] = auth.uid()::text
+--
+-- The backend uses service_role key to INSERT files — no INSERT policy needed.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Nightly cleanup: find jobs with expired output URLs (>48h) for Edge Function processing.
+-- The Edge Function or pg_cron job should:
+--   SELECT id, output_url, user_id FROM jobs
+--   WHERE completed_at < NOW() - INTERVAL '48 hours'
+--     AND output_url IS NOT NULL
+--     AND status = 'done';
+-- Then for each row: delete from Storage, set output_url = NULL.

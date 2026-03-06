@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(\"C:\\\\Users\\\\leek\\\\AppData\\\\Local\\\\Python\\\\pythoncore-3.12-64\\\\python.exe\":*)"
+    ]
+  }
+}

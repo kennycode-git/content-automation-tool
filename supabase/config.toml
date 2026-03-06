@@ -1,0 +1,15 @@
+# Supabase project configuration
+# Run: supabase link --project-ref <your-project-ref>
+# Then: supabase functions deploy cleanup-expired-outputs
+
+[api]
+enabled = true
+
+[auth]
+enabled = true
+
+[storage]
+enabled = true
+
+[functions.cleanup-expired-outputs]
+verify_jwt = false   # Called by cron scheduler, not end users
