@@ -1,0 +1,189 @@
+"""
+preview.py
+
+POST /api/preview-stage — fetch, download, and colour-grade images for all batches,
+upload them to the user-uploads bucket, and return signed URLs for frontend display.
+
+No render credit is consumed — this is a preview/curation step only.
+The job row is only created when the user confirms via POST /api/generate.
+
+Security considerations:
+- JWT required (get_current_user_id dependency).
+- No subscription gate — no render credit consumed.
+- user_id from verified JWT, never from request body.
+- Uploaded preview images are namespaced under user_id in user-uploads bucket.
+- Temp directory is always cleaned up in finally block.
+"""
+
+import asyncio
+import logging
+import os
+import shutil
+import tempfile
+import time
+from pathlib import Path
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from db.supabase_client import get_client
+from models.schemas import (
+    PreviewStageRequest,
+    PreviewStageResponse,
+    PreviewBatchResult,
+    PreviewImageItem,
+)
+from routers.auth import get_current_user_id
+from services.image_pipeline import fetch_images, download_and_save
+from services.image_grader import apply_theme_grading
+from services.storage import get_user_uploads_signed_url
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+def _stage_batch_sync(
+    *,
+    search_terms: List[str],
+    uploaded_image_paths: List[str] | None,
+    width: int,
+    height: int,
+    need_total: int,
+    access_key: str,
+    color_theme: str,
+    max_per_query: int,
+    images_dir: str,
+    graded_dir: str,
+) -> str:
+    """
+    Synchronous worker that runs fetch → download → grade for a single batch.
+    Returns the graded directory path (or images_dir if no grading applied).
+    Must be called via asyncio.to_thread.
+    """
+    os.makedirs(images_dir, exist_ok=True)
+
+    # --- Copy any user-uploaded images first ---
+    if uploaded_image_paths:
+        from db.supabase_client import get_client as _get_client
+        from PIL import Image
+        import io
+
+        client = _get_client()
+        for i, path in enumerate(uploaded_image_paths):
+            try:
+                data = client.storage.from_("user-uploads").download(path)
+                img = Image.open(io.BytesIO(data)).convert("RGB")
+                iw, ih = img.size
+                scale = max(width / iw, height / ih)
+                new_w, new_h = int(iw * scale), int(ih * scale)
+                img = img.resize((new_w, new_h), Image.LANCZOS)
+                left = (new_w - width) // 2
+                top = (new_h - height) // 2
+                img = img.crop((left, top, left + width, top + height))
+                out_path = os.path.join(images_dir, f"upload_{i:04d}.jpg")
+                img.save(out_path, "JPEG", quality=90)
+            except Exception as e:
+                logger.warning("Preview: failed to copy uploaded image %s: %s", path, e)
+
+    # --- Fetch + download from Unsplash ---
+    items = fetch_images(
+        queries=search_terms,
+        need_total=need_total,
+        tw=width,
+        th=height,
+        access_key=access_key,
+        color_theme=color_theme,
+        max_per_query=max_per_query,
+    )
+    if items:
+        download_and_save(items, images_dir, width, height)
+
+    # --- Apply colour grading ---
+    render_dir = apply_theme_grading(images_dir, graded_dir, color_theme)
+    return render_dir
+
+
+@router.post("/preview-stage", response_model=PreviewStageResponse)
+async def preview_stage(
+    body: PreviewStageRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Stage images for preview without creating a job or consuming render credits.
+
+    For each batch:
+      1. Fetch + download from Unsplash (colour-theme biased)
+      2. Apply colour grading
+      3. Upload graded images to user-uploads bucket under user_id/preview/
+      4. Return signed URLs for frontend display
+
+    Batches are processed sequentially to stay within Unsplash rate limits.
+    """
+    access_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+    w, h = (int(x) for x in body.resolution.lower().split("x"))
+    need_total = max(1, int(body.total_seconds / body.seconds_per_image) + 10)
+    ts = int(time.time() * 1000)
+
+    tmp_root = tempfile.mkdtemp(prefix="preview_")
+    client = get_client()
+    batch_results: list[PreviewBatchResult] = []
+
+    try:
+        for batch_idx, batch in enumerate(body.batches):
+            images_dir = os.path.join(tmp_root, f"batch_{batch_idx}", "images")
+            graded_dir = os.path.join(tmp_root, f"batch_{batch_idx}", "graded")
+
+            # Run sync pipeline in thread pool
+            try:
+                render_dir = await asyncio.to_thread(
+                    _stage_batch_sync,
+                    search_terms=batch.search_terms,
+                    uploaded_image_paths=batch.uploaded_image_paths or None,
+                    width=w,
+                    height=h,
+                    need_total=need_total,
+                    access_key=access_key,
+                    color_theme=body.color_theme,
+                    max_per_query=body.max_per_query,
+                    images_dir=images_dir,
+                    graded_dir=graded_dir,
+                )
+            except Exception as e:
+                logger.exception("Preview stage failed for batch %d: %s", batch_idx, e)
+                raise HTTPException(status_code=500, detail=f"Image staging failed: {e}")
+
+            # Upload each graded image and collect signed URLs
+            image_items: list[PreviewImageItem] = []
+            render_path = Path(render_dir)
+            fnames = sorted(f for f in os.listdir(render_dir) if Path(render_dir, f).is_file())
+
+            for fname in fnames:
+                fpath = render_path / fname
+                try:
+                    with open(fpath, "rb") as f:
+                        data = f.read()
+                    storage_path = f"{user_id}/preview/{ts}_{batch_idx}_{fname}"
+                    client.storage.from_("user-uploads").upload(
+                        path=storage_path,
+                        file=data,
+                        file_options={"content-type": "image/jpeg", "upsert": "true"},
+                    )
+                    signed_url = await get_user_uploads_signed_url(storage_path)
+                    image_items.append(PreviewImageItem(storage_path=storage_path, signed_url=signed_url))
+                except Exception as e:
+                    logger.warning("Preview: failed to upload/sign %s: %s", fname, e)
+
+            batch_results.append(PreviewBatchResult(
+                batch_title=batch.batch_title,
+                search_terms=batch.search_terms,
+                images=image_items,
+            ))
+            logger.info(
+                "Preview batch %d staged: %d images for user %s",
+                batch_idx, len(image_items), user_id,
+            )
+
+        return PreviewStageResponse(batches=batch_results)
+
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
