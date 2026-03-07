@@ -63,20 +63,26 @@ POST /api/generate
 
 ## Local Development
 
-### Backend
+### Quick start (Windows)
+
+Run `start.bat` from the repo root. It will:
+1. Kill any existing processes on ports 8001 and 5175
+2. Open a terminal window running the FastAPI backend (port 8001)
+3. Open a terminal window running the Vite frontend (port 5175)
+
+### Manual start
+
+**Backend**
 
 ```bash
 cd backend
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
-
-# Copy and fill in environment variables
-cp .env.example .env
-
-ENABLE_DOCS=true uvicorn main:app --reload --port 8001
+cp .env.example .env   # then fill in values
+uvicorn main:app --reload --port 8001
 ```
 
-### Frontend
+**Frontend**
 
 ```bash
 cd frontend
@@ -108,7 +114,7 @@ VITE_API_URL=http://localhost:8001
 
 ## Database
 
-Run the following in the Supabase SQL editor:
+The full schema is in `supabase/schema.sql`. Run the following in the Supabase SQL editor:
 
 ```sql
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS batch_title TEXT;

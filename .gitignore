@@ -19,3 +19,6 @@ Thumbs.db
 # Supabase local dev
 supabase/.branches/
 supabase/.temp/
+
+# Claude
+.claude/
