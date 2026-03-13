@@ -34,7 +34,7 @@ from models.schemas import (
     PreviewImageItem,
 )
 from routers.auth import get_current_user_id
-from services.image_pipeline import fetch_images, download_and_save
+from services.image_pipeline import fetch_images, download_and_save, RateLimitError
 from services.image_grader import apply_theme_grading
 from services.storage import get_user_uploads_signed_url
 
@@ -50,17 +50,20 @@ def _stage_batch_sync(
     height: int,
     need_total: int,
     access_key: str,
+    pexels_key: str,
     color_theme: str,
-    max_per_query: int,
+    image_source: str,
     images_dir: str,
     graded_dir: str,
-) -> str:
+) -> tuple[str, bool]:
     """
     Synchronous worker that runs fetch → download → grade for a single batch.
-    Returns the graded directory path (or images_dir if no grading applied).
+    Returns (graded_dir_path, pexels_fallback_used).
+    If Unsplash hits a rate limit and pexels_key is available, falls back to Pexels.
     Must be called via asyncio.to_thread.
     """
     os.makedirs(images_dir, exist_ok=True)
+    pexels_fallback = False
 
     # --- Copy any user-uploaded images first ---
     if uploaded_image_paths:
@@ -85,22 +88,59 @@ def _stage_batch_sync(
             except Exception as e:
                 logger.warning("Preview: failed to copy uploaded image %s: %s", path, e)
 
-    # --- Fetch + download from Unsplash ---
-    items = fetch_images(
-        queries=search_terms,
-        need_total=need_total,
-        tw=width,
-        th=height,
-        access_key=access_key,
-        color_theme=color_theme,
-        max_per_query=max_per_query,
-    )
+    # --- Fetch + download images ---
+    # No max_per_query cap for preview — fetch as many as possible for a full curation pool.
+    items: list = []
+
+    if image_source in ("unsplash", "both"):
+        try:
+            unsplash_items = fetch_images(
+                queries=search_terms,
+                need_total=need_total,
+                tw=width,
+                th=height,
+                access_key=access_key,
+                color_theme=color_theme,
+                max_per_query=None,
+            )
+            items.extend(unsplash_items)
+        except RateLimitError:
+            logger.warning("Preview: Unsplash rate limit hit — falling back to Pexels")
+            if pexels_key:
+                from services.pexels_pipeline import fetch_images_pexels
+                pexels_items = fetch_images_pexels(
+                    queries=search_terms,
+                    need_total=need_total,
+                    tw=width,
+                    th=height,
+                    access_key=pexels_key,
+                    color_theme=color_theme,
+                    max_per_query=None,
+                )
+                items.extend(pexels_items)
+                pexels_fallback = True
+            else:
+                raise
+
+    if image_source in ("pexels", "both") and pexels_key:
+        from services.pexels_pipeline import fetch_images_pexels
+        pexels_items = fetch_images_pexels(
+            queries=search_terms,
+            need_total=need_total,
+            tw=width,
+            th=height,
+            access_key=pexels_key,
+            color_theme=color_theme,
+            max_per_query=None,
+        )
+        items.extend(pexels_items)
+
     if items:
         download_and_save(items, images_dir, width, height)
 
     # --- Apply colour grading ---
     render_dir = apply_theme_grading(images_dir, graded_dir, color_theme)
-    return render_dir
+    return render_dir, pexels_fallback
 
 
 @router.post("/preview-stage", response_model=PreviewStageResponse)
@@ -120,13 +160,18 @@ async def preview_stage(
     Batches are processed sequentially to stay within Unsplash rate limits.
     """
     access_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+    pexels_key = os.environ.get("PEXELS_ACCESS_KEY", "")
     w, h = (int(x) for x in body.resolution.lower().split("x"))
-    need_total = max(1, int(body.total_seconds / body.seconds_per_image) + 10)
+    # Fetch a generous pool for preview so the user has real selection choice.
+    # At least 30 images regardless of video length settings.
+    video_need = max(1, int(body.total_seconds / body.seconds_per_image) + 10)
+    need_total = max(video_need, 30)
     ts = int(time.time() * 1000)
 
     tmp_root = tempfile.mkdtemp(prefix="preview_")
     client = get_client()
     batch_results: list[PreviewBatchResult] = []
+    any_pexels_fallback = False
 
     try:
         for batch_idx, batch in enumerate(body.batches):
@@ -135,7 +180,7 @@ async def preview_stage(
 
             # Run sync pipeline in thread pool
             try:
-                render_dir = await asyncio.to_thread(
+                render_dir, used_pexels = await asyncio.to_thread(
                     _stage_batch_sync,
                     search_terms=batch.search_terms,
                     uploaded_image_paths=batch.uploaded_image_paths or None,
@@ -143,11 +188,14 @@ async def preview_stage(
                     height=h,
                     need_total=need_total,
                     access_key=access_key,
+                    pexels_key=pexels_key,
                     color_theme=body.color_theme,
-                    max_per_query=body.max_per_query,
+                    image_source=body.image_source,
                     images_dir=images_dir,
                     graded_dir=graded_dir,
                 )
+                if used_pexels:
+                    any_pexels_fallback = True
             except Exception as e:
                 logger.exception("Preview stage failed for batch %d: %s", batch_idx, e)
                 raise HTTPException(status_code=500, detail=f"Image staging failed: {e}")
@@ -183,7 +231,7 @@ async def preview_stage(
                 batch_idx, len(image_items), user_id,
             )
 
-        return PreviewStageResponse(batches=batch_results)
+        return PreviewStageResponse(batches=batch_results, pexels_fallback=any_pexels_fallback)
 
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)

@@ -1,18 +1,28 @@
 /**
  * AdvancedModal.tsx
  *
- * Centered modal for advanced settings: saved presets, image source,
- * accent images, max images per query, allow repeats.
+ * Centered modal for advanced settings: saved presets, extractor model,
+ * image source, accent images, max images per query, allow repeats.
  */
 
+import { useState } from 'react'
 import PresetManager from './PresetManager'
 import type { VideoSettings } from './SettingsPanel'
 
+const ACCENT_OPTIONS = [
+  { value: null,   label: 'None', dot: 'bg-stone-600' },
+  { value: 'blue', label: 'Blue', dot: 'bg-blue-500' },
+  { value: 'red',  label: 'Red',  dot: 'bg-red-500' },
+  { value: 'gold', label: 'Gold', dot: 'bg-amber-400' },
+]
+
 interface Props {
   settings: VideoSettings
+  imageSource: 'auto' | 'unsplash' | 'pexels' | 'both'
   uploadedOnly: boolean
   accentFolder: string | null
   onSettingsChange: (s: VideoSettings) => void
+  onImageSourceChange: (v: 'auto' | 'unsplash' | 'pexels' | 'both') => void
   onUploadedOnlyChange: (v: boolean) => void
   onAccentFolderChange: (v: string | null) => void
   onPresetApplied: (name: string) => void
@@ -21,14 +31,18 @@ interface Props {
 
 export default function AdvancedModal({
   settings,
+  imageSource,
   uploadedOnly,
   accentFolder,
   onSettingsChange,
+  onImageSourceChange,
   onUploadedOnlyChange,
   onAccentFolderChange,
   onPresetApplied,
   onClose,
 }: Props) {
+  const [hoveredAccent, setHoveredAccent] = useState<string | null>(null)
+
   function update(patch: Partial<VideoSettings>) {
     onSettingsChange({ ...settings, ...patch })
   }
@@ -56,45 +70,82 @@ export default function AdvancedModal({
           />
         </div>
 
-        {/* Image source */}
+        {/* Extractor model */}
         <hr className="border-stone-800" />
-        <div className="space-y-2">
-          <p className="text-xs text-stone-400">Image source</p>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="image-source"
-              checked={!uploadedOnly}
-              onChange={() => onUploadedOnlyChange(false)}
-              className="accent-brand-500"
-            />
-            <span className="text-sm text-stone-300">Unsplash</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="image-source"
-              checked={uploadedOnly}
-              onChange={() => onUploadedOnlyChange(true)}
-              className="accent-brand-500"
-            />
-            <span className="text-sm text-stone-300">Uploaded images only</span>
-          </label>
+        <div>
+          <p className="mb-2 text-xs text-stone-400">Extractor model</p>
+          <select
+            value={imageSource}
+            onChange={e => onImageSourceChange(e.target.value as 'auto' | 'unsplash' | 'pexels' | 'both')}
+            className="w-full rounded-lg border border-stone-700 bg-stone-800 px-2 py-1.5 text-sm text-stone-100 focus:outline-none focus:border-brand-500"
+          >
+            <option value="auto">Auto (recommended)</option>
+            <option value="unsplash">Unsplash</option>
+            <option value="pexels">Pexels</option>
+          </select>
         </div>
 
-        {/* Accent images */}
+        {/* Uploaded images only */}
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
-            checked={accentFolder === 'blue'}
-            onChange={e => onAccentFolderChange(e.target.checked ? 'blue' : null)}
+            checked={uploadedOnly}
+            onChange={e => onUploadedOnlyChange(e.target.checked)}
             className="accent-brand-500"
           />
-          <span className="text-sm text-stone-300">
-            Add blue accent images{' '}
-            <span className="text-stone-600">(~20% of frames, ungraded)</span>
-          </span>
+          <span className="text-sm text-stone-300">Use uploaded images only</span>
         </label>
+
+        {/* Accent images */}
+        <div>
+          <p className="text-xs text-stone-400 mb-2">
+            Accent images{' '}
+            <span className="text-stone-600">(~20% of frames, ungraded)</span>
+          </p>
+          <div className="grid grid-cols-4 gap-2">
+            {ACCENT_OPTIONS.map(opt => (
+              <div
+                key={opt.value ?? 'none'}
+                className="relative"
+                onMouseEnter={() => opt.value && setHoveredAccent(opt.value)}
+                onMouseLeave={() => setHoveredAccent(null)}
+              >
+                <button
+                  onClick={() => onAccentFolderChange(opt.value)}
+                  className={`w-full flex flex-col items-center gap-1.5 px-2 py-2.5 rounded-lg border text-xs transition ${
+                    accentFolder === opt.value
+                      ? 'border-brand-500 bg-brand-500/10 text-stone-100'
+                      : 'border-stone-700 bg-stone-800 text-stone-400 hover:border-stone-500 hover:text-stone-200'
+                  }`}
+                >
+                  <span className={`w-3 h-3 rounded-full flex-shrink-0 ${opt.dot}`} />
+                  {opt.label}
+                </button>
+
+                {/* Eye-hover preview popup */}
+                {opt.value && hoveredAccent === opt.value && (
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-28 rounded-lg border border-stone-600 bg-stone-900 shadow-xl overflow-hidden z-50 pointer-events-none">
+                    <div className="relative w-full aspect-[9/16] bg-stone-950 flex items-center justify-center">
+                      <video
+                        key={opt.value}
+                        src={`/accent-previews/${opt.value}.mp4`}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                      <span className="text-xs text-stone-600 select-none">Preview</span>
+                    </div>
+                    <div className="px-2 py-1.5 text-xs text-stone-400 border-t border-stone-700">
+                      {opt.label} accent
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Max images per query */}
         <div>
@@ -123,6 +174,28 @@ export default function AdvancedModal({
           />
           <span className="text-sm text-stone-300">Allow image repeats</span>
         </label>
+
+        <hr className="border-stone-800" />
+
+        {/* Select Philosopher — coming soon */}
+        <div className="group/phil relative opacity-50 cursor-not-allowed select-none">
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-xs text-stone-400">Select philosopher</p>
+            <span className="text-[9px] font-semibold tracking-wide bg-stone-800 text-stone-600 border border-stone-700/60 px-1.5 py-0.5 rounded-full">Soon</span>
+            {/* Tooltip */}
+            <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-60 rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 shadow-xl opacity-0 group-hover/phil:opacity-100 transition-opacity z-50">
+              <p className="text-xs font-semibold text-white mb-1">Philosopher Image Inserts</p>
+              <p className="text-xs text-stone-300 leading-relaxed">Automatically inserts HD portrait images of your chosen philosopher into the video carousel alongside your search results.</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 pointer-events-none">
+            {['Marcus Aurelius', 'Seneca', 'Epictetus', 'Nietzsche', 'Socrates', 'Aristotle'].map(name => (
+              <div key={name} className="flex items-center justify-center px-2 py-2 rounded-lg border border-stone-700 bg-stone-800/60 text-xs text-stone-500 text-center">
+                {name}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )

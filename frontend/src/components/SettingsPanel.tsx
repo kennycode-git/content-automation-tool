@@ -4,6 +4,8 @@
  * Video generation settings: resolution, timing, colour theme, presets.
  */
 
+import { useState } from 'react'
+
 export interface VideoSettings {
   resolution: string
   seconds_per_image: number
@@ -15,14 +17,28 @@ export interface VideoSettings {
 }
 
 const COLOR_THEMES = [
-  { value: 'dark', label: 'Dark Tones' },
-  { value: 'none', label: 'Natural' },
-  { value: 'warm', label: 'Amber & Earth' },
-  { value: 'grey', label: 'Silver & Slate' },
-  { value: 'blue', label: 'Cobalt & Mist' },
-  { value: 'red',  label: 'Crimson & Rose' },
-  { value: 'bw',   label: 'Monochrome' },
+  { value: 'none',    label: 'Natural' },
+  { value: 'dark',    label: 'Dark Tones' },
+  { value: 'sepia',   label: 'Sepia' },
+  { value: 'warm',    label: 'Amber' },
+  { value: 'low_exp', label: 'Low Exposure' },
+  { value: 'grey',    label: 'Silver' },
+  { value: 'blue',    label: 'Cobalt' },
+  { value: 'red',     label: 'Crimson' },
+  { value: 'bw',      label: 'Monochrome' },
 ]
+
+const THEME_DOT: Record<string, string> = {
+  none:    'bg-stone-400',
+  dark:    'bg-stone-900 ring-1 ring-stone-600',
+  sepia:   'bg-amber-800',
+  warm:    'bg-amber-500',
+  low_exp: 'bg-stone-950 ring-1 ring-stone-700',
+  grey:    'bg-slate-400',
+  blue:    'bg-blue-500',
+  red:     'bg-red-500',
+  bw:      'bg-white ring-1 ring-stone-500',
+}
 
 const PRESETS = [
   { label: 'Fast',      seconds_per_image: 0.08, total_seconds: 10 },
@@ -93,6 +109,125 @@ function Slider({
 }
 
 import PresetManager from './PresetManager'
+
+function EyeIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg className={`w-3.5 h-3.5 text-stone-500 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+    </svg>
+  )
+}
+
+function ThemePreviewPopup({ theme }: { theme: typeof COLOR_THEMES[number] }) {
+  return (
+    <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 w-36 rounded-lg border border-stone-600 bg-stone-900 shadow-xl overflow-hidden z-50 pointer-events-none">
+      <div className="relative w-full aspect-[9/16] bg-stone-950 flex items-center justify-center">
+        <video
+          key={theme.value}
+          src={`/theme-previews/${theme.value}.mp4`}
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        <span className="text-xs text-stone-600 select-none">Preview coming soon</span>
+      </div>
+      <div className="px-2 py-1.5 text-xs text-stone-400 border-t border-stone-700">
+        {theme.label}
+      </div>
+    </div>
+  )
+}
+
+function ThemeSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [hovered, setHovered] = useState<string | null>(null)
+  const selected = COLOR_THEMES.find(t => t.value === value) ?? COLOR_THEMES[0]
+
+  return (
+    <div className="relative">
+      {/* Collapsed trigger */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-stone-700 bg-stone-800 cursor-pointer hover:bg-stone-700/50 transition-colors"
+      >
+        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[selected.value]}`} />
+        <span className="text-sm text-stone-100">{selected.label}</span>
+        {/* Eye preview for selected theme (hidden for Natural) */}
+        {selected.value !== 'none' && (
+          <div
+            className="relative ml-1"
+            onMouseEnter={e => { e.stopPropagation(); setHovered(selected.value + '_trigger') }}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <button
+              onClick={e => e.stopPropagation()}
+              className={`p-0.5 transition-colors ${hovered === selected.value + '_trigger' ? 'text-stone-200' : 'text-stone-500 hover:text-stone-300'}`}
+              aria-label={`Preview ${selected.label}`}
+            >
+              <EyeIcon />
+            </button>
+            {hovered === selected.value + '_trigger' && <ThemePreviewPopup theme={selected} />}
+          </div>
+        )}
+        <span className="flex-1" />
+        <ChevronIcon open={open} />
+      </div>
+
+      {/* Dropdown list */}
+      {open && (
+        <>
+          {/* Click-away overlay */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute z-20 mt-1 w-full rounded-lg border border-stone-700 bg-stone-800 shadow-xl">
+            {COLOR_THEMES.map(t => (
+              <div
+                key={t.value}
+                onClick={() => { onChange(t.value); setOpen(false) }}
+                className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors
+                  [&:not(:first-child)]:border-t [&:not(:first-child)]:border-stone-700/50
+                  ${value === t.value
+                    ? 'bg-stone-700 text-stone-100'
+                    : 'text-stone-400 hover:bg-stone-700/40 hover:text-stone-200'
+                  }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[t.value]}`} />
+                <span className="text-sm">{t.label}</span>
+                {/* Eye icon sits right after label text (hidden for Natural) */}
+                {t.value !== 'none' && (
+                  <div
+                    className="relative ml-1"
+                    onMouseEnter={e => { e.stopPropagation(); setHovered(t.value) }}
+                    onMouseLeave={() => setHovered(null)}
+                  >
+                    <button
+                      onClick={e => e.stopPropagation()}
+                      className={`p-0.5 transition-colors ${hovered === t.value ? 'text-stone-200' : 'text-stone-600 hover:text-stone-400'}`}
+                      aria-label={`Preview ${t.label}`}
+                    >
+                      <EyeIcon />
+                    </button>
+                    {hovered === t.value && <ThemePreviewPopup theme={t} />}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 export default function SettingsPanel({ settings, onChange, onPresetApplied }: Props) {
   function update(patch: Partial<VideoSettings>) {
@@ -169,17 +304,9 @@ export default function SettingsPanel({ settings, onChange, onPresetApplied }: P
         <div className="mb-1 flex items-center gap-1">
           <label className="text-xs text-stone-400">Colour theme</label>
           <InfoIcon tip="Biases search toward this colour theme and applies automatic colour grading.
-                         Recommend 'Dark Tones' or 'Monochrome' for most visible white overlay text." />
+                         Recommend 'Dark Tones' or 'Low Exposure' for most visible white overlay text." />
         </div>
-        <select
-          value={settings.color_theme}
-          onChange={e => update({ color_theme: e.target.value })}
-          className="w-full rounded-lg border border-stone-700 bg-stone-800 px-2 py-1.5 text-sm text-stone-100 focus:outline-none focus:border-brand-500"
-        >
-          {COLOR_THEMES.map(t => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
-        </select>
+        <ThemeSelector value={settings.color_theme} onChange={v => update({ color_theme: v })} />
       </div>
 
     </div>

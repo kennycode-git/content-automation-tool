@@ -7,6 +7,7 @@ All status output uses logging. Access key passed as explicit parameter (not glo
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -20,23 +21,27 @@ logger = logging.getLogger(__name__)
 API = "https://api.unsplash.com/search/photos"
 
 THEME_HINTS: dict = {
-    "none": [],
-    "warm": ["amber", "bronze", "autumn", "sepia", "earth tones"],
-    "dark": ["shadow", "night", "noir", "dramatic", "moody"],
-    "grey": ["silver", "stone", "concrete", "overcast", "fog", "mist"],
-    "blue": ["cobalt", "ocean", "sky", "arctic", "navy", "twilight"],
-    "red":  ["crimson", "scarlet", "rose", "fire", "vermillion"],
-    "bw":   ["monochrome", "black and white", "minimalist"],
+    "none":    [],
+    "warm":    ["amber", "bronze", "autumn", "earth tones"],
+    "dark":    ["dark", "night", "noir", "dramatic", "moody"],
+    "grey":    ["silver", "stone", "concrete", "overcast", "fog", "mist"],
+    "blue":    ["cobalt", "ocean", "sky", "arctic", "navy", "twilight"],
+    "red":     ["crimson", "scarlet", "rose", "fire", "vermillion"],
+    "bw":      ["monochrome", "black and white", "minimalist"],
+    "sepia":   ["sepia", "vintage", "aged", "antique", "brown"],
+    "low_exp": ["shadows", "low light", "dark", "underexposed"],
 }
 
 THEME_UNSPLASH_COLOR: dict = {
-    "none": None,
-    "warm": "orange",
-    "dark": "black",
-    "grey": None,
-    "blue": "blue",
-    "red":  "red",
-    "bw":   "black_and_white",
+    "none":    None,
+    "warm":    "orange",
+    "dark":    "black",
+    "grey":    None,
+    "blue":    "blue",
+    "red":     "red",
+    "bw":      "black_and_white",
+    "sepia":   "orange",   # closest supported color to brown
+    "low_exp": "black",
 }
 
 _session = requests.Session()
@@ -53,17 +58,11 @@ def resize_cover(img: Image.Image, tw: int, th: int) -> Image.Image:
     return img.crop((left, top, left + tw, top + th))
 
 
-def _sleep_until_reset(resp: requests.Response) -> None:
-    reset_hdr = resp.headers.get("X-Ratelimit-Reset")
-    remain = resp.headers.get("X-Ratelimit-Remaining")
-    try:
-        reset_epoch = int(reset_hdr) if reset_hdr else None
-    except Exception:
-        reset_epoch = None
-
-    wait = max(0, reset_epoch - int(time.time())) if reset_epoch else 60
-    logger.warning("Rate-limited: remaining=%s — sleeping %ss until reset", remain, wait)
-    time.sleep(wait)
+class RateLimitError(Exception):
+    """Raised when Unsplash returns 403 rate-limited. wait = seconds until quota resets."""
+    def __init__(self, wait: int):
+        self.wait = wait
+        super().__init__(f"Unsplash rate limit hit — retry after {wait}s")
 
 
 def fetch_page(
@@ -74,8 +73,8 @@ def fetch_page(
     color: Optional[str] = None,
     timeout: int = 12,
     retries: int = 3,
-) -> List[dict]:
-    """Fetch one page of Unsplash search results. access_key injected by caller."""
+) -> dict:
+    """Fetch one page of Unsplash search results. Returns dict with 'results' and '_remaining'."""
     if not access_key:
         raise RuntimeError("Unsplash access_key is required.")
     headers = {
@@ -90,9 +89,14 @@ def fetch_page(
     while True:
         r = _session.get(API, headers=headers, params=params, timeout=timeout)
         if r.status_code == 403 and "Rate Limit" in r.text:
-            _sleep_until_reset(r)
-            attempt += 1
-            continue
+            reset_hdr = r.headers.get("X-Ratelimit-Reset")
+            try:
+                reset_epoch = int(reset_hdr) if reset_hdr else None
+            except Exception:
+                reset_epoch = None
+            wait = max(65, reset_epoch - int(time.time())) if reset_epoch else 65
+            logger.warning("Rate-limited — raising RateLimitError(wait=%ds)", wait)
+            raise RateLimitError(wait)
         try:
             r.raise_for_status()
             break
@@ -110,7 +114,9 @@ def fetch_page(
     if remain != "?" and int(remain) < 5:
         logger.warning("Only %s API calls left this hour!", remain)
 
-    return r.json().get("results", [])
+    data = r.json()
+    data["_remaining"] = remain
+    return data
 
 
 def fetch_images(
@@ -121,7 +127,7 @@ def fetch_images(
     access_key: str,
     color_theme: str = "none",
     per_page: int = 30,
-    delay: float = 1.0,
+    delay: float = 0.3,
     max_per_query: Optional[int] = None,
 ) -> List[Tuple[str, str]]:
     """Fetch image (id, url) pairs from Unsplash across multiple queries."""
@@ -139,13 +145,10 @@ def fetch_images(
         need_total, q_count, per_q, max_per_query,
     )
 
-    hints = THEME_HINTS.get(color_theme, [])
     left = need_total
-    augmented = [
-        (q + " " + hints[0]) if hints else q for q in queries
-    ]
+    augmented = queries[:]  # top-up pass uses these with color= param
 
-    for qi, q in enumerate(augmented):
+    for qi, q in enumerate(queries):
         if left <= 0:
             break
         want = min(per_q, left)
@@ -156,15 +159,19 @@ def fetch_images(
         while pulled < want:
             take = min(per_page, want - pulled)
             try:
-                res = fetch_page(q, page, take, access_key)
+                data = fetch_page(q, page, take, access_key)
+            except RateLimitError:
+                raise
             except Exception as e:
                 logger.error("page %d: ERROR %s", page, e)
                 break
+            remaining = data.get("_remaining", "?")
+            res = data.get("results", [])
             if not res:
                 logger.info("page %d: no results", page)
                 break
             for item in res:
-                url = item["urls"]["full"]
+                url = item["urls"]["regular"]
                 fid = item["id"]
                 results.append((fid, url))
                 pulled += 1
@@ -172,6 +179,9 @@ def fetch_images(
                 if pulled >= want:
                     break
             page += 1
+            if remaining != "?" and int(remaining) < 3:
+                logger.warning("API quota nearly exhausted (%s left) — stopping early, will use repeats", remaining)
+                return _dedup(results, need_total)
             time.sleep(delay)
         left -= pulled
 
@@ -186,34 +196,43 @@ def fetch_images(
         logger.info("[top-up] %d/%d — %r page %d, take %d", len(results), need_total, q, page, take)
         before = len(results)
         try:
-            res = fetch_page(q, page, take, access_key, color=unsplash_color)
+            data = fetch_page(q, page, take, access_key, color=unsplash_color)
+        except RateLimitError:
+            raise
         except Exception as e:
             logger.error("top-up ERROR: %s", e)
             break
+        remaining = data.get("_remaining", "?")
+        res = data.get("results", [])
         for item in res:
-            results.append((item["id"], item["urls"]["full"]))
+            results.append((item["id"], item["urls"]["regular"]))
             if len(results) >= need_total:
                 break
         added = len(results) - before
         if added == 0:
             stall_count += 1
             if stall_count >= len(augmented):
-                # Full cycle with no new results — Unsplash has nothing more to give
                 logger.info("[top-up] No new results after cycling all queries — stopping.")
                 break
         else:
             stall_count = 0
         i += 1
+        if remaining != "?" and int(remaining) < 3:
+            logger.warning("API quota nearly exhausted (%s left) — stopping top-up early, will use repeats", remaining)
+            break
         time.sleep(delay)
 
-    # Dedup by id
+    return _dedup(results, need_total)
+
+
+def _dedup(results: List[Tuple[str, str]], limit: int) -> List[Tuple[str, str]]:
     uniq, seen = [], set()
     for fid, url in results:
         if fid in seen:
             continue
         seen.add(fid)
         uniq.append((fid, url))
-    return uniq[:need_total]
+    return uniq[:limit]
 
 
 def brown_ratio(img: Image.Image) -> float:
@@ -234,34 +253,46 @@ def brightness_ratio(img: Image.Image) -> float:
     return float(hsv[:, :, 2].mean() / 255.0)
 
 
+def _download_one(fid: str, url: str, dest_dir: Path, tw: int, th: int) -> bool:
+    out = dest_dir / f"{fid}.jpg"
+    if out.exists():
+        return True
+    try:
+        r = _session.get(url, stream=True, timeout=15)
+        r.raise_for_status()
+        img = Image.open(BytesIO(r.content)).convert("RGB")
+        img = resize_cover(img, tw, th)
+        img.save(out, "JPEG", quality=92, optimize=True)
+        return True
+    except Exception as e:
+        logger.error("skip %s: %s", fid, e)
+        return False
+
+
 def download_and_save(
     items: List[Tuple[str, str]],
     dest_dir: str,
     tw: int,
     th: int,
+    max_workers: int = 8,
 ) -> int:
-    """Download, resize, and save images to dest_dir. Returns count saved."""
-    Path(dest_dir).mkdir(parents=True, exist_ok=True)
-    saved = 0
-    logger.info("Saving to: %s", dest_dir)
+    """Download, resize, and save images to dest_dir concurrently. Returns count saved."""
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    logger.info("Saving %d images to: %s (workers=%d)", len(items), dest_dir, max_workers)
 
-    for idx, (fid, url) in enumerate(items, 1):
-        out = Path(dest_dir) / f"{fid}.jpg"
-        if out.exists():
-            logger.info("%d/%d skip existing %s", idx, len(items), out.name)
-            saved += 1
-            continue
-        try:
-            r = _session.get(url, stream=True, timeout=15)
-            r.raise_for_status()
-            img = Image.open(BytesIO(r.content)).convert("RGB")
-            img = resize_cover(img, tw, th)
-            img.save(out, "JPEG", quality=92, optimize=True)
-            logger.info("%d/%d saved %s", idx, len(items), out.name)
-            saved += 1
-        except Exception as e:
-            logger.error("%d/%d skip %s: %s", idx, len(items), fid, e)
-        time.sleep(0.2)
+    saved = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {
+            pool.submit(_download_one, fid, url, dest, tw, th): (idx, fid)
+            for idx, (fid, url) in enumerate(items, 1)
+        }
+        for future in as_completed(futures):
+            idx, fid = futures[future]
+            ok = future.result()
+            if ok:
+                saved += 1
+                logger.info("%d/%d saved %s", idx, len(items), fid)
 
     logger.info("Saved %d/%d images.", saved, len(items))
     return saved

@@ -8,14 +8,14 @@ Deployed to **Railway** at `https://your-backend.up.railway.app`.
 - **Python 3.11** + **FastAPI** + **Uvicorn**
 - **Supabase** (Postgres + Storage + Auth)
 - **Stripe** (subscriptions + webhooks)
-- **ffmpeg** (system-level, installed via nixpacks.toml)
+- **ffmpeg** (system-level, installed via Dockerfile `apt-get install ffmpeg`)
 
 ## Project Structure
 ```
 backend/
 ├── main.py                    # FastAPI app, CORS, lifespan, router includes
 ├── requirements.txt
-├── nixpacks.toml              # Railway deployment (installs ffmpeg + python311)
+├── Dockerfile                 # Railway deployment (python:3.11-slim + apt ffmpeg)
 ├── .env.example               # Required env vars template
 ├── routers/
 │   ├── auth.py                # JWT validation dependency (get_current_user_id)
@@ -54,10 +54,18 @@ ENABLE_DOCS=true .venv/Scripts/uvicorn main:app --reload --port 8001
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | /health | None | Health check |
-| POST | /api/generate | JWT | Create + queue video job |
+| POST | /api/generate | JWT | Create + queue single video job |
+| POST | /api/variants | JWT | Create N jobs (one per theme) sharing a single image fetch |
 | GET | /api/jobs | JWT | Last 10 jobs for user |
 | GET | /api/jobs/{id} | JWT | Job status + output URL |
 | DELETE | /api/jobs/{id} | JWT | Cancel/delete job + storage file |
+| POST | /api/preview-stage | JWT | Fetch + stage images for preview (no video render) |
+| POST | /api/presets | JWT | Save a named settings preset |
+| GET | /api/presets | JWT | List user's presets |
+| DELETE | /api/presets/{id} | JWT | Delete a preset |
+| POST | /api/upload-images | JWT | Upload user images to Supabase Storage |
+| POST | /api/prefetch-images | JWT | Pre-fetch Unsplash images to storage |
+| POST | /api/jobs/{id}/resign | JWT | Re-generate expired signed URL for completed job |
 | POST | /stripe/webhook | Stripe sig | Handle subscription events |
 
 ## Required Environment Variables
@@ -92,31 +100,78 @@ RAILWAY_PUBLIC_DOMAIN     # TrustedHost middleware
 - **No secrets in code**: All keys from environment. App refuses to start if any missing.
 - **Docs disabled in production**: `/docs` only enabled when `ENABLE_DOCS=true`.
 
-## Pipeline Flow (per job)
+## Pipeline Flow
+
+### Single job (POST /api/generate)
 ```
-POST /api/generate
   → validate JWT + subscription + usage
   → create job row (status='queued') — includes batch_title, color_theme
   → BackgroundTask: run_pipeline()
-      1. fetch_images()          — Unsplash API (color_theme biases queries + color= param)
-      2. download_and_save()     — resize + save to OS temp dir (no filter logic)
+      1. fetch_images()          — Unsplash API; raises RateLimitError on 403
+                                   caught in async loop: update status message + await asyncio.sleep(wait)
+                                   then retry — job never terminates on rate limit
+      2. download_and_save()     — concurrent downloads via ThreadPoolExecutor(max_workers=8)
+                                   uses urls["regular"] (not "full") for speed
       2.5 apply_theme_grading()  — colour grade images (no-op for theme='none')
       3. render_slideshow()      — ffmpeg → output.mp4 (uses graded dir if grading applied)
-      4. upload_output()         — Supabase Storage
+      4. upload_output()         — Supabase Storage outputs/{user_id}/{job_id}.mp4
       5. get_signed_url()        — 48hr download URL
       6. update job row          — status='done', output_url=<url>
       7. increment_render_count() — atomic Postgres RPC
       8. cleanup temp dir
 ```
 
+### Variants (POST /api/variants)
+```
+  → validate JWT + subscription + usage (checks count + len(themes) vs limit)
+  → create N job rows (one per theme, all status='queued')
+  → BackgroundTask: run_variants_pipeline()
+      1. fetch_images() once → shared temp dir (same RateLimitError retry loop, updates ALL job rows)
+      2. download_and_save() → shared images dir
+      For each theme (sequential):
+        3. apply_theme_grading()   — grade copy of shared images
+        4. render_slideshow()      — ffmpeg → variant output.mp4
+        5. upload + sign + update job row done + increment_usage
+      6. cleanup shared temp dir
+```
+
+### RateLimitError pattern (critical)
+`fetch_page()` raises `RateLimitError(wait)` on 403 + "Rate Limit" response.
+Pipeline catches it in `while True` loop:
+```python
+while True:
+    try:
+        items = await asyncio.to_thread(fetch_images, ...)
+        break
+    except RateLimitError as e:
+        await update_job_status(job_id, "running", f"Unsplash rate limit — retrying in {e.wait}s…")
+        await asyncio.sleep(e.wait)
+```
+Never uses blocking `time.sleep` in the async pipeline — uses `await asyncio.sleep`.
+
 ## Deployment (Railway)
 ```bash
-# nixpacks.toml handles ffmpeg installation automatically
+# Dockerfile handles Python 3.11 + ffmpeg installation automatically
 git push railway main
 ```
 
+## Colour Themes (9 total)
+| Value    | Display Name  | Search hint  | Unsplash color= | Grade fn           | Condition                  |
+|----------|---------------|--------------|-----------------|-------------------|----------------------------|
+| none     | Natural       | —            | —               | none              | —                          |
+| dark     | Dark Tones    | dark         | black           | grade_bw_dark     | brightness > 0.15 (too bright) |
+| sepia    | Sepia         | sepia        | orange          | grade_sepia       | brown_ratio < 0.10         |
+| warm     | Amber         | amber        | orange          | grade_brown       | brown_ratio < 0.08         |
+| grey     | Silver        | silver       | —               | grade_grey        | always                     |
+| blue     | Cobalt        | cobalt       | blue            | grade_blue        | always                     |
+| red      | Crimson       | crimson      | red             | grade_red         | always                     |
+| bw       | Monochrome    | monochrome   | black_and_white | grade_bw          | always                     |
+| low_exp  | Low Exposure  | shadows      | black           | grade_low_exposure| always                     |
+
+All 9 values listed in `ALLOWED_COLOR_THEMES` in `models/schemas.py`.
+
 ## Database Schema
-See `../supabase_schema.sql` for full schema with RLS policies.
+See `../supabase/schema.sql` for full schema with RLS policies.
 
 ## What Is NOT In This Backend
 - Long-form pipeline (WhisperX, audio stitching, Pexels, draft video) — dropped for MVP
@@ -135,15 +190,21 @@ python test_local.py
 - [x] Phase 2: FastAPI backend (main, routers, schemas, DB client)
 - [x] Phase 3: Stripe webhook + subscription gate
 - [x] Phase 5: Nightly cleanup Edge Function (`../supabase/functions/cleanup-expired-outputs/`)
-- [x] Pre-Phase-4 UX improvements (before deploy):
-  - [x] colour_theme replaces prefer_brown (7 themes, biases search + applies grading)
+- [x] Pre-deploy UX improvements:
+  - [x] colour_theme (9 themes): biases Unsplash query + applies grading in pipeline
+  - [x] Themes: none, dark, sepia, warm, grey, blue, red, bw, low_exp
   - [x] image_grader.py wired into pipeline as Step 2.5 (apply_theme_grading)
   - [x] batch_title stored in jobs table, returned in all job responses
-  - [x] jobs table: `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS batch_title TEXT;` — run in Supabase SQL editor
-- [x] asyncio.to_thread: fetch_images, download_and_save, apply_theme_grading, render_slideshow
-      all run in thread pool — event loop no longer blocked during pipeline (fixes stuck status polls)
-- [x] Reuse feature: list_jobs now selects config; search_terms exposed in JobListItem response
-- [x] Local dev stack running and tested (backend :8001 healthy, frontend :5175 live)
+  - [x] asyncio.to_thread: all blocking pipeline steps run in thread pool
+  - [x] Concurrent image downloads (ThreadPoolExecutor max_workers=8)
+  - [x] RateLimitError: non-blocking async retry with user-visible status message
+  - [x] POST /api/variants: single image fetch shared across N theme renders
+  - [x] Reuse/Duplicate feature: list_jobs selects config; search_terms in response
+  - [x] Preview staging: POST /api/preview-stage
+  - [x] User image uploads: POST /api/upload-images (user-uploads bucket)
+  - [x] Presets CRUD: POST/GET/DELETE /api/presets
+  - [x] URL re-signing: POST /api/jobs/{id}/resign
+- [x] Local dev running (backend :8001 healthy, frontend :5175 live)
 - [ ] Phase 6: Railway deployment
   - [ ] Set env vars in Railway dashboard
   - [ ] `git push railway main`

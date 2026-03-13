@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   stripe_customer_id   TEXT,
   stripe_subscription_id TEXT,
   status               TEXT NOT NULL DEFAULT 'inactive', -- active | cancelled | past_due
-  plan                 TEXT NOT NULL DEFAULT 'creator',  -- creator | pro
+  plan                 TEXT NOT NULL DEFAULT 'creator',  -- creator | pro | trial
+  trial_expires_at     TIMESTAMPTZ,                      -- set when plan='trial' (NOW() + 21 days)
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

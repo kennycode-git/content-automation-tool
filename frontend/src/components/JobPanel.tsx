@@ -11,6 +11,111 @@ import { useQuery } from '@tanstack/react-query'
 import { getJobStatus } from '../lib/api'
 import type { JobStatus } from '../lib/api'
 
+// ─── Pipeline progress overlay ───────────────────────────────────────────────
+
+const PIPELINE_STEPS = [
+  { key: 'fetch',    emoji: '🔍', label: 'Searching for photos',  sub: 'Searching photo libraries for your terms'    },
+  { key: 'download', emoji: '📷', label: 'Collecting photos',     sub: null                                         },
+  { key: 'grade',    emoji: '🎨', label: 'Applying your look',    sub: 'Colour grading and finishing the images'    },
+  { key: 'render',   emoji: '🎬', label: 'Building the video',    sub: 'Stitching your photos into a slideshow'     },
+  { key: 'upload',   emoji: '✨', label: 'Almost there',          sub: 'Uploading and generating your download link'},
+]
+
+function activeStepIdx(msg: string | null): number {
+  if (!msg || msg === 'Queued') return -1
+  if (msg.startsWith('Loading') || msg.startsWith('Fetching') || msg.startsWith('API limit')) return 0
+  if (msg.startsWith('Downloading')) return 1
+  if (msg.startsWith('Applying') || msg.startsWith('Adding')) return 2
+  if (msg.startsWith('Rendering')) return 3
+  if (msg.startsWith('Uploading')) return 4
+  return -1
+}
+
+function ProgressOverlay({ status, message, imageCount }: {
+  status: string
+  message: string | null
+  imageCount: number | null
+}) {
+  const msg = message ?? ''
+  const isQueued = !msg || msg === 'Queued'
+  const idx = status === 'done' ? PIPELINE_STEPS.length : activeStepIdx(msg)
+
+  return (
+    <div className="absolute top-full left-0 right-0 mt-2 rounded-xl border border-stone-600/80 bg-stone-900 shadow-2xl overflow-hidden z-50 pointer-events-none">
+      {/* Header */}
+      <div className="px-4 pt-3 pb-2.5 border-b border-stone-800/80">
+        <p className="text-xs font-semibold text-stone-200">
+          {isQueued ? 'Waiting to start…' : 'Your video is being made'}
+        </p>
+        {!isQueued && (
+          <p className="text-xs text-stone-500 mt-0.5">You can carry on — we'll let you know when it's ready</p>
+        )}
+      </div>
+
+      {/* Steps */}
+      <div className="px-4 py-3 space-y-2.5">
+        {isQueued ? (
+          <div className="flex items-center gap-2.5 py-1">
+            <span className="text-base">⏳</span>
+            <p className="text-xs text-stone-400">Your job is in the queue and will start shortly</p>
+          </div>
+        ) : (
+          PIPELINE_STEPS.map((step, i) => {
+            const isDone   = i < idx
+            const isActive = i === idx
+            const subText  = step.key === 'download' && imageCount != null
+              ? (isDone ? `${imageCount} photos ready` : `${imageCount} photos found so far`)
+              : step.sub
+
+            return (
+              <div
+                key={step.key}
+                className={`flex items-center gap-3 transition-opacity ${i > idx ? 'opacity-25' : 'opacity-100'}`}
+              >
+                {/* Step icon */}
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${
+                  isDone   ? 'bg-emerald-500/10 text-emerald-400' :
+                  isActive ? 'bg-brand-500/10' :
+                  'bg-stone-800'
+                }`}>
+                  {isDone
+                    ? <span className="text-emerald-400 font-bold text-xs">✓</span>
+                    : <span className={isActive ? 'animate-pulse' : ''}>{step.emoji}</span>
+                  }
+                </div>
+
+                {/* Label + sub */}
+                <div className="min-w-0 flex-1">
+                  <p className={`text-xs font-medium leading-snug ${
+                    isDone   ? 'text-stone-500' :
+                    isActive ? 'text-stone-100' :
+                    'text-stone-600'
+                  }`}>
+                    {step.label}
+                  </p>
+                  {(isActive || (isDone && subText)) && (
+                    <p className="text-xs text-stone-500 mt-0.5 leading-snug">{subText}</p>
+                  )}
+                </div>
+
+                {/* Active pulse dot */}
+                {isActive && (
+                  <span className="relative flex h-2 w-2 ml-auto flex-shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-50" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-500" />
+                  </span>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const STATUS_LABELS: Record<string, string> = {
   queued: '⏳ Queued',
   running: '⚙️ Processing…',
@@ -21,9 +126,9 @@ const STATUS_LABELS: Record<string, string> = {
 
 function friendlyError(msg: string): string {
   if (msg.includes('No images returned') || msg.includes('no images'))
-    return 'No images found for these search terms. Unsplash free tier allows ~50 requests/hour — try fewer terms or wait a few minutes before retrying.'
-  if (msg.includes('429') || msg.includes('Rate Limit') || msg.includes('rate limit'))
-    return 'Unsplash rate limit reached (~50 requests/hour on the free tier). Wait a few minutes then try again.'
+    return 'No images found for these search terms. Try different or broader keywords.'
+  if (msg.includes('429') || msg.includes('Rate Limit') || msg.includes('rate limit') || msg.includes('API limit'))
+    return 'Photo API rate limit reached. Wait a few minutes then try again.'
   return msg
 }
 
@@ -32,7 +137,7 @@ function stepProgress(status: string, msg: string | null): number {
   if (status === 'done') return 100
   if (!msg || msg === 'Queued') return 5
   if (msg.startsWith('Loading uploaded')) return 10
-  if (msg.startsWith('Fetching')) return 20
+  if (msg.startsWith('Fetching') || msg.startsWith('API limit')) return 20
   if (msg.startsWith('Downloading')) return 40
   if (msg.startsWith('Applying')) return 60
   if (msg.startsWith('Rendering')) return 75
@@ -52,6 +157,10 @@ interface Props {
 
 export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel }: Props) {
   const [cancelling, setCancelling] = useState(false)
+  const [showOverlay, setShowOverlay] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const imageCountRef = useRef<number | null>(null)
+
   const { data: job, isLoading, error } = useQuery({
     queryKey: ['job', jobId],
     queryFn: () => getJobStatus(jobId),
@@ -69,6 +178,12 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
     }
   }, [job?.status, job, onDone])
 
+  // Persist image count so it shows on completed download step even after message changes
+  useEffect(() => {
+    const m = job?.progress_message?.match(/Downloading (\d+)/)
+    if (m) imageCountRef.current = parseInt(m[1], 10)
+  }, [job?.progress_message])
+
   if (isLoading) return <div className="text-sm text-stone-500">Loading…</div>
   if (error) return <div className="text-sm text-red-400">Error loading job status.</div>
   if (!job) return null
@@ -77,13 +192,58 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   const pct = stepProgress(job.status, job.progress_message)
   const displayTitle = title ?? job.batch_title
 
+  async function handleDownload(url: string) {
+    setDownloading(true)
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const blobUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = `${displayTitle ?? jobId.slice(0, 8)}.mp4`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
+    } catch {
+      window.open(url, '_blank')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
-    <div className="rounded-xl border border-stone-700 bg-stone-800 p-4">
+    <div className="rounded-xl border border-stone-700 bg-stone-800 p-4 relative">
+      {/* Progress overlay (hover) */}
+      {!isTerminal && showOverlay && (
+        <ProgressOverlay
+          status={job.status}
+          message={job.progress_message}
+          imageCount={imageCountRef.current}
+        />
+      )}
+
       {/* Header row */}
       <div className="flex items-center justify-between mb-1">
-        <span className="text-sm font-medium text-stone-200">
-          {STATUS_LABELS[job.status] ?? job.status}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-stone-200">
+            {STATUS_LABELS[job.status] ?? job.status}
+          </span>
+          {/* Magnifying glass — hover to see progress detail */}
+          {!isTerminal && (
+            <button
+              onMouseEnter={() => setShowOverlay(true)}
+              onMouseLeave={() => setShowOverlay(false)}
+              className="text-stone-500 hover:text-stone-200 transition-colors focus:outline-none flex-shrink-0"
+              aria-label="Show progress detail"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                <circle cx="8.5" cy="8.5" r="5" />
+                <line x1="13" y1="13" x2="17" y2="17" />
+              </svg>
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs text-stone-500 truncate max-w-32">
             {displayTitle ?? jobId.slice(0, 8) + '…'}
@@ -123,6 +283,29 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
         </div>
       </div>
 
+      {/* Metadata strip */}
+      {!minimized && (job.color_theme || job.resolution || job.total_seconds) && (
+        <div className="flex flex-wrap gap-1.5 px-3 pb-2">
+          {job.color_theme && job.color_theme !== 'none' && (
+            <span className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-400 capitalize">
+              {{
+                dark: 'Dark Tones', sepia: 'Sepia', warm: 'Amber', grey: 'Silver',
+                blue: 'Cobalt', red: 'Crimson', bw: 'Mono', low_exp: 'Low Exposure',
+              }[job.color_theme] ?? job.color_theme}
+            </span>
+          )}
+          {job.resolution && (
+            <span className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-400">{job.resolution}</span>
+          )}
+          {job.total_seconds != null && (
+            <span className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-400">{job.total_seconds}s</span>
+          )}
+          {job.preset_name && (
+            <span className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-500 italic">{job.preset_name}</span>
+          )}
+        </div>
+      )}
+
       {/* Collapsed content when minimised */}
       {minimized ? null : (
         <>
@@ -148,16 +331,16 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                 muted
                 loop
                 controls
+                controlsList="nodownload"
                 className="w-full max-h-96 rounded-lg object-contain bg-black"
               />
-              <a
-                href={job.output_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full rounded-lg bg-brand-500 py-2 text-center text-sm font-semibold text-white hover:bg-brand-700"
+              <button
+                onClick={() => handleDownload(job.output_url!)}
+                disabled={downloading}
+                className="block w-full rounded-lg bg-brand-500 py-2 text-center text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
               >
-                Download video
-              </a>
+                {downloading ? 'Downloading…' : 'Download video'}
+              </button>
             </div>
           )}
 

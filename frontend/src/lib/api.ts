@@ -52,6 +52,7 @@ export interface GenerateRequest {
   preset_name?: string | null
   uploaded_only?: boolean
   accent_folder?: string | null
+  image_source?: 'unsplash' | 'pexels' | 'both'
 }
 
 export interface GenerateResponse {
@@ -80,6 +81,15 @@ export interface JobStatus {
   completed_at: string | null
 }
 
+export interface UsageInfo {
+  plan: string
+  status: string | null
+  render_count: number
+  limit: number | null
+  trial_expires_at: string | null
+  trial_expired: boolean
+}
+
 export interface Preset {
   id: string
   name: string
@@ -89,7 +99,6 @@ export interface Preset {
 
 async function authHeaders(): Promise<HeadersInit> {
   const token = await getAccessToken()
-  console.log("TOKEN BEING SENT:", token ? token.substring(0, 50) : "NULL")
   if (!token) throw new Error('Not authenticated.')
   return {
     'Content-Type': 'application/json',
@@ -194,6 +203,7 @@ export interface PreviewStageRequest {
   total_seconds?: number
   max_per_query?: number
   color_theme?: string
+  image_source?: string
 }
 
 export interface PreviewImageItem {
@@ -209,6 +219,7 @@ export interface PreviewBatchResult {
 
 export interface PreviewStageResponse {
   batches: PreviewBatchResult[]
+  pexels_fallback?: boolean
 }
 
 export async function stagePreview(req: PreviewStageRequest, signal?: AbortSignal): Promise<PreviewStageResponse> {
@@ -230,25 +241,31 @@ export async function stagePreview(req: PreviewStageRequest, signal?: AbortSigna
   return handleResponse<PreviewStageResponse>(res)
 }
 
-// ─── Image upload + prefetch ──────────────────────────────────────────────────
+// ─── Variants ─────────────────────────────────────────────────────────────────
 
-export interface PrefetchRequest {
+export interface VariantsRequest {
   search_terms: string[]
   resolution?: string
   seconds_per_image?: number
   total_seconds?: number
+  fps?: number
+  allow_repeats?: boolean
   max_per_query?: number
+  batch_title?: string | null
+  themes: string[]
 }
 
-export async function prefetchImages(req: PrefetchRequest): Promise<{ paths: string[] }> {
-  if (DEV_BYPASS) return { paths: [] }
-  const res = await fetch(`${API_URL}/api/prefetch-images`, {
+export async function generateVariants(req: VariantsRequest): Promise<{ job_ids: string[] }> {
+  if (DEV_BYPASS) return { job_ids: req.themes.map(() => crypto.randomUUID()) }
+  const res = await fetch(`${API_URL}/api/variants`, {
     method: 'POST',
     headers: await authHeaders(),
     body: JSON.stringify(req),
   })
-  return handleResponse<{ paths: string[] }>(res)
+  return handleResponse<{ job_ids: string[] }>(res)
 }
+
+// ─── Image upload ─────────────────────────────────────────────────────────────
 
 export async function uploadImages(files: File[]): Promise<{ paths: string[] }> {
   const token = await getAccessToken()
@@ -261,4 +278,12 @@ export async function uploadImages(files: File[]): Promise<{ paths: string[] }> 
     body: form,
   })
   return handleResponse<{ paths: string[] }>(res)
+}
+
+// ─── Usage ────────────────────────────────────────────────────────────────────
+
+export async function getUsage(): Promise<UsageInfo> {
+  if (DEV_BYPASS) return { plan: 'trial', status: 'active', render_count: 3, limit: 100, trial_expires_at: null, trial_expired: false }
+  const res = await fetch(`${API_URL}/api/usage`, { headers: await authHeaders() })
+  return handleResponse<UsageInfo>(res)
 }

@@ -5,6 +5,7 @@ import type { Session } from '@supabase/supabase-js'
 
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import Photos from './pages/Photos'
 import Pricing from './pages/Pricing'
 import Account from './pages/Account'
 
@@ -72,6 +73,14 @@ export default function App() {
           element={session ? <Navigate to="/dashboard" replace /> : <Login />}
         />
         <Route path="/pricing" element={<Pricing />} />
+        <Route
+          path="/photos"
+          element={
+            <ProtectedRoute session={session}>
+              <Photos session={session!} />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/dashboard"
           element={

@@ -238,6 +238,46 @@ export default function PreviewModal({ batches, onConfirm, onCancel }: Props) {
         </div>
       )}
 
+      {/* Controls bar — flush below header/tabs, outside scroll area */}
+      <div className="shrink-0 border-b border-stone-800 bg-stone-900/80 px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-stone-500">
+            {batch.images.length} image{batch.images.length !== 1 ? 's' : ''}
+            {batch.images.some(img => img.uploading) && (
+              <span className="ml-2 text-brand-400">Uploading…</span>
+            )}
+          </span>
+          {batch.images.length > 0 && (
+            <button
+              onClick={() => toggleSelectAll(activeTab)}
+              className="text-xs text-stone-500 hover:text-stone-300 transition"
+            >
+              {batch.images.every(img => selectedIds.has(img.id)) ? 'Deselect all' : 'Select all'}
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => removeSelected(activeTab)}
+              className="rounded-lg bg-red-900 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-800 transition"
+            >
+              Delete {selectedIds.size} selected
+            </button>
+          )}
+          <label className="cursor-pointer rounded-lg border border-stone-700 px-3 py-1.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200 transition">
+            + Add images
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="sr-only"
+              onChange={e => handleFileInput(activeTab, e)}
+            />
+          </label>
+        </div>
+      </div>
+
       {/* Main area */}
       <div
         className={`relative flex-1 overflow-y-auto p-6 transition ${
@@ -253,45 +293,6 @@ export default function PreviewModal({ batches, onConfirm, onCancel }: Props) {
             <span className="text-sm font-medium text-brand-400">Drop images to add</span>
           </div>
         )}
-
-        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-stone-500">
-              {batch.images.length} image{batch.images.length !== 1 ? 's' : ''}
-              {batch.images.some(img => img.uploading) && (
-                <span className="ml-2 text-brand-400">Uploading…</span>
-              )}
-            </span>
-            {batch.images.length > 0 && (
-              <button
-                onClick={() => toggleSelectAll(activeTab)}
-                className="text-xs text-stone-500 hover:text-stone-300 transition"
-              >
-                {batch.images.every(img => selectedIds.has(img.id)) ? 'Deselect all' : 'Select all'}
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {selectedIds.size > 0 && (
-              <button
-                onClick={() => removeSelected(activeTab)}
-                className="rounded-lg bg-red-900 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-800 transition"
-              >
-                Delete {selectedIds.size} selected
-              </button>
-            )}
-            <label className="cursor-pointer rounded-lg border border-stone-700 px-3 py-1.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200 transition">
-              + Add images
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="sr-only"
-                onChange={e => handleFileInput(activeTab, e)}
-              />
-            </label>
-          </div>
-        </div>
 
         {batch.images.length === 0 ? (
           <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-stone-700">

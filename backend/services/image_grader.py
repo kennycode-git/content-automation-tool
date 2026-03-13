@@ -26,7 +26,7 @@ def hsv_to_rgb_np(hsv: np.ndarray) -> np.ndarray:
     return np.array(Image.fromarray(hsv, "HSV").convert("RGB"))
 
 
-def grade_brown(img: Image.Image, intensity: float = 0.6) -> Image.Image:
+def grade_brown(img: Image.Image, intensity: float = 0.72) -> Image.Image:
     """Warm/brown push: hue shift toward orange, lift reds, tame blues, mild contrast S-curve."""
     arr = np.array(img.convert("RGB"), dtype=np.uint8)
     hsv = rgb_to_hsv_np(arr)
@@ -34,18 +34,18 @@ def grade_brown(img: Image.Image, intensity: float = 0.6) -> Image.Image:
     s = hsv[:, :, 1].astype(np.int16)
     v = hsv[:, :, 2].astype(np.int16)
 
-    h = (h + int(255 * 5 / 360)) % 256
-    s = (s * 1.06).clip(0, 255).astype(np.uint8)
+    h = (h + int(255 * 8 / 360)) % 256
+    s = (s * 1.10).clip(0, 255).astype(np.uint8)
     v = v.astype(np.uint8)
 
     warm = hsv_to_rgb_np(np.stack([h.astype(np.uint8), s, v], axis=2))
 
     warm2 = warm.copy().astype(np.float32)
-    warm2[:, :, 2] = warm2[:, :, 2] * 0.96
+    warm2[:, :, 2] = warm2[:, :, 2] * 0.93
     warm2 = warm2.clip(0, 255).astype(np.uint8)
 
     x = warm2.astype(np.float32) / 255.0
-    c = 0.08
+    c = 0.10
     s_curve = (x - c * x * (1 - x)) * 255.0
     s_curve = s_curve.clip(0, 255).astype(np.uint8)
 
@@ -156,6 +156,39 @@ def grade_red(img: Image.Image, intensity: float = 0.6) -> Image.Image:
     return Image.fromarray(blend(arr, graded, intensity), "RGB")
 
 
+def grade_sepia(img: Image.Image, intensity: float = 0.70) -> Image.Image:
+    """Sepia tone with reduced intensity so original colours partially show through.
+
+    Pre-darkening at 0.72 keeps the tone warm without crushing the image.
+    Blending at 0.70 preserves enough of the original image to avoid a flat
+    single-colour look.
+    """
+    base = img.convert("RGB")
+    enhancer = ImageEnhance.Brightness(base)
+    darkened = enhancer.enhance(0.72)
+    arr = np.array(darkened, dtype=np.float32)
+    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    sr = (r * 0.393 + g * 0.769 + b * 0.189).clip(0, 255)
+    sg = (r * 0.349 + g * 0.686 + b * 0.168).clip(0, 255)
+    sb = (r * 0.272 + g * 0.534 + b * 0.131).clip(0, 255)
+    sepia = np.stack([sr, sg, sb], axis=2).astype(np.uint8)
+    orig = np.array(base, dtype=np.uint8)
+    out = blend(orig, sepia, intensity)
+    return Image.fromarray(out, "RGB")
+
+
+def grade_low_exposure(img: Image.Image, intensity: float = 1.0) -> Image.Image:
+    """Crush exposure: heavily darken while preserving colour and boosting contrast."""
+    base = img.convert("RGB")
+    enhancer = ImageEnhance.Brightness(base)
+    darkened = enhancer.enhance(0.38)
+    enhancer = ImageEnhance.Contrast(darkened)
+    contrasted = enhancer.enhance(1.4)
+    if intensity >= 0.999:
+        return contrasted
+    return Image.fromarray(blend(np.array(base), np.array(contrasted), intensity), "RGB")
+
+
 def apply_theme_grading(images_dir: str, output_dir: str, theme: str) -> str:
     """
     Apply per-theme colour grading to all images in images_dir, saving to output_dir.
@@ -191,6 +224,13 @@ def apply_theme_grading(images_dir: str, output_dir: str, theme: str) -> str:
                 out = grade_red(img)
             elif theme == "bw":
                 out = grade_bw(img)
+            elif theme == "sepia":
+                if brown_ratio(img) < 0.12:
+                    out = grade_sepia(img)
+                else:
+                    out = img
+            elif theme == "low_exp":
+                out = grade_low_exposure(img)
             else:
                 out = img
 

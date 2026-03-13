@@ -14,7 +14,7 @@ import { uploadImages } from '../lib/api'
 
 const STORAGE_KEY = 'cogito_classic_text'
 const DEFAULT_CLASSIC_TEXT =
-  '# stoicism_pt1\nmarble statue philosophy\nancient greece\n\n# stoicism_pt2\nmeditation silence\nminimalist monk'
+  '# Stoicism\nmarble statue philosophy\nancient greece\nstoic stone\n\n# Existentialism\nmeditation silence\nminimalist monk'
 
 export interface BatchOutput {
   title: string | null
@@ -33,6 +33,7 @@ interface Props {
   onReuseHandled?: () => void
   pendingBundles?: { title: string | null; terms: string[] }[] | null
   onBundlesHandled?: () => void
+  onOpenPrompt?: () => void
 }
 
 function parseBatchText(text: string): string[] {
@@ -62,14 +63,14 @@ function parseClassicIntoBatches(text: string): BatchOutput[] {
   return batches
 }
 
-export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHandled, pendingBundles, onBundlesHandled }: Props) {
-  const [classicMode, setClassicMode] = useState(true)
+export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHandled, pendingBundles, onBundlesHandled, onOpenPrompt }: Props) {
+  const [classicMode, setClassicMode] = useState(false)
   const [classicText, setClassicText] = useState<string>(() => {
     try { return localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CLASSIC_TEXT }
     catch { return DEFAULT_CLASSIC_TEXT }
   })
   const [batches, setBatches] = useState<VisualBatch[]>([
-    { title: 'Batch 1', terms: 'marble statue philosophy\nancient greece\nstoic stone' },
+    { title: 'Stoicism', terms: 'marble statue philosophy\nancient greece\nstoic stone' },
   ])
   const [uploadedPaths, setUploadedPaths] = useState<Record<number, string[]>>({})
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
@@ -84,22 +85,32 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
 
   // Emit initial batches on mount
   useEffect(() => {
-    onBatchesChange(parseClassicIntoBatches(classicText))
+    if (classicMode) {
+      onBatchesChange(parseClassicIntoBatches(classicText))
+    } else {
+      onBatchesChange(visualToBatchOutputs(batches, uploadedPaths))
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Handle duplicate request from parent (replace editor content and switch to classic mode)
+  // Handle duplicate request from parent — mode-aware
   const prevReuse = useRef<typeof pendingReuse>(null)
   useEffect(() => {
     if (!pendingReuse || pendingReuse === prevReuse.current) return
     prevReuse.current = pendingReuse
-    const header = `# ${pendingReuse.title ?? 'Duplicated'}`
-    const termStr = pendingReuse.terms.join('\n')
-    const newBlock = `${header}\n${termStr}`
-    setClassicText(newBlock)
-    setClassicMode(true)
-    try { localStorage.setItem(STORAGE_KEY, newBlock) } catch { /* ignore */ }
-    onBatchesChange(parseClassicIntoBatches(newBlock))
+    if (!classicMode) {
+      const newCard: VisualBatch = { title: pendingReuse.title ?? 'Duplicated', terms: pendingReuse.terms.join('\n') }
+      const updated = [...batches, newCard]
+      setBatches(updated)
+      onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
+    } else {
+      const header = `# ${pendingReuse.title ?? 'Duplicated'}`
+      const termStr = pendingReuse.terms.join('\n')
+      const newBlock = `${header}\n${termStr}`
+      setClassicText(newBlock)
+      try { localStorage.setItem(STORAGE_KEY, newBlock) } catch { /* ignore */ }
+      onBatchesChange(parseClassicIntoBatches(newBlock))
+    }
     onReuseHandled?.()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingReuse])
@@ -123,7 +134,8 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
         title: b.title ?? 'Batch',
         terms: b.terms.join('\n'),
       }))
-      const updated = [...batches, ...newCards]
+      const onlyEmptyBatch = batches.length === 1 && !batches[0].terms.trim()
+      const updated = onlyEmptyBatch ? newCards : [...batches, ...newCards]
       setBatches(updated)
       onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
     }
@@ -217,7 +229,21 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-stone-300">Search terms</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-stone-300">Search terms</h2>
+          {onOpenPrompt && (
+            <button
+              onClick={onOpenPrompt}
+              className="flex items-center gap-1 text-xs text-stone-500 hover:text-brand-400 transition ml-2"
+              title="Get search terms using AI"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a3.75 3.75 0 01-5.304 0l-.356-.356a5 5 0 010-7.072z" />
+              </svg>
+              Get terms with AI
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <button
             onClick={handleClear}
@@ -240,7 +266,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
             value={classicText}
             onChange={e => handleClassicChange(e.target.value)}
             rows={8}
-            placeholder={"marble statue\nancient greece\n\n# stoicism_pt2\nmeditation silence"}
+            placeholder={"# Stoicism\nmarble statue philosophy\nancient greece\n\n# Existentialism\nmeditation silence"}
             className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 font-mono text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
           />
           <p className="text-[11px] text-stone-600 leading-relaxed">
@@ -258,14 +284,20 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
         <div className="space-y-3">
           {batches.map((batch, idx) => (
             <div key={idx} className="rounded-xl border border-stone-700 bg-stone-800 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <input
-                  value={batch.title}
-                  onChange={e => handleBatchTitleChange(idx, e.target.value)}
-                  className="bg-transparent text-sm font-medium text-stone-200 focus:outline-none"
-                />
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 flex-1 min-w-0 group">
+                  <svg className="w-3 h-3 text-stone-600 group-focus-within:text-brand-500 flex-shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  <input
+                    value={batch.title}
+                    onChange={e => handleBatchTitleChange(idx, e.target.value)}
+                    className="bg-transparent text-sm font-semibold text-stone-100 focus:outline-none border-b border-dashed border-stone-600 hover:border-stone-400 focus:border-brand-500 transition-colors pb-0.5 min-w-0 w-full"
+                    placeholder="Batch title…"
+                  />
+                </div>
                 {batches.length > 1 && (
-                  <button onClick={() => removeBatch(idx)} className="text-xs text-stone-600 hover:text-red-400">
+                  <button onClick={() => removeBatch(idx)} className="text-xs text-stone-600 hover:text-red-400 flex-shrink-0">
                     ✕ Remove
                   </button>
                 )}

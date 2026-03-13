@@ -8,30 +8,49 @@
  * We never collect card details on our domain.
  */
 
+import { useNavigate } from 'react-router-dom'
+
 const PLANS = [
   {
     name: 'Creator',
-    price: '£5 / month',
-    limit: '30 renders / month',
-    features: ['Short-form TikTok videos', 'Unsplash image fetching', 'Brown & BW grading'],
+    price: '£4.99 / month',
+    limit: '100 renders / month',
+    features: [
+      'Short-form TikTok & Reels videos',
+      'Unsplash + Pexels image fetching',
+      '9 colour grading themes',
+      'Batch generation',
+      'Preview & curate images before rendering',
+    ],
     checkoutUrl: import.meta.env.VITE_STRIPE_CREATOR_LINK as string,
     highlight: false,
   },
   {
     name: 'Pro',
-    price: '£12 / month',
+    price: '£9.99 / month',
     limit: 'Unlimited renders',
-    features: ['Everything in Creator', 'Unlimited renders', 'Priority processing'],
+    features: [
+      'Everything in Creator',
+      'Unlimited renders — no monthly cap',
+      'Never run out mid-campaign',
+      'Curated philosopher & thinker image library',
+      'Priority support',
+    ],
     checkoutUrl: import.meta.env.VITE_STRIPE_PRO_LINK as string,
     highlight: true,
   },
 ]
 
 export default function Pricing() {
+  const navigate = useNavigate()
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-stone-950 px-4 py-16">
-      <h1 className="mb-2 text-3xl font-bold text-brand-500">Cogito Content Studio</h1>
-      <p className="mb-10 text-stone-400">Choose your plan</p>
+    <div
+      className="relative flex min-h-screen flex-col items-center justify-center bg-stone-950 px-4 py-16 cursor-pointer"
+      onClick={() => navigate('/dashboard')}
+    >
+      <div onClick={e => e.stopPropagation()} className="flex flex-col items-center cursor-default">
+      <h1 className="mb-10 text-3xl font-bold text-brand-500">Choose your plan</h1>
 
       <div className="flex flex-col gap-6 sm:flex-row">
         {PLANS.map(plan => (
@@ -73,6 +92,10 @@ export default function Pricing() {
         <a href="/login" className="text-brand-500 hover:underline">
           Sign in
         </a>
+      </p>
+      </div>
+      <p className="absolute bottom-4 text-xs text-stone-700 pointer-events-none select-none">
+        Click anywhere outside to go back
       </p>
     </div>
   )

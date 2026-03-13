@@ -7,12 +7,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 
 const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS === 'true'
-import { generateVideo, prefetchImages, stagePreview, deleteJob } from '../lib/api'
-import type { JobStatus, PreviewBatchResult } from '../lib/api'
+import { generateVideo, generateVariants, stagePreview, deleteJob, getUsage } from '../lib/api'
+import type { JobStatus, PreviewBatchResult, UsageInfo } from '../lib/api'
 import BatchEditor from '../components/BatchEditor'
 import type { BatchOutput } from '../components/BatchEditor'
 import SettingsPanel from '../components/SettingsPanel'
@@ -25,6 +25,10 @@ import type { ToastItem } from '../components/Toast'
 import PreviewModal from '../components/PreviewModal'
 import type { ConfirmedBatch } from '../components/PreviewModal'
 import AdvancedModal from '../components/AdvancedModal'
+import OnboardingTour, { TOUR_STORAGE_KEY } from '../components/OnboardingTour'
+import PromptModal from '../components/PromptModal'
+import AppNavbar from '../components/AppNavbar'
+import InspirationCarousel from '../components/InspirationCarousel'
 
 interface Props {
   session: Session
@@ -32,8 +36,8 @@ interface Props {
 
 const DEFAULT_SETTINGS: VideoSettings = {
   resolution: '1080x1920',
-  seconds_per_image: 0.5,
-  total_seconds: 5,
+  seconds_per_image: 0.13,
+  total_seconds: 11,
   fps: 30,
   allow_repeats: true,
   color_theme: 'none',
@@ -41,13 +45,15 @@ const DEFAULT_SETTINGS: VideoSettings = {
 }
 
 const VARIANT_THEMES = [
-  { value: 'dark',  label: 'Dark Tones' },
-  { value: 'none',  label: 'Natural' },
-  { value: 'warm',  label: 'Amber & Earth' },
-  { value: 'grey',  label: 'Silver & Slate' },
-  { value: 'blue',  label: 'Cobalt & Mist' },
-  { value: 'red',   label: 'Crimson & Rose' },
-  { value: 'bw',    label: 'Monochrome' },
+  { value: 'none',    label: 'Natural',     dot: 'bg-stone-400' },
+  { value: 'dark',    label: 'Dark Tones',  dot: 'bg-stone-900 ring-1 ring-stone-600' },
+  { value: 'sepia',   label: 'Sepia',       dot: 'bg-amber-800' },
+  { value: 'warm',    label: 'Amber',       dot: 'bg-amber-500' },
+  { value: 'low_exp', label: 'Low Exposure',dot: 'bg-stone-950 ring-1 ring-stone-700' },
+  { value: 'grey',    label: 'Silver',      dot: 'bg-slate-400' },
+  { value: 'blue',    label: 'Cobalt',      dot: 'bg-blue-500' },
+  { value: 'red',     label: 'Crimson',     dot: 'bg-red-500' },
+  { value: 'bw',      label: 'Monochrome',  dot: 'bg-white ring-1 ring-stone-500' },
 ]
 
 export default function Dashboard({ session }: Props) {
@@ -67,17 +73,44 @@ export default function Dashboard({ session }: Props) {
   const [pendingBundles, setPendingBundles] = useState<{ title: string | null; terms: string[] }[] | null>(null)
   const [appliedPresetName, setAppliedPresetName] = useState<string | null>(null)
   const [showVariants, setShowVariants] = useState(false)
+  const [showPromptModal, setShowPromptModal] = useState(false)
   const [checkedThemes, setCheckedThemes] = useState<Set<string>>(new Set(['dark', 'bw', 'none']))
   const [variantStatus, setVariantStatus] = useState<string | null>(null)
   const [uploadedOnly, setUploadedOnly] = useState(false)
   const [accentFolder, setAccentFolder] = useState<string | null>(null)
   const [staging, setStaging] = useState(false)
   const [stagingError, setStagingError] = useState<string | null>(null)
+  const [stagingUsedPexels, setStagingUsedPexels] = useState(false)
   const [previewData, setPreviewData] = useState<PreviewBatchResult[] | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showGenDropdown, setShowGenDropdown] = useState(false)
+  const [showTour, setShowTour] = useState(false)
+  const [carouselKey, setCarouselKey] = useState(0)
+  const [carouselVisible, setCarouselVisible] = useState(true)
+  const [imageSource, setImageSource] = useState<'auto' | 'unsplash' | 'pexels' | 'both'>('auto')
+  const [showStagingOverlay, setShowStagingOverlay] = useState(false)
   const genDropdownRef = useRef<HTMLDivElement>(null)
   const stagingAbortRef = useRef<AbortController | null>(null)
+
+  // Usage query
+  const { data: usageInfo } = useQuery<UsageInfo>({
+    queryKey: ['usage'],
+    queryFn: getUsage,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  })
+
+  const trialExpired = usageInfo?.trial_expired === true
+  // 'auto' = Pexels (best default); translate before sending to API
+  const resolvedSource = imageSource === 'auto' ? 'pexels' : imageSource
+
+  // Auto-start tour on first visit
+  useEffect(() => {
+    if (!localStorage.getItem(TOUR_STORAGE_KEY)) {
+      const t = setTimeout(() => setShowTour(true), 800)
+      return () => clearTimeout(t)
+    }
+  }, [])
 
   // Browser tab title: show pending job count while running
   useEffect(() => {
@@ -138,6 +171,10 @@ export default function Dashboard({ session }: Props) {
   }
 
   const handleGenerate = useCallback(async () => {
+    if (trialExpired) {
+      setError('Your trial has ended. Upgrade to continue generating.')
+      return
+    }
     const validBatches = batches.filter(b => b.terms.length > 0)
     if (validBatches.length === 0) {
       setError('Enter at least one search term.')
@@ -145,7 +182,7 @@ export default function Dashboard({ session }: Props) {
     }
     setError(null)
     setSubmitting(true)
-    setPendingCount(validBatches.length)
+    setPendingCount(prev => prev + validBatches.length)
     try {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of validBatches) {
@@ -157,20 +194,24 @@ export default function Dashboard({ session }: Props) {
           preset_name: appliedPresetName ?? undefined,
           uploaded_only: uploadedOnly || undefined,
           accent_folder: accentFolder ?? undefined,
+          image_source: resolvedSource,
         })
         submitted.push({ jobId: res.job_id, title: batch.title })
       }
-      setActiveJobs(submitted)
-      setMinimizedJobs(new Set())
+      setActiveJobs(prev => [...submitted, ...prev])
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error')
       setPendingCount(0)
     } finally {
       setSubmitting(false)
     }
-  }, [batches, settings])
+  }, [batches, settings, trialExpired, appliedPresetName, uploadedOnly, accentFolder, resolvedSource])
 
   const handleGenerateVariants = useCallback(async () => {
+    if (trialExpired) {
+      setError('Your trial has ended. Upgrade to continue generating.')
+      return
+    }
     const validBatches = batches.filter(b => b.terms.length > 0)
     if (validBatches.length === 0) {
       setError('Enter at least one search term.')
@@ -184,37 +225,29 @@ export default function Dashboard({ session }: Props) {
     setSubmitting(true)
     const themesToRun = VARIANT_THEMES.filter(t => checkedThemes.has(t.value))
     const totalJobs = validBatches.length * themesToRun.length
-    setPendingCount(totalJobs)
+    setPendingCount(prev => prev + totalJobs)
     try {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of validBatches) {
-        // Prefetch images once for this batch — all theme variants share the same source images
-        setVariantStatus(batch.title ? `Fetching images for "${batch.title}"…` : 'Fetching images…')
-        const { paths } = await prefetchImages({
+        setVariantStatus(batch.title ? `Queuing variants for "${batch.title}"…` : 'Queuing variants…')
+        const res = await generateVariants({
           search_terms: batch.terms,
           resolution: settings.resolution,
           seconds_per_image: settings.seconds_per_image,
           total_seconds: settings.total_seconds,
+          fps: settings.fps,
+          allow_repeats: settings.allow_repeats,
           max_per_query: settings.max_per_query,
+          batch_title: batch.title ?? null,
+          themes: themesToRun.map(t => t.value),
         })
-
-        setVariantStatus('Queuing jobs…')
-        for (const theme of themesToRun) {
+        res.job_ids.forEach((jobId, i) => {
+          const theme = themesToRun[i]
           const title = batch.title ? `${batch.title} · ${theme.label}` : theme.label
-          const res = await generateVideo({
-            search_terms: batch.terms,
-            ...settings,
-            color_theme: theme.value,
-            batch_title: title,
-            uploaded_image_paths: paths.length ? paths : undefined,
-            uploaded_only: uploadedOnly || undefined,
-            accent_folder: accentFolder ?? undefined,
-          })
-          submitted.push({ jobId: res.job_id, title })
-        }
+          submitted.push({ jobId, title })
+        })
       }
-      setActiveJobs(submitted)
-      setMinimizedJobs(new Set())
+      setActiveJobs(prev => [...submitted, ...prev])
       setShowVariants(false)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error')
@@ -223,7 +256,7 @@ export default function Dashboard({ session }: Props) {
       setSubmitting(false)
       setVariantStatus(null)
     }
-  }, [batches, settings, checkedThemes])
+  }, [batches, settings, checkedThemes, trialExpired])
 
   const handleStagePreview = useCallback(async () => {
     const validBatches = batches.filter(b => b.terms.length > 0)
@@ -233,6 +266,7 @@ export default function Dashboard({ session }: Props) {
     }
     setError(null)
     setStagingError(null)
+    setStagingUsedPexels(false)
     setStaging(true)
     const abort = new AbortController()
     stagingAbortRef.current = abort
@@ -248,7 +282,9 @@ export default function Dashboard({ session }: Props) {
         total_seconds: settings.total_seconds,
         max_per_query: settings.max_per_query,
         color_theme: settings.color_theme,
+        image_source: resolvedSource,
       }, abort.signal)
+      if (res.pexels_fallback) setStagingUsedPexels(true)
       setPreviewData(res.batches)
     } catch (e: unknown) {
       if ((e as { name?: string }).name !== 'AbortError') {
@@ -258,7 +294,7 @@ export default function Dashboard({ session }: Props) {
       stagingAbortRef.current = null
       setStaging(false)
     }
-  }, [batches, settings])
+  }, [batches, settings, resolvedSource])
 
   const handlePreviewConfirm = useCallback(async (confirmedBatches: ConfirmedBatch[]) => {
     setPreviewData(null)
@@ -266,7 +302,7 @@ export default function Dashboard({ session }: Props) {
     if (eligible.length === 0) return
     setError(null)
     setSubmitting(true)
-    setPendingCount(eligible.length)
+    setPendingCount(prev => prev + eligible.length)
     try {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of eligible) {
@@ -279,18 +315,18 @@ export default function Dashboard({ session }: Props) {
           uploaded_only: true,
           accent_folder: accentFolder ?? undefined,
           preset_name: appliedPresetName ?? undefined,
+          image_source: resolvedSource,
         })
         submitted.push({ jobId: res.job_id, title: batch.batch_title })
       }
-      setActiveJobs(submitted)
-      setMinimizedJobs(new Set())
+      setActiveJobs(prev => [...submitted, ...prev])
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error')
       setPendingCount(0)
     } finally {
       setSubmitting(false)
     }
-  }, [settings, accentFolder, appliedPresetName])
+  }, [settings, accentFolder, appliedPresetName, resolvedSource])
 
   // Ctrl/Cmd+Enter to generate
   useEffect(() => {
@@ -309,10 +345,71 @@ export default function Dashboard({ session }: Props) {
     addToast(`✅ ${name} ready — download below`)
   }
 
+  const handleEditImages = useCallback(async (terms: string[], batchTitle: string | null) => {
+    setError(null)
+    setStagingError(null)
+    setStagingUsedPexels(false)
+    setStaging(true)
+    const abort = new AbortController()
+    stagingAbortRef.current = abort
+    try {
+      const res = await stagePreview({
+        batches: [{ search_terms: terms, batch_title: batchTitle, uploaded_image_paths: undefined }],
+        resolution: settings.resolution,
+        seconds_per_image: settings.seconds_per_image,
+        total_seconds: settings.total_seconds,
+        max_per_query: settings.max_per_query,
+        color_theme: settings.color_theme,
+        image_source: resolvedSource,
+      }, abort.signal)
+      if (res.pexels_fallback) setStagingUsedPexels(true)
+      setPreviewData(res.batches)
+    } catch (e: unknown) {
+      if ((e as { name?: string }).name !== 'AbortError') {
+        setStagingError(e instanceof Error ? e.message : 'Staging failed')
+      }
+    } finally {
+      stagingAbortRef.current = null
+      setStaging(false)
+    }
+  }, [settings, resolvedSource])
+
   function handleReuse(title: string | null, terms: string[], restoredSettings: Partial<VideoSettings> | null) {
     setPendingReuse({ title, terms })
-    if (restoredSettings) setSettings(prev => ({ ...prev, ...restoredSettings }))
+    if (restoredSettings) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { color_theme: _ct, ...rest } = restoredSettings
+      setSettings(prev => ({ ...prev, ...rest }))
+    }
   }
+
+  const handleColourGrade = useCallback(async (
+    terms: string[],
+    batchTitle: string | null,
+    restoredSettings: Partial<VideoSettings> | null,
+    theme: string,
+  ) => {
+    if (trialExpired) { setError('Your trial has ended. Upgrade to continue generating.'); return }
+    if (terms.length === 0) { setError('No search terms found for this job.'); return }
+    setError(null)
+    setSubmitting(true)
+    setPendingCount(prev => prev + 1)
+    try {
+      const merged = { ...settings, ...(restoredSettings ?? {}), color_theme: theme }
+      const res = await generateVideo({
+        search_terms: terms,
+        ...merged,
+        batch_title: batchTitle ? `${batchTitle} · ${theme}` : theme,
+        image_source: resolvedSource,
+      })
+      setActiveJobs(prev => [{ jobId: res.job_id, title: batchTitle ? `${batchTitle} · ${theme}` : theme }, ...prev])
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
+      setPendingCount(0)
+    } finally {
+      setSubmitting(false)
+    }
+  }, [settings, trialExpired, resolvedSource])
 
   function toggleTheme(value: string) {
     setCheckedThemes(prev => {
@@ -334,19 +431,37 @@ export default function Dashboard({ session }: Props) {
         </div>
       )}
 
-      {/* Navbar */}
-      <nav className="border-b border-stone-800 bg-stone-900 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="" className="h-12 w-auto" />
-          <img src="/just%20text.png" alt="PassiveClip" className="h-9 w-auto" />
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-stone-500">{session.user.email}</span>
-          <Link to="/account" className="text-xs text-stone-400 hover:text-stone-200">
-            Account
-          </Link>
-        </div>
-      </nav>
+      <AppNavbar session={session} activeTool="video" onShowTour={() => setShowTour(true)} />
+
+      {carouselVisible ? (
+        <InspirationCarousel
+          key={carouselKey}
+          onApply={(theme, bundles, appliedAccent) => {
+            setSettings(prev => ({ ...prev, color_theme: theme }))
+            setPendingBundles(bundles)
+            setAccentFolder(appliedAccent ?? null)
+          }}
+          onHide={() => setCarouselVisible(false)}
+        />
+      ) : (
+        <button
+          onClick={() => {
+            setCarouselKey(k => k + 1)
+            setCarouselVisible(true)
+          }}
+          className="w-full border-b border-stone-700 bg-stone-900 px-4 py-2.5 flex items-center justify-between hover:bg-stone-800 transition group"
+        >
+          <span className="text-xs font-medium text-stone-400 group-hover:text-stone-200 transition flex items-center gap-2">
+            <svg className="w-3.5 h-3.5 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h8" />
+            </svg>
+            Style templates
+          </span>
+          <svg className="w-3.5 h-3.5 text-stone-500 group-hover:text-stone-300 transition" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      )}
 
       <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -359,7 +474,7 @@ export default function Dashboard({ session }: Props) {
               <span className="rounded bg-brand-500/20 px-2 py-0.5 text-[10px] font-bold text-brand-400 tracking-wider">STEP 1</span>
               <span className="text-xs text-stone-500">Search terms</span>
             </div>
-            <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6">
+            <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="batch-editor">
               <TermBundles onLoad={bundles => setPendingBundles(bundles)} />
               <hr className="border-stone-800 my-4" />
               <BatchEditor
@@ -368,6 +483,7 @@ export default function Dashboard({ session }: Props) {
                 onReuseHandled={() => setPendingReuse(null)}
                 pendingBundles={pendingBundles}
                 onBundlesHandled={() => setPendingBundles(null)}
+                onOpenPrompt={() => setShowPromptModal(true)}
               />
             </div>
 
@@ -376,7 +492,7 @@ export default function Dashboard({ session }: Props) {
               <span className="rounded bg-brand-500/20 px-2 py-0.5 text-[10px] font-bold text-brand-400 tracking-wider">STEP 2</span>
               <span className="text-xs text-stone-500">Video settings</span>
             </div>
-            <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6">
+            <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="theme-selector">
               <SettingsPanel
                 settings={settings}
                 onChange={s => { setSettings(s); setAppliedPresetName(null) }}
@@ -396,12 +512,20 @@ export default function Dashboard({ session }: Props) {
               </div>
             )}
 
+            {stagingUsedPexels && !stagingError && (
+              <div className="rounded-xl bg-amber-950/60 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3 flex items-center gap-2">
+                <span>⚡</span>
+                <span>Unsplash rate limit hit — switched to Pexels for this preview.</span>
+              </div>
+            )}
+
             {/* Action row */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowAdvanced(true)}
                 className="rounded-xl border border-stone-700 px-4 py-3 text-stone-400 hover:border-stone-500 hover:text-stone-200 transition shrink-0"
                 title="Advanced settings"
+                data-tour="advanced-btn"
               >
                 ⚙
               </button>
@@ -409,6 +533,7 @@ export default function Dashboard({ session }: Props) {
               <button
                 onClick={() => setShowVariants(v => !v)}
                 disabled={submitting || staging}
+                data-tour="variants-btn"
                 className={`rounded-xl border px-4 py-3 text-sm transition shrink-0 disabled:opacity-50 ${showVariants ? 'border-brand-500 text-brand-400' : 'border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'}`}
                 title="Colour variants"
               >
@@ -418,7 +543,8 @@ export default function Dashboard({ session }: Props) {
               <div ref={genDropdownRef} className="relative flex-1 flex">
                 <button
                   onClick={handleGenerate}
-                  disabled={submitting || staging}
+                  disabled={submitting || staging || trialExpired}
+                  data-tour="generate-btn"
                   className="flex-1 rounded-l-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
                 >
                   {submitting ? 'Submitting…' : staging ? 'Fetching images…'
@@ -427,6 +553,7 @@ export default function Dashboard({ session }: Props) {
                 <button
                   onClick={() => setShowGenDropdown(v => !v)}
                   disabled={submitting || staging}
+                  data-tour="gen-dropdown"
                   className="rounded-r-xl bg-brand-700 px-3 text-white hover:bg-brand-800 disabled:opacity-50 transition border-l border-brand-600"
                 >
                   ▾
@@ -453,25 +580,28 @@ export default function Dashboard({ session }: Props) {
 
             {/* Variants inline panel */}
             {showVariants && (
-              <div className="rounded-xl border border-stone-800 bg-stone-900 p-4 space-y-3 mt-3">
-                <p className="text-xs text-stone-400">Select colour themes to generate one video per theme per batch:</p>
-                <div className="flex flex-wrap gap-2">
+              <div className="rounded-xl border border-stone-800 bg-stone-900/80 p-4 space-y-3 mt-3">
+                <p className="text-xs text-stone-500">Select themes — one video per theme per batch:</p>
+                <div className="grid grid-cols-3 gap-2">
                   {VARIANT_THEMES.map(t => (
-                    <label key={t.value} className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={checkedThemes.has(t.value)}
-                        onChange={() => toggleTheme(t.value)}
-                        className="accent-brand-500"
-                      />
-                      <span className="text-xs text-stone-300">{t.label}</span>
-                    </label>
+                    <button
+                      key={t.value}
+                      onClick={() => toggleTheme(t.value)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition ${
+                        checkedThemes.has(t.value)
+                          ? 'border-brand-500 bg-brand-500/10 text-stone-100'
+                          : 'border-stone-700 bg-stone-800/60 text-stone-400 hover:border-stone-500 hover:text-stone-200'
+                      }`}
+                    >
+                      <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${t.dot}`} />
+                      {t.label}
+                    </button>
                   ))}
                 </div>
                 <button
                   onClick={handleGenerateVariants}
                   disabled={submitting || checkedThemes.size === 0 || batchCount === 0}
-                  className="w-full rounded-lg bg-stone-700 py-2 text-xs font-semibold text-stone-200 hover:bg-stone-600 disabled:opacity-40 transition"
+                  className="w-full rounded-lg bg-brand-500/20 border border-brand-500/30 py-2.5 text-xs font-semibold text-brand-300 hover:bg-brand-500/30 disabled:opacity-40 transition"
                 >
                   {variantStatus ?? (submitting
                     ? 'Submitting…'
@@ -483,12 +613,35 @@ export default function Dashboard({ session }: Props) {
 
           {/* Right column: active jobs + recent jobs */}
           <div className="space-y-6">
+            {trialExpired && (
+              <div className="rounded-xl border border-red-900 bg-red-950/40 px-4 py-3">
+                <p className="text-xs text-red-400 font-medium mb-1">Trial ended</p>
+                <p className="text-xs text-stone-500 mb-2">Upgrade to keep generating videos.</p>
+                <a href="/pricing" className="block w-full rounded-lg bg-brand-500 py-2 text-center text-xs font-semibold text-white hover:bg-brand-700 transition">
+                  Upgrade →
+                </a>
+              </div>
+            )}
+
             {staging && (
               <div>
                 <h2 className="mb-3 text-sm font-semibold text-stone-300">Staging preview</h2>
-                <div className="rounded-xl border border-stone-700 bg-stone-800 p-4">
+                <div className="rounded-xl border border-stone-700 bg-stone-800 p-4 relative">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-stone-200">⏳ Fetching…</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-stone-200">⏳ Fetching…</span>
+                      <button
+                        onMouseEnter={() => setShowStagingOverlay(true)}
+                        onMouseLeave={() => setShowStagingOverlay(false)}
+                        className="text-stone-500 hover:text-stone-200 transition-colors focus:outline-none"
+                        aria-label="Show preview steps"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                          <circle cx="8.5" cy="8.5" r="5" />
+                          <line x1="13" y1="13" x2="17" y2="17" />
+                        </svg>
+                      </button>
+                    </div>
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs text-stone-500">preview</span>
                       <button
@@ -507,9 +660,35 @@ export default function Dashboard({ session }: Props) {
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-700">
                     <div className="h-1.5 w-2/3 rounded-full bg-brand-500 animate-pulse" />
                   </div>
+                  {showStagingOverlay && (
+                    <div className="absolute top-full left-0 right-0 mt-2 rounded-xl border border-stone-600/80 bg-stone-900 shadow-2xl overflow-hidden z-50 pointer-events-none">
+                      <div className="px-4 pt-3 pb-2.5 border-b border-stone-800/80">
+                        <p className="text-xs font-semibold text-stone-200">Preparing your preview</p>
+                        <p className="text-xs text-stone-500 mt-0.5">Images are fetched and graded — no token used yet</p>
+                      </div>
+                      <div className="px-4 py-3 space-y-2.5">
+                        {[
+                          { emoji: '🔍', label: 'Searching for photos',  sub: 'Querying your search terms' },
+                          { emoji: '📷', label: 'Downloading images',    sub: 'Saving to your preview pool' },
+                          { emoji: '🎨', label: 'Applying colour grade', sub: 'Styling images to match your theme' },
+                        ].map((s, i) => (
+                          <div key={i} className={`flex items-center gap-3 ${i > 0 ? 'opacity-50' : ''}`}>
+                            <div className="w-7 h-7 rounded-full bg-brand-500/10 flex items-center justify-center flex-shrink-0 text-sm">
+                              <span className="animate-pulse">{s.emoji}</span>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-stone-200">{s.label}</p>
+                              <p className="text-xs text-stone-500">{s.sub}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
+
             {activeJobs.length > 0 && (
               <div>
                 <h2 className="mb-3 text-sm font-semibold text-stone-300">
@@ -534,7 +713,7 @@ export default function Dashboard({ session }: Props) {
 
             <div>
               <h2 className="mb-3 text-sm font-semibold text-stone-300">Recent jobs</h2>
-              <RecentJobs onReuse={handleReuse} />
+              <RecentJobs onReuse={handleReuse} onEditImages={handleEditImages} onColourGrade={handleColourGrade} />
             </div>
           </div>
         </div>
@@ -543,9 +722,11 @@ export default function Dashboard({ session }: Props) {
       {showAdvanced && (
         <AdvancedModal
           settings={settings}
+          imageSource={imageSource}
           uploadedOnly={uploadedOnly}
           accentFolder={accentFolder}
           onSettingsChange={s => { setSettings(s); setAppliedPresetName(null) }}
+          onImageSourceChange={v => setImageSource(v)}
           onUploadedOnlyChange={setUploadedOnly}
           onAccentFolderChange={setAccentFolder}
           onPresetApplied={setAppliedPresetName}
@@ -560,6 +741,14 @@ export default function Dashboard({ session }: Props) {
           onCancel={() => setPreviewData(null)}
         />
       )}
+
+      <OnboardingTour
+        active={showTour}
+        onClose={() => setShowTour(false)}
+        onOpenPrompt={() => setShowPromptModal(true)}
+        onOpenVariants={() => setShowVariants(true)}
+      />
+      {showPromptModal && <PromptModal fromTour={showTour} onClose={() => setShowPromptModal(false)} />}
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>

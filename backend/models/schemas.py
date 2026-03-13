@@ -20,8 +20,9 @@ from pydantic import BaseModel, Field, field_validator
 
 
 ALLOWED_RESOLUTIONS = {"1080x1920", "1920x1080", "1080x1080"}
-ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw"}
-ALLOWED_ACCENT_FOLDERS = {"blue"}
+ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp"}
+ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold"}
+ALLOWED_IMAGE_SOURCES = {"unsplash", "pexels", "both"}
 
 
 class GenerateRequest(BaseModel):
@@ -43,6 +44,7 @@ class GenerateRequest(BaseModel):
     preset_name: Optional[str] = Field(default=None, max_length=60)
     uploaded_only: bool = False
     accent_folder: Optional[str] = Field(default=None)
+    image_source: str = Field(default="unsplash")
 
     @field_validator("search_terms")
     @classmethod
@@ -75,6 +77,13 @@ class GenerateRequest(BaseModel):
             raise ValueError(f"accent_folder must be one of: {', '.join(sorted(ALLOWED_ACCENT_FOLDERS))}")
         return v
 
+    @field_validator("image_source")
+    @classmethod
+    def validate_image_source(cls, v: str) -> str:
+        if v not in ALLOWED_IMAGE_SOURCES:
+            raise ValueError(f"image_source must be one of: {', '.join(sorted(ALLOWED_IMAGE_SOURCES))}")
+        return v
+
 
 class JobStatusResponse(BaseModel):
     job_id: str
@@ -84,6 +93,12 @@ class JobStatusResponse(BaseModel):
     thumbnail_url: Optional[str] = None
     error_message: Optional[str] = None
     batch_title: Optional[str] = None
+    # Config fields extracted from JSONB for display
+    color_theme: Optional[str] = None
+    resolution: Optional[str] = None
+    seconds_per_image: Optional[float] = None
+    total_seconds: Optional[float] = None
+    preset_name: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 
@@ -136,6 +151,7 @@ class PreviewStageRequest(BaseModel):
     total_seconds: float = Field(default=3.0, ge=1.0, le=120.0)
     max_per_query: int = Field(default=3, ge=1, le=30)
     color_theme: str = Field(default="none")
+    image_source: str = Field(default="unsplash")
 
     @field_validator("resolution")
     @classmethod
@@ -149,6 +165,13 @@ class PreviewStageRequest(BaseModel):
     def validate_color_theme(cls, v: str) -> str:
         if v not in ALLOWED_COLOR_THEMES:
             raise ValueError(f"color_theme must be one of: {', '.join(sorted(ALLOWED_COLOR_THEMES))}")
+        return v
+
+    @field_validator("image_source")
+    @classmethod
+    def validate_image_source(cls, v: str) -> str:
+        if v not in ALLOWED_IMAGE_SOURCES:
+            raise ValueError(f"image_source must be one of: {', '.join(sorted(ALLOWED_IMAGE_SOURCES))}")
         return v
 
 
@@ -165,3 +188,4 @@ class PreviewBatchResult(BaseModel):
 
 class PreviewStageResponse(BaseModel):
     batches: List[PreviewBatchResult]
+    pexels_fallback: bool = False

@@ -8,7 +8,7 @@ Both repos are git-initialised and build-verified. Follow these steps in order.
 
 1. Go to [supabase.com](https://supabase.com) → New project
 2. Note your **Project ref** (e.g. `abcdefghijkl`) — needed later
-3. In **SQL Editor**, paste and run the full contents of `supabase_schema.sql`
+3. In **SQL Editor**, paste and run the full contents of `supabase/schema.sql`
 4. In **Storage** → New bucket → name: `outputs`, set to **Private**
 5. In Storage → `outputs` bucket → Policies → New policy → For operation **SELECT**:
    ```
@@ -85,7 +85,7 @@ railway up
 railway variables set RAILWAY_PUBLIC_DOMAIN=cogito-backend-production.up.railway.app
 ```
 
-Railway reads `nixpacks.toml` automatically — ffmpeg is installed as part of the build.
+Railway builds from `Dockerfile` — Python 3.11 + ffmpeg are installed via `apt-get`.
 Check the deploy log for `Cogito SaaS backend starting up` to confirm startup succeeded.
 
 ---

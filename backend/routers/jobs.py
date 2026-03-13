@@ -39,6 +39,7 @@ async def get_job_status(
     job = await get_job(job_id, user_id, db)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    cfg = job.get("config") or {}
     return JobStatusResponse(
         job_id=job["id"],
         status=job["status"],
@@ -47,6 +48,11 @@ async def get_job_status(
         thumbnail_url=job.get("thumbnail_url"),
         error_message=job.get("error_message"),
         batch_title=job.get("batch_title"),
+        color_theme=cfg.get("color_theme"),
+        resolution=cfg.get("resolution"),
+        seconds_per_image=cfg.get("seconds_per_image"),
+        total_seconds=cfg.get("total_seconds"),
+        preset_name=cfg.get("preset_name"),
         created_at=job["created_at"],
         completed_at=job.get("completed_at"),
     )
@@ -55,7 +61,7 @@ async def get_job_status(
 @router.get("/jobs", response_model=list[JobListItem])
 async def get_recent_jobs(user_id: str = Depends(get_current_user_id)):
     db = get_client()
-    jobs = await list_jobs(user_id, db, limit=10)
+    jobs = await list_jobs(user_id, db, limit=15)
     return [
         JobListItem(
             job_id=j["id"],

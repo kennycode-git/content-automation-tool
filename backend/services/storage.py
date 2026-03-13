@@ -123,12 +123,24 @@ async def upload_user_image(data: bytes, user_id: str, filename: str) -> str:
 
 def list_accent_images(folder: str) -> list:
     """
-    List all file names inside the accent bucket at prefix /{folder}/.
+    List all image files inside the accent bucket at prefix /{folder}/.
     Returns a list of full storage paths e.g. ["blue/img001.jpg", ...].
+    Filters out folder placeholder entries and non-image files.
     """
+    IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
     client = get_client()
     result = client.storage.from_("accent").list(folder)
-    paths = [f"{folder}/{item['name']}" for item in (result or []) if item.get("name")]
+    logger.info("accent/%s raw listing: %d items", folder, len(result or []))
+    for item in (result or []):
+        logger.debug("  accent item: name=%r id=%r metadata=%r", item.get("name"), item.get("id"), item.get("metadata"))
+    paths = [
+        f"{folder}/{item['name']}"
+        for item in (result or [])
+        if item.get("name")
+        and not item["name"].startswith(".")
+        and any(item["name"].lower().endswith(ext) for ext in IMAGE_EXTS)
+        and item.get("id") is not None  # folder entries have id=None
+    ]
     logger.info("Listed %d accent images in accent/%s", len(paths), folder)
     return paths
 

@@ -45,7 +45,6 @@ def _decode_token(token: str) -> dict:
     """Verify a Supabase JWT (HS256 or ES256) and return its payload."""
     try:
         header = jwt.get_unverified_header(token)
-        print("TOKEN HEADER: ", header)
     except JWTError as exc:
         raise JWTError(f"Malformed token header: {exc}") from exc
 

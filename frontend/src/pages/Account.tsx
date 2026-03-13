@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 interface Props {
@@ -23,11 +24,13 @@ interface Usage {
 }
 
 const PLAN_LIMITS: Record<string, number | null> = {
+  trial: 25,
   creator: 30,
   pro: null,
 }
 
 export default function Account({ session }: Props) {
+  const navigate = useNavigate()
   const [sub, setSub] = useState<Sub | null>(null)
   const [usage, setUsage] = useState<Usage | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,8 +58,14 @@ export default function Account({ session }: Props) {
   const used = usage?.render_count ?? 0
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-stone-950 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-stone-800 bg-stone-900 p-8 shadow-xl">
+    <div
+      className="relative flex min-h-screen flex-col items-center justify-center bg-stone-950 px-4 cursor-pointer"
+      onClick={() => navigate('/dashboard')}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-stone-800 bg-stone-900 p-8 shadow-xl cursor-default"
+        onClick={e => e.stopPropagation()}
+      >
         <h1 className="mb-1 text-xl font-bold text-brand-500">Account</h1>
         <p className="mb-6 text-sm text-stone-400">{session.user.email}</p>
 
@@ -70,6 +79,9 @@ export default function Account({ session }: Props) {
               <p className={`mt-0.5 text-xs font-medium ${sub?.status === 'active' ? 'text-green-400' : 'text-red-400'}`}>
                 {sub?.status ?? 'No active subscription'}
               </p>
+              {sub?.plan === 'trial' && (
+                <p className="mt-1 text-xs text-stone-500">21-day trial</p>
+              )}
             </div>
 
             <div className="rounded-xl border border-stone-700 bg-stone-800 p-4">
@@ -106,6 +118,9 @@ export default function Account({ session }: Props) {
           </div>
         )}
       </div>
+      <p className="absolute bottom-4 text-xs text-stone-700 pointer-events-none select-none">
+        Click anywhere outside to go back
+      </p>
     </div>
   )
 }
