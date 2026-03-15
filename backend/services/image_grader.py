@@ -140,15 +140,16 @@ def grade_blue(img: Image.Image, intensity: float = 0.6) -> Image.Image:
     return Image.fromarray(blend(arr, graded, intensity), "RGB")
 
 
-def grade_red(img: Image.Image, intensity: float = 0.85) -> Image.Image:
-    """Crimson grade: lift red channel, crush greens and blues, boost saturation."""
+def grade_red(img: Image.Image, intensity: float = 0.80) -> Image.Image:
+    """Crimson grade: lift red, crush green/blue, darken, boost saturation."""
     base = img.convert("RGB")
     arr = np.array(base, dtype=np.float32)
-    arr[:, :, 0] = (arr[:, :, 0] * 1.30).clip(0, 255)  # strong red lift
-    arr[:, :, 1] = (arr[:, :, 1] * 0.72).clip(0, 255)  # crush green
-    arr[:, :, 2] = (arr[:, :, 2] * 0.60).clip(0, 255)  # crush blue
+    arr[:, :, 0] = (arr[:, :, 0] * 1.22).clip(0, 255)  # red lift
+    arr[:, :, 1] = (arr[:, :, 1] * 0.78).clip(0, 255)  # crush green
+    arr[:, :, 2] = (arr[:, :, 2] * 0.68).clip(0, 255)  # crush blue
     graded = Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGB")
-    graded = ImageEnhance.Color(graded).enhance(1.4)  # saturation boost
+    graded = ImageEnhance.Brightness(graded).enhance(0.88)  # darken
+    graded = ImageEnhance.Color(graded).enhance(1.3)         # saturation boost
     return Image.fromarray(blend(np.array(base, dtype=np.uint8), np.array(graded), intensity), "RGB")
 
 

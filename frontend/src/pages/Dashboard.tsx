@@ -744,6 +744,7 @@ export default function Dashboard({ session }: Props) {
 
       <OnboardingTour
         active={showTour}
+        isFirstVisit={!localStorage.getItem(TOUR_STORAGE_KEY)}
         onClose={() => setShowTour(false)}
         onOpenPrompt={() => setShowPromptModal(true)}
         onOpenVariants={() => setShowVariants(true)}

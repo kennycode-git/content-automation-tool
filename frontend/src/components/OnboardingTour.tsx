@@ -34,25 +34,27 @@ function getTargetRect(target: string): Rect | null {
 
 interface Props {
   active: boolean
+  isFirstVisit: boolean
   onClose: () => void
   onOpenPrompt: () => void
   onOpenVariants: () => void
 }
 
-export default function OnboardingTour({ active, onClose, onOpenPrompt, onOpenVariants }: Props) {
-  const [stepIdx, setStepIdx] = useState(0)
+export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPrompt, onOpenVariants }: Props) {
+  // -1 = welcome screen (first visit only), 0+ = spotlight steps
+  const [stepIdx, setStepIdx] = useState<number>(() => isFirstVisit ? -1 : 0)
   const [rect, setRect] = useState<Rect | null>(null)
   const animFrame = useRef<number>(0)
 
   const STEPS: TourStep[] = useMemo(() => [
     {
       target: 'batch-editor',
-      title: 'Step 1 — Search terms',
+      title: 'Search terms',
       description: 'Add your search terms here — each card becomes a separate video. Give each batch a title so your outputs are easy to identify. Add multiple batches to generate several videos in one run.',
     },
     {
       target: 'batch-editor',
-      title: 'Step 2 — Classic text mode',
+      title: 'Classic text mode',
       description: (
         <>
           Switch to <strong className="text-stone-200">Classic text</strong> mode for a faster, power-user workflow. You can use AI to generate a full batch list in the correct format in seconds.{' '}
@@ -67,12 +69,12 @@ export default function OnboardingTour({ active, onClose, onOpenPrompt, onOpenVa
     },
     {
       target: 'theme-selector',
-      title: 'Step 3 — Colour themes',
+      title: 'Colour themes',
       description: 'Choose a visual style for your video. Hover the eye icon next to each theme to preview it. Dark Tones and Low Exposure work best for white text overlays.',
     },
     {
       target: 'advanced-btn',
-      title: 'Step 4 — Advanced settings',
+      title: 'Advanced settings',
       description: (
         <>
           Click <strong className="text-stone-200">⚙</strong> to open advanced options. Change the <strong className="text-stone-200">image source</strong> (Unsplash, Pexels, or both), and add <strong className="text-stone-200">accent images</strong> — branded photos in blue, red, or gold sprinkled into ~20% of your frames for a signature look.
@@ -81,34 +83,34 @@ export default function OnboardingTour({ active, onClose, onOpenPrompt, onOpenVa
     },
     {
       target: 'variants-btn',
-      title: 'Step 5 — Colour variants',
+      title: 'Colour variants',
       onEnter: onOpenVariants,
       description: 'Generate the same video in multiple colour styles at once — perfect for A/B testing before posting. Select which themes you want below, then hit Generate variants.',
     },
     {
       target: 'gen-dropdown',
-      title: 'Step 6 — Preview before generating',
+      title: 'Preview before generating',
       description: 'Click ▾ then "Preview images first →" to browse and curate your images before spending a credit on the full render.',
     },
     {
       target: 'generate-btn',
-      title: 'Step 7 — Generate',
+      title: 'Generate',
       description: 'Hit Generate to create your video. Each render uses 1 credit. Watch it build in real-time in the panel on the right.',
     },
   ], [onOpenPrompt, onOpenVariants])
 
-  const step = STEPS[stepIdx]
+  const step = stepIdx >= 0 ? STEPS[stepIdx] : null
 
   // Track target element position (handles scroll/resize)
   useLayoutEffect(() => {
-    if (!active) return
+    if (!active || !step) return
     function update() {
-      setRect(getTargetRect(step.target))
+      setRect(getTargetRect(step!.target))
       animFrame.current = requestAnimationFrame(update)
     }
     animFrame.current = requestAnimationFrame(update)
     return () => cancelAnimationFrame(animFrame.current)
-  }, [active, step.target])
+  }, [active, step])
 
   const handleClose = useCallback(() => {
     localStorage.setItem(TOUR_STORAGE_KEY, 'true')
@@ -129,12 +131,12 @@ export default function OnboardingTour({ active, onClose, onOpenPrompt, onOpenVa
 
   // Reset step index when tour opens
   useEffect(() => {
-    if (active) setStepIdx(0)
-  }, [active])
+    if (active) setStepIdx(isFirstVisit ? -1 : 0)
+  }, [active, isFirstVisit])
 
   // Call onEnter when a step becomes active
   useEffect(() => {
-    if (active) {
+    if (active && stepIdx >= 0) {
       STEPS[stepIdx]?.onEnter?.()
     }
   }, [stepIdx, active]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -153,6 +155,60 @@ export default function OnboardingTour({ active, onClose, onOpenPrompt, onOpenVa
 
   if (!active) return null
 
+  // ── Welcome screen (step -1, first visit only) ──────────────────────────────
+  if (stepIdx === -1) {
+    return (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4">
+        <div
+          className="w-full max-w-md rounded-2xl border border-stone-700 bg-stone-900 shadow-2xl p-8"
+          onClick={e => e.stopPropagation()}
+        >
+          <img src="/logo%20w%20text.png" alt="PassiveClip" className="mx-auto mb-5 h-14 w-auto" />
+
+          <h2 className="text-center text-lg font-semibold text-stone-100 mb-2">
+            Welcome to PassiveClip
+          </h2>
+          <p className="text-center text-sm text-stone-400 mb-6 leading-relaxed">
+            Turn search terms into short-form videos in seconds — no editing required.
+            Just add your topics, pick a visual style, and hit Generate.
+          </p>
+
+          <ul className="space-y-3 mb-8">
+            {[
+              { icon: '🔍', label: 'Add search terms', detail: 'Each batch of terms becomes one video' },
+              { icon: '🎨', label: 'Choose a colour theme', detail: 'Dark, sepia, monochrome and more' },
+              { icon: '⚡', label: 'Generate & download', detail: 'Your MP4 is ready in under a minute' },
+            ].map(({ icon, label, detail }) => (
+              <li key={label} className="flex items-start gap-3">
+                <span className="mt-0.5 text-base leading-none">{icon}</span>
+                <span className="text-sm text-stone-300">
+                  <strong className="text-stone-100">{label}</strong>
+                  <span className="text-stone-500"> — {detail}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleClose}
+              className="flex-1 rounded-lg border border-stone-700 py-2.5 text-sm text-stone-400 hover:text-stone-200 hover:border-stone-500 transition"
+            >
+              Skip
+            </button>
+            <button
+              onClick={() => setStepIdx(0)}
+              className="flex-1 rounded-lg bg-brand-500 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 transition"
+            >
+              Show me around →
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Spotlight tour (steps 0–6) ───────────────────────────────────────────────
   const PAD = 10
   const spotTop    = (rect?.top    ?? 0) - PAD
   const spotLeft   = (rect?.left   ?? 0) - PAD
@@ -215,8 +271,8 @@ export default function OnboardingTour({ active, onClose, onOpenPrompt, onOpenVa
           <span className="ml-auto text-xs text-stone-500">{stepIdx + 1} / {STEPS.length}</span>
         </div>
 
-        <h3 className="text-sm font-semibold text-stone-100 mb-1">{step.title}</h3>
-        <div className="text-xs text-stone-400 leading-relaxed">{step.description}</div>
+        <h3 className="text-sm font-semibold text-stone-100 mb-1">{step!.title}</h3>
+        <div className="text-xs text-stone-400 leading-relaxed">{step!.description}</div>
 
         <div className="flex items-center justify-between mt-4">
           <button
