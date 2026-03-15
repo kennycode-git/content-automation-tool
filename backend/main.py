@@ -22,7 +22,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-from routers import auth, generate, jobs, presets, preview, stripe_webhook
+from routers import auth, generate, jobs, presets, preview, stripe_webhook, trial_auth
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,6 +82,7 @@ app.include_router(jobs.router, prefix="/api", tags=["jobs"])
 app.include_router(presets.router, prefix="/api", tags=["presets"])
 app.include_router(preview.router, prefix="/api", tags=["preview"])
 app.include_router(stripe_webhook.router, tags=["stripe"])
+app.include_router(trial_auth.router, prefix="/api", tags=["trial-auth"])
 
 
 @app.get("/health", tags=["health"])

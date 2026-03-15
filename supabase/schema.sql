@@ -107,6 +107,22 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION create_trial_subscription();
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Trial invites: closed-beta access list.
+-- Admin adds email rows manually via Supabase dashboard.
+-- Backend marks claimed=true when user activates their account.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS trial_invites (
+  email       TEXT PRIMARY KEY,
+  claimed     BOOLEAN NOT NULL DEFAULT false,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- RLS: no user-facing policies — accessed only by service_role (backend).
+ALTER TABLE trial_invites ENABLE ROW LEVEL SECURITY;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Nightly cleanup: find jobs with expired output URLs (>48h) for Edge Function processing.
 -- The Edge Function or pg_cron job should:
 --   SELECT id, output_url, user_id FROM jobs
