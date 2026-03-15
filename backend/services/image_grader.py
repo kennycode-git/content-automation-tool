@@ -140,20 +140,16 @@ def grade_blue(img: Image.Image, intensity: float = 0.6) -> Image.Image:
     return Image.fromarray(blend(arr, graded, intensity), "RGB")
 
 
-def grade_red(img: Image.Image, intensity: float = 0.6) -> Image.Image:
-    """HSV hue shift toward red, lift red channel."""
+def grade_red(img: Image.Image, intensity: float = 0.85) -> Image.Image:
+    """Crimson grade: lift red channel, crush greens and blues, boost saturation."""
     base = img.convert("RGB")
-    arr = np.array(base, dtype=np.uint8)
-    hsv = rgb_to_hsv_np(arr)
-    h = hsv[:, :, 0].astype(np.int16)
-    s = hsv[:, :, 1].astype(np.int16)
-    v = hsv[:, :, 2].astype(np.int16)
-    # +10° toward red
-    h = ((h + int(255 * 10 / 360)) % 256).astype(np.uint8)
-    graded_arr = hsv_to_rgb_np(np.stack([h, s.astype(np.uint8), v.astype(np.uint8)], axis=2)).astype(np.float32)
-    graded_arr[:, :, 0] = (graded_arr[:, :, 0] * 1.06).clip(0, 255)
-    graded = graded_arr.clip(0, 255).astype(np.uint8)
-    return Image.fromarray(blend(arr, graded, intensity), "RGB")
+    arr = np.array(base, dtype=np.float32)
+    arr[:, :, 0] = (arr[:, :, 0] * 1.30).clip(0, 255)  # strong red lift
+    arr[:, :, 1] = (arr[:, :, 1] * 0.72).clip(0, 255)  # crush green
+    arr[:, :, 2] = (arr[:, :, 2] * 0.60).clip(0, 255)  # crush blue
+    graded = Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGB")
+    graded = ImageEnhance.Color(graded).enhance(1.4)  # saturation boost
+    return Image.fromarray(blend(np.array(base, dtype=np.uint8), np.array(graded), intensity), "RGB")
 
 
 def grade_sepia(img: Image.Image, intensity: float = 0.70) -> Image.Image:
