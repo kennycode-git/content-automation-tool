@@ -86,6 +86,27 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- The backend uses service_role key to INSERT files — no INSERT policy needed.
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Auto-provision trial subscription on new user sign-up.
+-- Fires for every auth method (email/password, magic link, OAuth).
+-- ON CONFLICT DO NOTHING ensures Stripe-provisioned rows are never overwritten.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION create_trial_subscription()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.subscriptions (user_id, status, plan, trial_expires_at)
+  VALUES (NEW.id, 'active', 'trial', NOW() + INTERVAL '21 days')
+  ON CONFLICT (user_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION create_trial_subscription();
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Nightly cleanup: find jobs with expired output URLs (>48h) for Edge Function processing.
 -- The Edge Function or pg_cron job should:
 --   SELECT id, output_url, user_id FROM jobs

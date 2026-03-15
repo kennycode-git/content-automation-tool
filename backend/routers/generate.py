@@ -33,6 +33,9 @@ from services.storage import upload_user_image
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Set to False when Stripe is live and you want to enforce subscriptions.
+TRIAL_MODE = True
+
 PLAN_LIMITS: dict = {
     "trial": 100,
     "creator": 100,
@@ -64,44 +67,45 @@ async def generate(
 ):
     db = get_client()
 
-    # --- Subscription gate ---
-    sub_result = (
-        db.table("subscriptions")
-        .select("status, plan, trial_expires_at")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    sub = sub_result.data
-    if not sub or sub.get("status") != "active":
-        raise HTTPException(status_code=403, detail="No active subscription.")
-
-    # --- Trial expiry check ---
-    plan = sub.get("plan", "creator")
-    if plan == "trial" and _trial_expired(sub):
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "trial_expired", "message": "Your 21-day trial has ended. Upgrade to continue generating."},
-        )
-
-    # --- Usage gate ---
-    limit = PLAN_LIMITS.get(plan)
-    if limit is not None:
-        usage_result = (
-            db.table("usage")
-            .select("render_count")
+    if not TRIAL_MODE:
+        # --- Subscription gate ---
+        sub_result = (
+            db.table("subscriptions")
+            .select("status, plan, trial_expires_at")
             .eq("user_id", user_id)
-            .eq("month", _current_month())
             .maybe_single()
             .execute()
         )
-        usage = usage_result.data
-        count = usage["render_count"] if usage else 0
-        if count >= limit:
+        sub = sub_result.data
+        if not sub or sub.get("status") != "active":
+            raise HTTPException(status_code=403, detail="No active subscription.")
+
+        # --- Trial expiry check ---
+        plan = sub.get("plan", "creator")
+        if plan == "trial" and _trial_expired(sub):
             raise HTTPException(
-                status_code=429,
-                detail=f"Monthly render limit of {limit} reached. Upgrade to Pro for unlimited renders.",
+                status_code=403,
+                detail={"code": "trial_expired", "message": "Your 21-day trial has ended. Upgrade to continue generating."},
             )
+
+        # --- Usage gate ---
+        limit = PLAN_LIMITS.get(plan)
+        if limit is not None:
+            usage_result = (
+                db.table("usage")
+                .select("render_count")
+                .eq("user_id", user_id)
+                .eq("month", _current_month())
+                .maybe_single()
+                .execute()
+            )
+            usage = usage_result.data
+            count = usage["render_count"] if usage else 0
+            if count >= limit:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Monthly render limit of {limit} reached. Upgrade to Pro for unlimited renders.",
+                )
 
     # --- Create job ---
     config = JobConfig(
@@ -195,38 +199,39 @@ async def generate_variants(
 ):
     db = get_client()
 
-    # --- Subscription gate ---
-    sub_result = (
-        db.table("subscriptions").select("status, plan, trial_expires_at")
-        .eq("user_id", user_id).maybe_single().execute()
-    )
-    sub = sub_result.data
-    if not sub or sub.get("status") != "active":
-        raise HTTPException(status_code=403, detail="No active subscription.")
-
-    # --- Trial expiry check ---
-    plan = sub.get("plan", "creator")
-    if plan == "trial" and _trial_expired(sub):
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "trial_expired", "message": "Your 21-day trial has ended. Upgrade to continue generating."},
+    if not TRIAL_MODE:
+        # --- Subscription gate ---
+        sub_result = (
+            db.table("subscriptions").select("status, plan, trial_expires_at")
+            .eq("user_id", user_id).maybe_single().execute()
         )
+        sub = sub_result.data
+        if not sub or sub.get("status") != "active":
+            raise HTTPException(status_code=403, detail="No active subscription.")
 
-    # --- Usage gate (check enough renders remain for all variants) ---
-    limit = PLAN_LIMITS.get(plan)
-    if limit is not None:
-        usage_result = (
-            db.table("usage").select("render_count")
-            .eq("user_id", user_id).eq("month", _current_month())
-            .maybe_single().execute()
-        )
-        usage = usage_result.data
-        count = usage["render_count"] if usage else 0
-        if count + len(body.themes) > limit:
+        # --- Trial expiry check ---
+        plan = sub.get("plan", "creator")
+        if plan == "trial" and _trial_expired(sub):
             raise HTTPException(
-                status_code=429,
-                detail=f"Not enough renders remaining ({limit - count} left, {len(body.themes)} needed). Upgrade to Pro for unlimited renders.",
+                status_code=403,
+                detail={"code": "trial_expired", "message": "Your 21-day trial has ended. Upgrade to continue generating."},
             )
+
+        # --- Usage gate (check enough renders remain for all variants) ---
+        limit = PLAN_LIMITS.get(plan)
+        if limit is not None:
+            usage_result = (
+                db.table("usage").select("render_count")
+                .eq("user_id", user_id).eq("month", _current_month())
+                .maybe_single().execute()
+            )
+            usage = usage_result.data
+            count = usage["render_count"] if usage else 0
+            if count + len(body.themes) > limit:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Not enough renders remaining ({limit - count} left, {len(body.themes)} needed). Upgrade to Pro for unlimited renders.",
+                )
 
     # --- Create one job row per theme ---
     job_ids: List[str] = []

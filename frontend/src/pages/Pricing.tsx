@@ -10,7 +10,29 @@
 
 import { useNavigate } from 'react-router-dom'
 
-const PLANS = [
+type Plan = {
+  name: string
+  price: string
+  limit: string
+  features: string[]
+  highlight: boolean
+} & ({ trial: true; checkoutUrl?: never } | { trial?: false; checkoutUrl: string })
+
+const PLANS: Plan[] = [
+  {
+    name: 'Free Trial',
+    price: '21 days free',
+    limit: '25 renders',
+    features: [
+      'No credit card required',
+      'Short-form TikTok & Reels videos',
+      'Unsplash + Pexels image fetching',
+      '9 colour grading themes',
+      'Batch generation',
+    ],
+    trial: true,
+    highlight: false,
+  },
   {
     name: 'Creator',
     price: '£4.99 / month',
@@ -77,12 +99,21 @@ export default function Pricing() {
                 </li>
               ))}
             </ul>
-            <a
-              href={plan.checkoutUrl}
-              className="mt-6 block w-full rounded-lg bg-brand-500 py-2 text-center text-sm font-semibold text-white hover:bg-brand-700"
-            >
-              Get started
-            </a>
+            {plan.trial ? (
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="mt-6 block w-full rounded-lg border border-brand-500 py-2 text-center text-sm font-semibold text-brand-500 hover:bg-brand-500 hover:text-white transition"
+              >
+                Start free trial
+              </button>
+            ) : (
+              <a
+                href={plan.checkoutUrl}
+                className="mt-6 block w-full rounded-lg bg-brand-500 py-2 text-center text-sm font-semibold text-white hover:bg-brand-700"
+              >
+                Get started
+              </a>
+            )}
           </div>
         ))}
       </div>
