@@ -112,7 +112,7 @@ export default function Login() {
       redirectTo: `${window.location.origin}/login`,
     })
     if (error) setError(error.message)
-    else setMessage('Password reset email sent — check your inbox.')
+    else setMessage('Password reset email sent. Check your inbox.')
     setLoading(false)
   }
 

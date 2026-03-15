@@ -48,7 +48,7 @@ function ProgressOverlay({ status, message, imageCount }: {
           {isQueued ? 'Waiting to start…' : 'Your video is being made'}
         </p>
         {!isQueued && (
-          <p className="text-xs text-stone-500 mt-0.5">You can carry on — we'll let you know when it's ready</p>
+          <p className="text-xs text-stone-500 mt-0.5">You can carry on. We'll let you know when it's ready</p>
         )}
       </div>
 

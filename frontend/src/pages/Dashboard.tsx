@@ -342,7 +342,7 @@ export default function Dashboard({ session }: Props) {
   function handleJobDone(job: JobStatus) {
     setPendingCount(prev => Math.max(0, prev - 1))
     const name = job.batch_title || 'Video'
-    addToast(`✅ ${name} ready — download below`)
+    addToast(`✅ ${name} ready. Download below`)
   }
 
   const handleEditImages = useCallback(async (terms: string[], batchTitle: string | null) => {
@@ -515,7 +515,7 @@ export default function Dashboard({ session }: Props) {
             {stagingUsedPexels && !stagingError && (
               <div className="rounded-xl bg-amber-950/60 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3 flex items-center gap-2">
                 <span>⚡</span>
-                <span>Unsplash rate limit hit — switched to Pexels for this preview.</span>
+                <span>Unsplash rate limit hit. Switched to Pexels for this preview.</span>
               </div>
             )}
 
@@ -581,7 +581,7 @@ export default function Dashboard({ session }: Props) {
             {/* Variants inline panel */}
             {showVariants && (
               <div className="rounded-xl border border-stone-800 bg-stone-900/80 p-4 space-y-3 mt-3">
-                <p className="text-xs text-stone-500">Select themes — one video per theme per batch:</p>
+                <p className="text-xs text-stone-500">Select themes (one video per theme per batch):</p>
                 <div className="grid grid-cols-3 gap-2">
                   {VARIANT_THEMES.map(t => (
                     <button
@@ -664,7 +664,7 @@ export default function Dashboard({ session }: Props) {
                     <div className="absolute top-full left-0 right-0 mt-2 rounded-xl border border-stone-600/80 bg-stone-900 shadow-2xl overflow-hidden z-50 pointer-events-none">
                       <div className="px-4 pt-3 pb-2.5 border-b border-stone-800/80">
                         <p className="text-xs font-semibold text-stone-200">Preparing your preview</p>
-                        <p className="text-xs text-stone-500 mt-0.5">Images are fetched and graded — no token used yet</p>
+                        <p className="text-xs text-stone-500 mt-0.5">Images are fetched and graded. No credit used yet</p>
                       </div>
                       <div className="px-4 py-3 space-y-2.5">
                         {[

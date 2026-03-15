@@ -53,7 +53,7 @@ const PLANS: Plan[] = [
     limit: 'Unlimited renders',
     features: [
       'Everything in Creator',
-      'Unlimited renders — no monthly cap',
+      'Unlimited renders, no monthly cap',
       'Never run out mid-campaign',
       'Curated philosopher & thinker image library',
       'Priority support',

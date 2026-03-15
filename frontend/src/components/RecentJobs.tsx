@@ -107,7 +107,7 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade }: Pro
       )
       setResignedAt(prev => ({ ...prev, [jobId]: Date.now() }))
     } catch {
-      alert('Could not refresh the URL — the video file may have been deleted from storage.')
+      alert('Could not refresh the URL. The video file may have been deleted from storage.')
     } finally {
       setResigning(prev => ({ ...prev, [jobId]: false }))
     }

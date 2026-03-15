@@ -222,6 +222,25 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
                 )}
               </div>
             ))}
+
+            {/* Create Your Own — coming soon */}
+            <div
+              className="group relative flex items-center gap-2 px-2 py-1.5 border-t border-stone-700/50 cursor-not-allowed"
+              onMouseEnter={() => setHovered('__custom__')}
+              onMouseLeave={() => setHovered(null)}
+            >
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-stone-700 ring-1 ring-stone-600 ring-dashed" />
+              <span className="text-sm text-stone-600">Create Your Own</span>
+              <span className="ml-auto text-[10px] text-stone-700 font-medium">Soon</span>
+              {hovered === '__custom__' && (
+                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 w-52 rounded-lg border border-stone-600 bg-stone-900 shadow-xl px-3 py-2.5 z-50 pointer-events-none">
+                  <p className="text-xs font-semibold text-stone-300 mb-1">Custom colour theme</p>
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    Build your own filter: adjust hue, saturation, brightness, and contrast, then save it as a named theme to reuse across any job.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}

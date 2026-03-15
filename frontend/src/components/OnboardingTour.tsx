@@ -50,7 +50,7 @@ export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPr
     {
       target: 'batch-editor',
       title: 'Search terms',
-      description: 'Add your search terms here — each card becomes a separate video. Give each batch a title so your outputs are easy to identify. Add multiple batches to generate several videos in one run.',
+      description: 'Add your search terms here. Each card becomes a separate video. Give each batch a title so your outputs are easy to identify, and add multiple batches to generate several videos in one run.',
     },
     {
       target: 'batch-editor',
@@ -77,7 +77,7 @@ export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPr
       title: 'Advanced settings',
       description: (
         <>
-          Click <strong className="text-stone-200">⚙</strong> to open advanced options. Change the <strong className="text-stone-200">image source</strong> (Unsplash, Pexels, or both), and add <strong className="text-stone-200">accent images</strong> — branded photos in blue, red, or gold sprinkled into ~20% of your frames for a signature look.
+          Click <strong className="text-stone-200">⚙</strong> to open advanced options. Change the <strong className="text-stone-200">image source</strong> (Unsplash, Pexels, or both), and add <strong className="text-stone-200">accent images</strong>: branded photos in blue, red, or gold sprinkled into ~20% of your frames for a signature look.
         </>
       ),
     },
@@ -85,7 +85,7 @@ export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPr
       target: 'variants-btn',
       title: 'Colour variants',
       onEnter: onOpenVariants,
-      description: 'Generate the same video in multiple colour styles at once — perfect for A/B testing before posting. Select which themes you want below, then hit Generate variants.',
+      description: 'Generate the same video in multiple colour styles at once, perfect for A/B testing before posting. Select which themes you want below, then hit Generate variants.',
     },
     {
       target: 'gen-dropdown',
@@ -169,7 +169,7 @@ export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPr
             Welcome to PassiveClip
           </h2>
           <p className="text-center text-sm text-stone-400 mb-6 leading-relaxed">
-            Turn search terms into short-form videos in seconds — no editing required.
+            Turn search terms into short-form videos in seconds. No editing required.
             Just add your topics, pick a visual style, and hit Generate.
           </p>
 
@@ -183,7 +183,7 @@ export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPr
                 <span className="mt-0.5 text-base leading-none">{icon}</span>
                 <span className="text-sm text-stone-300">
                   <strong className="text-stone-100">{label}</strong>
-                  <span className="text-stone-500"> — {detail}</span>
+                  <span className="text-stone-500">: {detail}</span>
                 </span>
               </li>
             ))}

@@ -123,7 +123,7 @@ export default function PromptModal({ onClose, fromTour }: Props) {
           <div>
             <h2 className="text-sm font-semibold text-stone-100">AI batch prompt</h2>
             <p className="text-xs text-stone-500 mt-0.5">
-              Paste into ChatGPT or Claude (any LLM) — edit the{' '}
+              Paste into ChatGPT or Claude (any LLM) and edit the{' '}
               <span className="text-brand-400 font-semibold">{'{highlighted}'}</span>{' '}
               parts first.
             </p>
@@ -138,7 +138,7 @@ export default function PromptModal({ onClose, fromTour }: Props) {
         <div className="px-5 py-3 border-t border-stone-800 flex items-center justify-between gap-3">
           {copied && fromTour ? (
             <>
-              <p className="text-xs text-stone-400">✓ Copied — paste into ChatGPT or Claude (any LLM)</p>
+              <p className="text-xs text-stone-400">✓ Copied. Paste into ChatGPT or Claude (any LLM)</p>
               <button
                 onClick={onClose}
                 className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-700 transition"

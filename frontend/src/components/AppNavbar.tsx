@@ -90,7 +90,7 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
               </span>
               <div className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50">
                 <p className="text-xs font-semibold text-white mb-1">Overlay Text</p>
-                <p className="text-xs text-stone-300 leading-relaxed">Add custom text, captions, and titles directly onto your videos — fully styled and positioned.</p>
+                <p className="text-xs text-stone-300 leading-relaxed">Add custom text, captions, and titles directly onto your videos, fully styled and positioned.</p>
               </div>
             </div>
 
@@ -103,7 +103,7 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
               </span>
               <div className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-2 w-52 rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50">
                 <p className="text-xs font-semibold text-white mb-1">AI-Powered Search Terms</p>
-                <p className="text-xs text-stone-300 leading-relaxed">Automatically generate optimised search term batches using AI — just describe your niche or topic.</p>
+                <p className="text-xs text-stone-300 leading-relaxed">Automatically generate optimised search term batches using AI. Just describe your niche or topic.</p>
               </div>
             </div>
 

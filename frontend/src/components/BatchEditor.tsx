@@ -270,7 +270,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
             className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 font-mono text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
           />
           <p className="text-[11px] text-stone-600 leading-relaxed">
-            One search term per line. Use <code className="font-mono text-stone-500"># Batch Title</code> to start a new batch — each batch becomes a separate video.
+            One search term per line. Use <code className="font-mono text-stone-500"># Batch Title</code> to start a new batch. Each batch becomes a separate video.
             Titles should be short and descriptive (e.g. <code className="font-mono text-stone-500"># stoicism_pt1</code>).
           </p>
           <button

@@ -147,7 +147,7 @@ export default function Photos({ session }: Props) {
       }
     } catch (e: unknown) {
       if ((e as { name?: string }).name !== 'AbortError') {
-        setError('Download failed — please try again.')
+        setError('Download failed. Please try again.')
       }
     } finally {
       setDownloadingAll(false)
@@ -172,7 +172,7 @@ export default function Photos({ session }: Props) {
       URL.revokeObjectURL(url)
       setSavedPaths(prev => new Set([...prev, img.storage_path]))
     } catch {
-      setError('Download failed — please try again.')
+      setError('Download failed. Please try again.')
     }
   }
 
