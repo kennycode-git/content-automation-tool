@@ -60,6 +60,14 @@ def pick_images_for_duration(
     return picks
 
 
+def write_concat_file(images: List[str], concat_path: str) -> None:
+    """Write an ffmpeg concat demuxer file. No duration entries — input framerate controls timing."""
+    with open(concat_path, "w", encoding="utf-8") as f:
+        for img in images:
+            # Use forward slashes; no quoting needed for Railway temp paths (no spaces)
+            f.write(f"file {img.replace(chr(92), '/')}\n")
+
+
 def build_ffmpeg_command(
     images: List[str],
     out_file: str,
@@ -69,40 +77,33 @@ def build_ffmpeg_command(
     fps: int,
 ) -> List[str]:
     """
-    Build an ffmpeg command using per-image inputs + filter_complex concat.
-    Thread count capped at 2 and ultrafast preset used to prevent OOM on Railway.
+    Build an ffmpeg command using the concat demuxer with input framerate.
+    -r 1/spi sets input rate so each image shows for seconds_per_image.
+    Processes images sequentially — O(1) memory regardless of image count.
     """
     if not images:
         raise RuntimeError("No images provided to ffmpeg.")
 
-    cmd = ["ffmpeg", "-y"]
-    dur = f"{seconds_per_image:.6f}"
-    for img in images:
-        cmd += ["-loop", "1", "-t", dur, "-i", img]
+    concat_path = out_file.replace(".mp4", "_concat.txt")
+    write_concat_file(images, concat_path)
 
-    filters = []
-    in_labels = []
-    for i in range(len(images)):
-        filters.append(
-            f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},setsar=1[v{i}]"
-        )
-        in_labels.append(f"[v{i}]")
-    concat = "".join(in_labels) + f"concat=n={len(images)}:v=1:a=0[vout]"
-    filter_complex = ";".join(filters + [concat])
-
-    cmd += [
-        "-filter_complex", filter_complex,
-        "-map", "[vout]",
-        "-r", str(fps),
+    return [
+        "ffmpeg", "-y",
+        "-r", f"1/{seconds_per_image:.6f}",  # 1 frame per N seconds from source
+        "-f", "concat",
+        "-safe", "0",
+        "-i", concat_path,
+        "-vf", (
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},setsar=1"
+        ),
+        "-r", str(fps),           # output framerate (30fps)
         "-pix_fmt", "yuv420p",
-        # Cap threads + ultrafast preset to prevent OOM SIGKILL on Railway containers
         "-threads", "2",
         "-preset", "ultrafast",
         "-movflags", "faststart",
         out_file,
     ]
-    return cmd
 
 
 def extract_thumbnail(video_path: str, output_path: str, total_seconds: float) -> bool:

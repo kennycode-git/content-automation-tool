@@ -74,12 +74,11 @@ export default function Pricing() {
       <div onClick={e => e.stopPropagation()} className="flex flex-col items-center cursor-default">
       <h1 className="mb-10 text-3xl font-bold text-brand-500">Choose your plan</h1>
 
-      <div className="w-full overflow-x-auto pb-2">
-      <div className="flex flex-col gap-6 sm:flex-row sm:w-max mx-auto px-1">
+      <div className="grid w-full max-w-4xl grid-cols-1 gap-6 sm:grid-cols-3">
         {PLANS.map(plan => (
           <div
             key={plan.name}
-            className={`w-72 shrink-0 rounded-2xl border p-8 shadow-xl ${
+            className={`rounded-2xl border p-8 shadow-xl ${
               plan.highlight
                 ? 'border-brand-500 bg-stone-900'
                 : 'border-stone-800 bg-stone-900'
@@ -117,7 +116,6 @@ export default function Pricing() {
             )}
           </div>
         ))}
-      </div>
       </div>
 
       <p className="mt-8 text-xs text-stone-600">
