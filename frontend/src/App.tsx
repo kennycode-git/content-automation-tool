@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Photos from './pages/Photos'
 import Pricing from './pages/Pricing'
 import Account from './pages/Account'
+import Admin from './pages/Admin'
 
 const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS === 'true'
 
@@ -85,6 +86,7 @@ export default function App() {
           element={session && !recovering ? <Navigate to="/dashboard" replace /> : <Login recovering={recovering} />}
         />
         <Route path="/pricing" element={<Pricing />} />
+        <Route path="/admin" element={<Admin />} />
         <Route
           path="/photos"
           element={
