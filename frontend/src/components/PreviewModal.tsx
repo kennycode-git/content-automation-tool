@@ -220,7 +220,7 @@ export default function PreviewModal({ batches, onConfirm, onCancel }: Props) {
 
       {/* Batch tabs (only when >1 batch) */}
       {curatedBatches.length > 1 && (
-        <div className="flex flex-wrap gap-1 border-b border-stone-800 bg-stone-900 px-6 pt-2 shrink-0">
+        <div className="scrollbar-dark flex gap-1 border-b border-stone-800 bg-stone-900 px-6 pt-2 pb-3 shrink-0 overflow-x-auto">
           {curatedBatches.map((b, i) => (
             <button
               key={i}

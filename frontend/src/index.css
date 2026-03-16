@@ -7,3 +7,19 @@
     @apply bg-stone-950 text-stone-100 font-sans;
   }
 }
+
+/* Dark minimal scrollbar for overflow-x-auto containers */
+.scrollbar-dark {
+  scrollbar-width: thin;
+  scrollbar-color: #44403c transparent;
+}
+.scrollbar-dark::-webkit-scrollbar {
+  height: 4px;
+}
+.scrollbar-dark::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-dark::-webkit-scrollbar-thumb {
+  background: #44403c;
+  border-radius: 9999px;
+}
