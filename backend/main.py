@@ -65,7 +65,7 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=cors_origins != ["*"],  # credentials incompatible with wildcard
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Admin-Key"],
 )
 
 # Trusted host — reject requests with unexpected Host headers.

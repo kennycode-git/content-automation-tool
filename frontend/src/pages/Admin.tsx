@@ -33,20 +33,26 @@ export default function Admin() {
 
   async function tryAuth(k: string) {
     setLoadingList(true)
-    const res = await fetch(`${API_URL}/api/admin/invites`, {
-      headers: { 'X-Admin-Key': k },
-    })
-    if (res.ok) {
-      const data = await res.json()
-      setKey(k)
-      sessionStorage.setItem(SESSION_KEY, k)
-      setAuthed(true)
-      setInvites(data.invites)
-    } else {
-      setAuthed(false)
-      setError('Wrong key.')
+    setError(null)
+    try {
+      const res = await fetch(`${API_URL}/api/admin/invites`, {
+        headers: { 'X-Admin-Key': k },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setKey(k)
+        sessionStorage.setItem(SESSION_KEY, k)
+        setAuthed(true)
+        setInvites(data.invites)
+      } else {
+        setAuthed(false)
+        setError('Wrong key.')
+      }
+    } catch {
+      setError('Could not reach server.')
+    } finally {
+      setLoadingList(false)
     }
-    setLoadingList(false)
   }
 
   async function refreshList(k: string) {
