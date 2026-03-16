@@ -11,6 +11,9 @@ import Account from './pages/Account'
 
 const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS === 'true'
 
+// Capture hash before Supabase SDK (imported above) potentially clears it
+const INITIAL_HASH = window.location.hash
+
 // Minimal fake session used only when VITE_DEV_BYPASS=true.
 // Never ships to production (env var is not set there).
 const DEV_SESSION = DEV_BYPASS
@@ -44,7 +47,9 @@ function ProtectedRoute({
 export default function App() {
   const [session, setSession] = useState<Session | null>(DEV_SESSION)
   const [loading, setLoading] = useState(!DEV_BYPASS)
-  const [recovering, setRecovering] = useState(false)
+  const [recovering, setRecovering] = useState(() =>
+    INITIAL_HASH.includes('type=recovery')
+  )
 
   useEffect(() => {
     if (DEV_BYPASS) return
@@ -55,11 +60,11 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, s) => {
       if (event === 'PASSWORD_RECOVERY') {
         setRecovering(true)
-        setSession(s)
-      } else {
+      } else if (event === 'USER_UPDATED') {
+        // Password was successfully changed — stop holding on login page
         setRecovering(false)
-        setSession(s)
       }
+      setSession(s)
     })
     return () => listener.subscription.unsubscribe()
   }, [])
