@@ -55,7 +55,7 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
       <div className="flex items-center gap-5">
         <div className="flex items-center gap-2">
           <img src="/logo.png" alt="" className="h-[40px] w-auto" />
-          <img src="/just%20text.png" alt="PassiveClip" className="h-9 w-auto" />
+          <img src="/just%20text.png" alt="PassiveClip" className="hidden sm:block h-9 w-auto" />
         </div>
 
         {/* Tool tabs */}

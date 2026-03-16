@@ -178,22 +178,24 @@ export default function AdvancedModal({
         <hr className="border-stone-800" />
 
         {/* Select Philosopher — coming soon */}
-        <div className="group/phil relative opacity-50 cursor-not-allowed select-none">
-          <div className="flex items-center gap-2 mb-2">
-            <p className="text-xs text-stone-400">Select philosopher</p>
-            <span className="text-[9px] font-semibold tracking-wide bg-stone-800 text-stone-600 border border-stone-700/60 px-1.5 py-0.5 rounded-full">Soon</span>
-            {/* Tooltip */}
-            <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-60 rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 shadow-xl opacity-0 group-hover/phil:opacity-100 transition-opacity z-50">
-              <p className="text-xs font-semibold text-white mb-1">Philosopher Image Inserts</p>
-              <p className="text-xs text-stone-300 leading-relaxed">Automatically inserts HD portrait images of your chosen philosopher into the video carousel alongside your search results.</p>
-            </div>
+        <div className="group/phil relative cursor-not-allowed select-none">
+          {/* Tooltip sits outside opacity-50 so it renders at full opacity */}
+          <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-60 rounded-lg border border-stone-600 bg-stone-900 px-3 py-2.5 shadow-xl opacity-0 group-hover/phil:opacity-100 transition-opacity z-50">
+            <p className="text-xs font-semibold text-white mb-1">Philosopher Image Inserts</p>
+            <p className="text-xs text-stone-300 leading-relaxed">Automatically inserts HD portrait images of your chosen philosopher into the video carousel alongside your search results.</p>
           </div>
-          <div className="grid grid-cols-3 gap-2 pointer-events-none">
-            {['Marcus Aurelius', 'Seneca', 'Epictetus', 'Nietzsche', 'Socrates', 'Aristotle'].map(name => (
-              <div key={name} className="flex items-center justify-center px-2 py-2 rounded-lg border border-stone-700 bg-stone-800/60 text-xs text-stone-500 text-center">
-                {name}
-              </div>
-            ))}
+          <div className="opacity-50">
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-xs text-stone-400">Select philosopher</p>
+              <span className="text-[9px] font-semibold tracking-wide bg-stone-800 text-stone-600 border border-stone-700/60 px-1.5 py-0.5 rounded-full">Soon</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 pointer-events-none">
+              {['Marcus Aurelius', 'Seneca', 'Epictetus', 'Nietzsche', 'Socrates', 'Aristotle'].map(name => (
+                <div key={name} className="flex items-center justify-center px-2 py-2 rounded-lg border border-stone-700 bg-stone-800/60 text-xs text-stone-500 text-center">
+                  {name}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

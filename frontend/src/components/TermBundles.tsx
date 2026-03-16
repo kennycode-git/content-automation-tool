@@ -126,9 +126,12 @@ interface Props {
   onLoad: (bundles: { title: string | null; terms: string[] }[]) => void
 }
 
+const MOBILE_VISIBLE = 3
+
 export default function TermBundles({ onLoad }: Props) {
   const [open, setOpen] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [showAll, setShowAll] = useState(false)
 
   function toggle(label: string) {
     setSelected(prev => {
@@ -164,10 +167,12 @@ export default function TermBundles({ onLoad }: Props) {
       {open && (
         <div className="mt-3 space-y-3">
           <div className="flex flex-wrap gap-2">
-            {BUNDLES.map(b => (
+            {BUNDLES.map((b, i) => (
               <label
                 key={b.label}
                 className={`flex items-center gap-1.5 cursor-pointer rounded-full border px-3 py-1 text-xs transition ${
+                  i >= MOBILE_VISIBLE && !showAll ? 'hidden sm:flex' : 'flex'
+                } ${
                   selected.has(b.label)
                     ? 'border-brand-500 bg-brand-500/10 text-brand-400'
                     : 'border-stone-700 bg-stone-800 text-stone-300 hover:border-stone-500 hover:text-stone-100'
@@ -182,6 +187,14 @@ export default function TermBundles({ onLoad }: Props) {
                 {b.label}
               </label>
             ))}
+            {!showAll && (
+              <button
+                onClick={() => setShowAll(true)}
+                className="sm:hidden flex items-center rounded-full border border-stone-700 bg-stone-800 px-3 py-1 text-xs text-stone-500 hover:text-stone-300 transition"
+              >
+                +{BUNDLES.length - MOBILE_VISIBLE} more
+              </button>
+            )}
           </div>
 
           {selected.size > 0 && (
