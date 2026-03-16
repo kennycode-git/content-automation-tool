@@ -22,7 +22,7 @@ const PLANS: Plan[] = [
   {
     name: 'Free Trial',
     price: '21 days free',
-    limit: '25 renders',
+    limit: '100 renders',
     features: [
       'No credit card required',
       'Short-form TikTok & Reels videos',

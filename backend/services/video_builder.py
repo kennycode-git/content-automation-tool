@@ -60,12 +60,15 @@ def pick_images_for_duration(
     return picks
 
 
-def write_concat_file(images: List[str], concat_path: str) -> None:
-    """Write an ffmpeg concat demuxer file. No duration entries — input framerate controls timing."""
+def write_concat_file(images: List[str], concat_path: str, seconds_per_image: float) -> None:
+    """Write an ffmpeg concat demuxer file with explicit duration per image."""
     with open(concat_path, "w", encoding="utf-8") as f:
         for img in images:
-            # Use forward slashes; no quoting needed for Railway temp paths (no spaces)
-            f.write(f"file {img.replace(chr(92), '/')}\n")
+            path = img.replace(chr(92), "/")
+            f.write(f"file '{path}'\n")
+            f.write(f"duration {seconds_per_image:.6f}\n")
+        # Repeat last entry without duration (avoids last-frame drop quirk)
+        f.write(f"file '{images[-1].replace(chr(92), '/')}'\n")
 
 
 def build_ffmpeg_command(
@@ -77,19 +80,17 @@ def build_ffmpeg_command(
     fps: int,
 ) -> List[str]:
     """
-    Build an ffmpeg command using the concat demuxer with input framerate.
-    -r 1/spi sets input rate so each image shows for seconds_per_image.
+    Build an ffmpeg command using the concat demuxer with explicit duration entries.
     Processes images sequentially — O(1) memory regardless of image count.
     """
     if not images:
         raise RuntimeError("No images provided to ffmpeg.")
 
     concat_path = out_file.replace(".mp4", "_concat.txt")
-    write_concat_file(images, concat_path)
+    write_concat_file(images, concat_path, seconds_per_image)
 
     return [
         "ffmpeg", "-y",
-        "-r", f"1/{seconds_per_image:.6f}",  # 1 frame per N seconds from source
         "-f", "concat",
         "-safe", "0",
         "-i", concat_path,
@@ -97,7 +98,7 @@ def build_ffmpeg_command(
             f"scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height},setsar=1"
         ),
-        "-r", str(fps),           # output framerate (30fps)
+        "-r", str(fps),
         "-pix_fmt", "yuv420p",
         "-threads", "2",
         "-preset", "ultrafast",
