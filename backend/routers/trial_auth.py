@@ -97,8 +97,8 @@ async def claim_invite(body: ClaimBody):
                 status_code=409,
                 detail="An account with this email already exists. Please sign in, or use 'Forgot password' to reset it.",
             )
-        logger.exception("Failed to create trial user for %s", email)
-        raise HTTPException(status_code=500, detail="Failed to activate account. Please try again.")
+        logger.exception("Failed to create trial user for %s: %s", email, exc)
+        raise HTTPException(status_code=500, detail=f"Failed to activate account: {exc}")
 
     # Mark invite as claimed
     sb.table("trial_invites").update({"claimed": True}).eq("email", email).execute()
