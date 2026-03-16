@@ -97,6 +97,9 @@ def build_ffmpeg_command(
         ),
         "-r", str(fps),
         "-pix_fmt", "yuv420p",
+        # Limit threads + disable lookahead to prevent OOM on Railway containers
+        "-threads", "2",
+        "-preset", "ultrafast",
         "-movflags", "faststart",
         out_file,
     ]
