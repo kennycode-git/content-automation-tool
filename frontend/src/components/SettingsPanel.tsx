@@ -311,7 +311,7 @@ export default function SettingsPanel({ settings, onChange, onPresetApplied }: P
       <Slider
         label="Total duration"
         value={settings.total_seconds}
-        min={5} max={60} step={0.5} unit="s"
+        min={4} max={20} step={0.5} unit="s"
         onChange={v => update({ total_seconds: v })}
       />
       {/* Live image estimate */}
