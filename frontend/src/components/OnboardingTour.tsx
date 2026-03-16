@@ -134,11 +134,12 @@ export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPr
     if (active) setStepIdx(isFirstVisit ? -1 : 0)
   }, [active, isFirstVisit])
 
-  // Call onEnter when a step becomes active
+  // Call onEnter when a step becomes active + scroll target into view
   useEffect(() => {
-    if (active && stepIdx >= 0) {
-      STEPS[stepIdx]?.onEnter?.()
-    }
+    if (!active || stepIdx < 0) return
+    STEPS[stepIdx]?.onEnter?.()
+    const el = document.querySelector(`[data-tour="${STEPS[stepIdx].target}"]`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [stepIdx, active]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keyboard nav
