@@ -44,6 +44,7 @@ function ProtectedRoute({
 export default function App() {
   const [session, setSession] = useState<Session | null>(DEV_SESSION)
   const [loading, setLoading] = useState(!DEV_BYPASS)
+  const [recovering, setRecovering] = useState(false)
 
   useEffect(() => {
     if (DEV_BYPASS) return
@@ -51,8 +52,14 @@ export default function App() {
       setSession(data.session)
       setLoading(false)
     })
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s)
+    const { data: listener } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecovering(true)
+        setSession(s)
+      } else {
+        setRecovering(false)
+        setSession(s)
+      }
     })
     return () => listener.subscription.unsubscribe()
   }, [])
@@ -70,7 +77,7 @@ export default function App() {
       <Routes>
         <Route
           path="/login"
-          element={session ? <Navigate to="/dashboard" replace /> : <Login />}
+          element={session && !recovering ? <Navigate to="/dashboard" replace /> : <Login recovering={recovering} />}
         />
         <Route path="/pricing" element={<Pricing />} />
         <Route

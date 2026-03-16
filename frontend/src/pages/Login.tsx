@@ -17,21 +17,26 @@
  * - claim-invite uses service_role admin API on the backend to create the user.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-type Step = 'email' | 'set-password' | 'signin' | 'reset'
+type Step = 'email' | 'set-password' | 'signin' | 'reset' | 'new-password'
 
 const API_URL = import.meta.env.VITE_API_URL as string
 
-export default function Login() {
+export default function Login({ recovering = false }: { recovering?: boolean }) {
   const [email, setEmail]     = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')
-  const [step, setStep]         = useState<Step>('email')
+  const [step, setStep]         = useState<Step>(() => recovering ? 'new-password' : 'email')
   const [loading, setLoading]   = useState(false)
   const [message, setMessage]   = useState<string | null>(null)
   const [error, setError]       = useState<string | null>(null)
+
+  // Sync to new-password step if App.tsx detects PASSWORD_RECOVERY event
+  useEffect(() => {
+    if (recovering) setStep('new-password')
+  }, [recovering])
 
   async function handleEmailContinue(e: React.FormEvent) {
     e.preventDefault()
@@ -101,6 +106,21 @@ export default function Login() {
     setError(null)
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     if (error) setError(error.message)
+    setLoading(false)
+  }
+
+  async function handleSetNewPassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (password !== confirm) { setError("Passwords don't match."); return }
+    setLoading(true)
+    setError(null)
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) {
+      setError(error.message)
+    } else {
+      setMessage('Password updated. Signing you in…')
+      // onAuthStateChange in App.tsx will redirect to /dashboard
+    }
     setLoading(false)
   }
 
@@ -206,6 +226,24 @@ export default function Login() {
                   ← Back to sign in
                 </button>
               </div>
+            </form>
+          </>
+        )}
+
+        {/* Step: set new password (recovery flow) */}
+        {step === 'new-password' && (
+          <>
+            <p className="mb-6 text-sm text-stone-400">Choose a new password</p>
+            <form onSubmit={handleSetNewPassword} className="space-y-3">
+              <input type="password" required minLength={6} autoFocus
+                placeholder="New password (min 6 characters)" value={password}
+                onChange={e => setPassword(e.target.value)} className={inputClass} />
+              <input type="password" required
+                placeholder="Confirm new password" value={confirm}
+                onChange={e => setConfirm(e.target.value)} className={inputClass} />
+              <button type="submit" disabled={loading} className={btnPrimary}>
+                {loading ? 'Saving…' : 'Set new password'}
+              </button>
             </form>
           </>
         )}

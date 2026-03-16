@@ -184,11 +184,14 @@ function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) =
             }}
           />
         )}
-        <div className={`absolute inset-0 bg-gradient-to-br ${preset.gradient} ${failed ? '' : 'opacity-0 group-hover:opacity-30'} transition-opacity`} />
+        <div className={`absolute inset-0 bg-gradient-to-br ${preset.gradient} ${failed ? '' : 'opacity-0'}`} />
 
-        {/* Hover overlay */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-all duration-200 flex items-center justify-center">
-          <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg bg-black/40 backdrop-blur-sm border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/90">
+        {/* Hover label — no overlay, just text */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span
+            className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-[11px] font-semibold text-white"
+            style={{ textShadow: '0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.7)' }}
+          >
             Use this style →
           </span>
         </div>
