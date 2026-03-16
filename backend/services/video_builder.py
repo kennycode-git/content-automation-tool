@@ -60,49 +60,49 @@ def pick_images_for_duration(
     return picks
 
 
-def write_concat_file(images: List[str], seconds_per_image: float, concat_path: str) -> None:
-    """Write an ffmpeg concat demuxer file listing each image with its duration."""
-    with open(concat_path, "w", encoding="utf-8") as f:
-        for img in images:
-            # Escape backslashes and single quotes for the concat file format
-            safe = img.replace("\\", "/").replace("'", "\\'")
-            f.write(f"file '{safe}'\n")
-            f.write(f"duration {seconds_per_image:.6f}\n")
-        # Repeat last image entry without duration — avoids ffmpeg dropping the final frame
-        if images:
-            safe = images[-1].replace("\\", "/").replace("'", "\\'")
-            f.write(f"file '{safe}'\n")
-
-
 def build_ffmpeg_command(
-    concat_file: str,
+    images: List[str],
     out_file: str,
     width: int,
     height: int,
+    seconds_per_image: float,
     fps: int,
 ) -> List[str]:
     """
-    Build an ffmpeg command using the concat demuxer.
-    Processes images sequentially — O(1) memory regardless of image count.
-    Replaces the old multi-input filter_complex approach that OOM'd on large batches.
+    Build an ffmpeg command using per-image inputs + filter_complex concat.
+    Thread count capped at 2 and ultrafast preset used to prevent OOM on Railway.
     """
-    return [
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", concat_file,
-        "-vf", (
-            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},setsar=1"
-        ),
+    if not images:
+        raise RuntimeError("No images provided to ffmpeg.")
+
+    cmd = ["ffmpeg", "-y"]
+    dur = f"{seconds_per_image:.6f}"
+    for img in images:
+        cmd += ["-loop", "1", "-t", dur, "-i", img]
+
+    filters = []
+    in_labels = []
+    for i in range(len(images)):
+        filters.append(
+            f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},setsar=1[v{i}]"
+        )
+        in_labels.append(f"[v{i}]")
+    concat = "".join(in_labels) + f"concat=n={len(images)}:v=1:a=0[vout]"
+    filter_complex = ";".join(filters + [concat])
+
+    cmd += [
+        "-filter_complex", filter_complex,
+        "-map", "[vout]",
         "-r", str(fps),
         "-pix_fmt", "yuv420p",
-        # Limit threads + disable lookahead to prevent OOM on Railway containers
+        # Cap threads + ultrafast preset to prevent OOM SIGKILL on Railway containers
         "-threads", "2",
         "-preset", "ultrafast",
         "-movflags", "faststart",
         out_file,
     ]
+    return cmd
 
 
 def extract_thumbnail(video_path: str, output_path: str, total_seconds: float) -> bool:
@@ -169,14 +169,12 @@ def render_slideshow(
     unique_count = len({os.path.basename(p) for p in images})
     logger.info("Using %d images (unique sources: %d)", len(images), unique_count)
 
-    concat_file = str(Path(output_file).parent / "concat.txt")
-    write_concat_file(images, seconds_per_image, concat_file)
-
     cmd = build_ffmpeg_command(
-        concat_file=concat_file,
+        images=images,
         out_file=output_file,
         width=width,
         height=height,
+        seconds_per_image=seconds_per_image,
         fps=fps,
     )
 
