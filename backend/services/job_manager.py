@@ -362,6 +362,8 @@ async def run_pipeline(job_id: str, user_id: str, config: JobConfig, db) -> None
             shuffle=True,
         )
         if result["returncode"] != 0:
+            logger.error("ffmpeg failed (rc=%d). Last 20 lines:\n%s",
+                         result["returncode"], "\n".join(result["log"][-20:]))
             raise RuntimeError(f"ffmpeg failed (rc={result['returncode']}). Check server logs.")
 
         # --- Step 3.5: Extract thumbnail ---
@@ -440,6 +442,8 @@ async def _run_single_variant(
         shuffle=True,
     )
     if result["returncode"] != 0:
+        logger.error("ffmpeg failed (rc=%d). Last 20 lines:\n%s",
+                     result["returncode"], "\n".join(result["log"][-20:]))
         raise RuntimeError(f"ffmpeg failed (rc={result['returncode']}). Check server logs.")
 
     thumb_url = None
