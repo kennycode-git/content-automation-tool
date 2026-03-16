@@ -69,6 +69,15 @@ export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPr
     },
     {
       target: 'theme-selector',
+      title: 'Video settings',
+      description: (
+        <>
+          Set your <strong className="text-stone-200">resolution</strong> and <strong className="text-stone-200">timing</strong>. For TikTok & Reels use <strong className="text-stone-200">1080×1920</strong> (portrait). Adjust <strong className="text-stone-200">seconds per image</strong> to control how fast images cut, and <strong className="text-stone-200">total duration</strong> to set the overall video length.
+        </>
+      ),
+    },
+    {
+      target: 'theme-selector',
       title: 'Colour themes',
       description: 'Choose a visual style for your video. Hover the eye icon next to each theme to preview it. Dark Tones and Low Exposure work best for white text overlays.',
     },
