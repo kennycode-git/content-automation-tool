@@ -23,7 +23,15 @@ from typing import Dict, List, Optional
 
 # Limit concurrent pipelines to avoid OOM on Railway's 512MB instance.
 # Each pipeline peaks at ~150-200MB (downloads + grading + ffmpeg).
-_pipeline_semaphore = asyncio.Semaphore(2)
+# Initialized lazily on first use so it binds to the running event loop.
+_pipeline_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _pipeline_semaphore
+    if _pipeline_semaphore is None:
+        _pipeline_semaphore = asyncio.Semaphore(2)
+    return _pipeline_semaphore
 
 from db.supabase_client import get_client
 from services.image_pipeline import fetch_images, download_and_save, RateLimitError
@@ -261,7 +269,7 @@ async def run_pipeline(job_id: str, user_id: str, config: JobConfig, db) -> None
 
     Temp dir is always cleaned up in the finally block.
     """
-    async with _pipeline_semaphore:
+    async with _get_semaphore():
         await _run_pipeline_inner(job_id, user_id, config, db)
 
 
@@ -510,7 +518,7 @@ async def run_variants_pipeline(
     source images. job_ids and themes are parallel lists.
     Acquires _pipeline_semaphore to cap concurrent memory usage.
     """
-    async with _pipeline_semaphore:
+    async with _get_semaphore():
         await _run_variants_pipeline_inner(job_ids, themes, user_id, config, db)
 
 
