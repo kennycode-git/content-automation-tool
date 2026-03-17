@@ -177,28 +177,18 @@ function ThemePreviewPopup({ theme }: { theme: typeof COLOR_THEMES[number] }) {
   )
 }
 
-// Natural source footage — no pre-grading, so custom filter applies authentically
-const PREVIEW_VIDEOS = [
-  '/theme-previews/stoic-philosophy.mp4',
-  '/theme-previews/nature-philosophy.mp4',
-]
-
 function LiveImageGrid({ params }: { params: CustomGradeParams }) {
   const cssFilter = buildCssFilter(params)
   return (
-    <div className="flex flex-col gap-1 flex-shrink-0" style={{ width: '3.5rem' }}>
-      {PREVIEW_VIDEOS.map((src, i) => (
-        <div key={i} className="rounded overflow-hidden bg-stone-950" style={{ aspectRatio: '9/16' }}>
-          <video
-            src={src}
-            autoPlay
-            muted
-            loop
-            playsInline
-            style={{ filter: cssFilter, width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        </div>
-      ))}
+    <div className="rounded-lg overflow-hidden bg-stone-950 flex-shrink-0 self-stretch" style={{ width: '5.5rem', minHeight: '9rem' }}>
+      <video
+        src="/theme-previews/eastern-philosophy.mp4"
+        autoPlay
+        muted
+        loop
+        playsInline
+        style={{ filter: cssFilter, width: '100%', height: '100%', objectFit: 'cover' }}
+      />
     </div>
   )
 }
