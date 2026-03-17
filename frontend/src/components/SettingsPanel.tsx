@@ -128,6 +128,16 @@ function Slider({
 
 import PresetManager from './PresetManager'
 
+function SparkleIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
+      <path d="M12 2l1.6 4.8L18.4 8l-4.8 1.6L12 14.4l-1.6-4.8L5.6 8l4.8-1.6L12 2z" />
+      <path d="M5 15l.8 2.4L8.2 18l-2.4.8L5 21l-.8-2.4L1.8 18l2.4-.8L5 15z" opacity=".6" />
+      <path d="M19 2l.6 1.8 1.8.6-1.8.6L19 7l-.6-1.8L16.6 4.4l1.8-.6L19 2z" opacity=".6" />
+    </svg>
+  )
+}
+
 function EyeIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -300,8 +310,11 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-stone-700 bg-stone-800 cursor-pointer hover:bg-stone-700/50 transition-colors"
       >
-        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[selected.value]}`} />
-        <span className="text-sm text-stone-100">{selected.label}</span>
+        {selected.value === 'custom'
+          ? <span className="w-2.5 h-2.5 flex-shrink-0 flex items-center justify-center text-fuchsia-400"><SparkleIcon /></span>
+          : <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[selected.value]}`} />
+        }
+        <span className={`text-sm text-stone-100 ${selected.value === 'custom' ? 'italic' : ''}`}>{selected.label}</span>
         {/* Eye preview for selected theme (hidden for Natural and Create Your Own) */}
         {selected.value !== 'none' && selected.value !== 'custom' && (
           <div
@@ -335,13 +348,20 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
                 onClick={() => { onChange(t.value); setOpen(false) }}
                 className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors
                   [&:not(:first-child)]:border-t [&:not(:first-child)]:border-stone-700/50
-                  ${value === t.value
-                    ? 'bg-stone-700 text-stone-100'
-                    : 'text-stone-400 hover:bg-stone-700/40 hover:text-stone-200'
+                  ${t.value === 'custom'
+                    ? value === t.value
+                      ? 'bg-fuchsia-900/60 text-fuchsia-200 border-t border-fuchsia-900/40'
+                      : 'text-fuchsia-400/70 hover:bg-fuchsia-900/30 hover:text-fuchsia-300'
+                    : value === t.value
+                      ? 'bg-stone-700 text-stone-100'
+                      : 'text-stone-400 hover:bg-stone-700/40 hover:text-stone-200'
                   }`}
               >
-                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[t.value]}`} />
-                <span className="text-sm">{t.label}</span>
+                {t.value === 'custom'
+                  ? <span className="w-2.5 h-2.5 flex-shrink-0 flex items-center justify-center text-fuchsia-400"><SparkleIcon /></span>
+                  : <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[t.value]}`} />
+                }
+                <span className={`text-sm ${t.value === 'custom' ? 'italic' : ''}`}>{t.label}</span>
                 {/* Eye icon sits right after label text (hidden for Natural and Create Your Own) */}
                 {t.value !== 'none' && t.value !== 'custom' && (
                   <div
