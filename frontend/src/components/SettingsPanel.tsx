@@ -167,6 +167,33 @@ function ThemePreviewPopup({ theme }: { theme: typeof COLOR_THEMES[number] }) {
   )
 }
 
+const PREVIEW_VIDEOS = [
+  '/theme-previews/stoic-philosophy.mp4',
+  '/theme-previews/dark-academia.mp4',
+  '/theme-previews/nature-philosophy.mp4',
+  '/theme-previews/eastern-philosophy.mp4',
+]
+
+function LiveImageGrid({ params }: { params: CustomGradeParams }) {
+  const cssFilter = buildCssFilter(params)
+  return (
+    <div className="grid grid-cols-2 gap-1 flex-shrink-0" style={{ width: '6.5rem' }}>
+      {PREVIEW_VIDEOS.map((src, i) => (
+        <div key={i} className="rounded overflow-hidden bg-stone-950" style={{ aspectRatio: '9/16' }}>
+          <video
+            src={src}
+            autoPlay
+            muted
+            loop
+            playsInline
+            style={{ filter: cssFilter, width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const CREATIVE_PRESETS: { name: string; params: CustomGradeParams }[] = [
   { name: 'Vintage Film', params: { brightness: 0.95, contrast: 0.85, saturation: 0.70, exposure: 0.88, warmth: 0.30, tint: 0.10, hue_shift: 5 } },
   { name: 'Golden Hour',  params: { brightness: 1.05, contrast: 1.10, saturation: 1.30, exposure: 0.95, warmth: 0.55, tint: 0.05, hue_shift: 8 } },
@@ -224,42 +251,30 @@ function CustomThemePanel({ params, onChange }: { params: CustomGradeParams; onC
         </div>
       </div>
 
-      {/* Live swatch preview */}
-      <div className="flex items-center gap-3">
-        <div
-          className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-stone-700"
-          style={{
-            filter: buildCssFilter(params),
-            background: 'linear-gradient(135deg, #f59e0b 0%, #3b82f6 30%, #10b981 60%, #ef4444 100%)',
-          }}
-        />
-        <p className="text-xs text-stone-600 leading-relaxed">
-          Live preview (approximate).<br />
-          Tint and channel balance apply on render.
-        </p>
-      </div>
-
-      {/* Sliders */}
-      <div className="space-y-2.5">
-        {CUSTOM_SLIDERS.map(s => (
-          <div key={s.key}>
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-xs text-stone-400">{s.label}</span>
-              <span className="text-xs font-mono text-stone-300">
-                {params[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
-              </span>
+      {/* Sliders + live image preview side by side */}
+      <div className="flex gap-3">
+        <div className="flex-1 space-y-2.5 min-w-0">
+          {CUSTOM_SLIDERS.map(s => (
+            <div key={s.key}>
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs text-stone-400">{s.label}</span>
+                <span className="text-xs font-mono text-stone-300">
+                  {params[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={s.min}
+                max={s.max}
+                step={s.step}
+                value={params[s.key]}
+                onChange={e => onChange({ ...params, [s.key]: parseFloat(e.target.value) })}
+                className="w-full accent-fuchsia-500"
+              />
             </div>
-            <input
-              type="range"
-              min={s.min}
-              max={s.max}
-              step={s.step}
-              value={params[s.key]}
-              onChange={e => onChange({ ...params, [s.key]: parseFloat(e.target.value) })}
-              className="w-full accent-fuchsia-500"
-            />
-          </div>
-        ))}
+          ))}
+        </div>
+        <LiveImageGrid params={params} />
       </div>
 
       {/* Reset */}
@@ -287,8 +302,8 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
       >
         <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[selected.value]}`} />
         <span className="text-sm text-stone-100">{selected.label}</span>
-        {/* Eye preview for selected theme (hidden for Natural) */}
-        {selected.value !== 'none' && (
+        {/* Eye preview for selected theme (hidden for Natural and Create Your Own) */}
+        {selected.value !== 'none' && selected.value !== 'custom' && (
           <div
             className="relative ml-1"
             onMouseEnter={e => { e.stopPropagation(); setHovered(selected.value + '_trigger') }}
