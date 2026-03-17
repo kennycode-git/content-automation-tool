@@ -31,17 +31,32 @@ function activeStepIdx(msg: string | null): number {
   return -1
 }
 
-function ProgressOverlay({ status, message, imageCount }: {
+function ProgressOverlay({ status, message, imageCount, persistedSource, searchTerms, maxPerQuery, onMouseEnter, onMouseLeave }: {
   status: string
   message: string | null
-  imageCount: number | null
+  imageCount: { done: number; total: number } | null
+  persistedSource: string | null
+  searchTerms?: string[] | null
+  maxPerQuery?: number | null
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
 }) {
+  const [hoveredStep, setHoveredStep] = useState<string | null>(null)
   const msg = message ?? ''
   const isQueued = !msg || msg === 'Queued'
   const idx = status === 'done' ? PIPELINE_STEPS.length : activeStepIdx(msg)
 
+  const termCount = searchTerms?.length ?? 0
+  const targetImages = termCount && maxPerQuery ? termCount * maxPerQuery : null
+  const source = msg.includes('Pexels') ? 'Pexels' : msg.includes('Unsplash') ? 'Unsplash' : persistedSource
+
   return (
-    <div className="absolute top-full left-0 right-0 mt-2 rounded-xl border border-stone-600/80 bg-stone-900 shadow-2xl overflow-hidden z-50 pointer-events-none">
+    <div
+      className="absolute top-full left-0 right-0 z-50 pt-2"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+    <div className="rounded-xl border border-stone-600/80 bg-stone-900 shadow-2xl overflow-hidden">
       {/* Header */}
       <div className="px-4 pt-3 pb-2.5 border-b border-stone-800/80">
         <p className="text-xs font-semibold text-stone-200">
@@ -64,14 +79,20 @@ function ProgressOverlay({ status, message, imageCount }: {
             const isDone   = i < idx
             const isActive = i === idx
             const subText  = step.key === 'download' && imageCount != null
-              ? (isDone ? `${imageCount} photos ready` : `${imageCount} photos found so far`)
+              ? (isDone
+                  ? `${imageCount.done} photos collected`
+                  : `${imageCount.done}/${imageCount.total} photos downloaded`)
               : step.sub
+            const hasDetail = (step.key === 'fetch' || step.key === 'download') && (isActive || isDone)
 
             return (
               <div
                 key={step.key}
-                className={`flex items-center gap-3 transition-opacity ${i > idx ? 'opacity-25' : 'opacity-100'}`}
+                className={`flex flex-col gap-1 transition-opacity ${i > idx ? 'opacity-25' : 'opacity-100'}`}
+                onMouseEnter={hasDetail ? () => setHoveredStep(step.key) : undefined}
+                onMouseLeave={hasDetail ? () => setHoveredStep(null) : undefined}
               >
+              <div className="flex items-center gap-3">
                 {/* Step icon */}
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-sm ${
                   isDone   ? 'bg-emerald-500/10 text-emerald-400' :
@@ -106,10 +127,40 @@ function ProgressOverlay({ status, message, imageCount }: {
                   </span>
                 )}
               </div>
+
+              {/* Detail sub-panel — fetch step or download step */}
+              {hasDetail && hoveredStep === step.key && (
+                <div className="ml-10 rounded-lg border border-stone-700 bg-stone-800/80 px-3 py-2 space-y-1">
+                  {termCount > 0 && (
+                    <p className="text-xs text-stone-400">
+                      <span className="text-stone-300 font-medium">{termCount}</span> search {termCount === 1 ? 'term' : 'terms'}
+                      {targetImages && <span> · targeting <span className="text-stone-300 font-medium">~{targetImages}</span> images</span>}
+                    </p>
+                  )}
+                  {source && (
+                    <p className="text-xs text-stone-400">Source: <span className="text-stone-300 font-medium">{source}</span></p>
+                  )}
+                  {imageCount != null ? (
+                    <p className="text-xs text-stone-400">
+                      {step.key === 'download' && isDone
+                        ? <><span className="text-stone-300 font-medium">{imageCount.done}</span> photos collected</>
+                        : <><span className="text-stone-300 font-medium">{imageCount.done}</span>/<span className="text-stone-300 font-medium">{imageCount.total}</span> photos downloaded</>
+                      }
+                    </p>
+                  ) : targetImages && step.key === 'download' && isDone ? (
+                    <p className="text-xs text-stone-400">~<span className="text-stone-300 font-medium">{targetImages}</span> photos collected</p>
+                  ) : null}
+                  {msg.includes('retrying') && (
+                    <p className="text-xs text-amber-500/80">{msg}</p>
+                  )}
+                </div>
+              )}
+              </div>
             )
           })
         )}
       </div>
+    </div>
     </div>
   )
 }
@@ -159,7 +210,17 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   const [cancelling, setCancelling] = useState(false)
   const [showOverlay, setShowOverlay] = useState(false)
   const [downloading, setDownloading] = useState(false)
-  const imageCountRef = useRef<number | null>(null)
+  const imageCountRef = useRef<{ done: number; total: number } | null>(null)
+  const sourceRef = useRef<string | null>(null)
+  const overlayHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function openOverlay() {
+    if (overlayHideTimeout.current) clearTimeout(overlayHideTimeout.current)
+    setShowOverlay(true)
+  }
+  function closeOverlayDelayed() {
+    overlayHideTimeout.current = setTimeout(() => setShowOverlay(false), 200)
+  }
 
   const { data: job, isLoading, error } = useQuery({
     queryKey: ['job', jobId],
@@ -178,10 +239,13 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
     }
   }, [job?.status, job, onDone])
 
-  // Persist image count so it shows on completed download step even after message changes
+  // Persist image count + source so they remain visible after message changes
   useEffect(() => {
-    const m = job?.progress_message?.match(/Downloading (\d+)/)
-    if (m) imageCountRef.current = parseInt(m[1], 10)
+    const msg = job?.progress_message ?? ''
+    const m = msg.match(/Downloading (\d+)(?:\/(\d+))?/)
+    if (m) imageCountRef.current = { done: parseInt(m[1], 10), total: m[2] ? parseInt(m[2], 10) : parseInt(m[1], 10) }
+    if (msg.includes('Pexels')) sourceRef.current = 'Pexels'
+    else if (msg.includes('Unsplash')) sourceRef.current = 'Unsplash'
   }, [job?.progress_message])
 
   if (isLoading) return <div className="text-sm text-stone-500">Loading…</div>
@@ -220,6 +284,11 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
           status={job.status}
           message={job.progress_message}
           imageCount={imageCountRef.current}
+          persistedSource={sourceRef.current}
+          searchTerms={job.search_terms}
+          maxPerQuery={job.max_per_query}
+          onMouseEnter={openOverlay}
+          onMouseLeave={closeOverlayDelayed}
         />
       )}
 
@@ -232,8 +301,8 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
           {/* Magnifying glass — hover to see progress detail */}
           {!isTerminal && (
             <button
-              onMouseEnter={() => setShowOverlay(true)}
-              onMouseLeave={() => setShowOverlay(false)}
+              onMouseEnter={openOverlay}
+              onMouseLeave={closeOverlayDelayed}
               className="text-stone-500 hover:text-stone-200 transition-colors focus:outline-none flex-shrink-0"
               aria-label="Show progress detail"
             >

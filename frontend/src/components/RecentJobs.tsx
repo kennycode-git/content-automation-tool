@@ -35,6 +35,7 @@ const STATUS_ICON: Record<string, string> = {
 const THEME_LABEL: Record<string, string> = {
   none: 'Natural', warm: 'Amber', dark: 'Dark Tones', grey: 'Silver',
   blue: 'Cobalt', red: 'Crimson', bw: 'Mono', sepia: 'Sepia', low_exp: 'Low Exposure',
+  custom: 'Custom',
 }
 
 const THEME_DOT: Record<string, string> = {
@@ -47,6 +48,7 @@ const THEME_DOT: Record<string, string> = {
   bw:      'bg-white ring-1 ring-stone-500',
   sepia:   'bg-amber-800',
   low_exp: 'bg-stone-950 ring-1 ring-stone-700',
+  custom:  'bg-fuchsia-500',
 }
 
 interface Props {

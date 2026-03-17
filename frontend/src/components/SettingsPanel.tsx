@@ -6,6 +6,21 @@
 
 import { useState } from 'react'
 
+export interface CustomGradeParams {
+  brightness: number
+  contrast: number
+  saturation: number
+  exposure: number
+  warmth: number
+  tint: number
+  hue_shift: number
+}
+
+export const DEFAULT_CUSTOM_PARAMS: CustomGradeParams = {
+  brightness: 1.0, contrast: 1.0, saturation: 1.0,
+  exposure: 1.0, warmth: 0.0, tint: 0.0, hue_shift: 0,
+}
+
 export interface VideoSettings {
   resolution: string
   seconds_per_image: number
@@ -14,6 +29,7 @@ export interface VideoSettings {
   allow_repeats: boolean
   color_theme: string
   max_per_query: number
+  custom_grade_params?: CustomGradeParams
 }
 
 const COLOR_THEMES = [
@@ -26,6 +42,7 @@ const COLOR_THEMES = [
   { value: 'blue',    label: 'Cobalt' },
   { value: 'red',     label: 'Crimson' },
   { value: 'bw',      label: 'Monochrome' },
+  { value: 'custom',  label: 'Create Your Own' },
 ]
 
 const THEME_DOT: Record<string, string> = {
@@ -38,6 +55,7 @@ const THEME_DOT: Record<string, string> = {
   blue:    'bg-blue-500',
   red:     'bg-red-500',
   bw:      'bg-white ring-1 ring-stone-500',
+  custom:  'bg-fuchsia-500',
 }
 
 const PRESETS = [
@@ -149,6 +167,112 @@ function ThemePreviewPopup({ theme }: { theme: typeof COLOR_THEMES[number] }) {
   )
 }
 
+const CREATIVE_PRESETS: { name: string; params: CustomGradeParams }[] = [
+  { name: 'Vintage Film', params: { brightness: 0.95, contrast: 0.85, saturation: 0.70, exposure: 0.88, warmth: 0.30, tint: 0.10, hue_shift: 5 } },
+  { name: 'Golden Hour',  params: { brightness: 1.05, contrast: 1.10, saturation: 1.30, exposure: 0.95, warmth: 0.55, tint: 0.05, hue_shift: 8 } },
+  { name: 'Teal & Orange', params: { brightness: 1.00, contrast: 1.20, saturation: 1.40, exposure: 0.90, warmth: 0.40, tint: -0.20, hue_shift: -12 } },
+  { name: 'Faded Matte',  params: { brightness: 1.10, contrast: 0.75, saturation: 0.55, exposure: 1.05, warmth: 0.10, tint: 0.05, hue_shift: 0 } },
+  { name: 'Noir Shadows', params: { brightness: 0.80, contrast: 1.50, saturation: 0.20, exposure: 0.70, warmth: -0.10, tint: 0.05, hue_shift: 0 } },
+  { name: 'Neon Dusk',    params: { brightness: 0.90, contrast: 1.30, saturation: 1.60, exposure: 0.75, warmth: -0.30, tint: 0.35, hue_shift: -25 } },
+]
+
+const CUSTOM_SLIDERS: { key: keyof CustomGradeParams; label: string; min: number; max: number; step: number; unit: string }[] = [
+  { key: 'brightness', label: 'Brightness',  min: 0,    max: 2,   step: 0.05, unit: '' },
+  { key: 'contrast',   label: 'Contrast',    min: 0,    max: 2,   step: 0.05, unit: '' },
+  { key: 'saturation', label: 'Saturation',  min: 0,    max: 2,   step: 0.05, unit: '' },
+  { key: 'exposure',   label: 'Exposure',    min: 0.5,  max: 1.5, step: 0.05, unit: '' },
+  { key: 'warmth',     label: 'Warmth',      min: -1,   max: 1,   step: 0.05, unit: '' },
+  { key: 'tint',       label: 'Tint',        min: -1,   max: 1,   step: 0.05, unit: '' },
+  { key: 'hue_shift',  label: 'Hue Shift',   min: -180, max: 180, step: 1,    unit: '°' },
+]
+
+function buildCssFilter(p: CustomGradeParams): string {
+  const combinedBrightness = p.brightness * p.exposure
+  const parts: string[] = [
+    `brightness(${combinedBrightness.toFixed(2)})`,
+    `contrast(${p.contrast.toFixed(2)})`,
+    `saturate(${p.saturation.toFixed(2)})`,
+  ]
+  if (Math.abs(p.hue_shift) > 0.5) {
+    parts.push(`hue-rotate(${p.hue_shift.toFixed(0)}deg)`)
+  }
+  if (p.warmth > 0.01) {
+    parts.push(`sepia(${(p.warmth * 0.35).toFixed(2)})`)
+    parts.push(`hue-rotate(${(p.warmth * 15).toFixed(1)}deg)`)
+  } else if (p.warmth < -0.01) {
+    parts.push(`hue-rotate(${(p.warmth * 30).toFixed(1)}deg)`)
+  }
+  return parts.join(' ')
+}
+
+function CustomThemePanel({ params, onChange }: { params: CustomGradeParams; onChange: (p: CustomGradeParams) => void }) {
+  return (
+    <div className="mt-2 rounded-lg border border-stone-700 bg-stone-900/60 p-3 space-y-3">
+      {/* Creative presets */}
+      <div>
+        <p className="mb-1.5 text-xs text-stone-500">Starting points</p>
+        <div className="flex flex-wrap gap-1.5">
+          {CREATIVE_PRESETS.map(p => (
+            <button
+              key={p.name}
+              onClick={() => onChange(p.params)}
+              className="rounded-full border border-stone-700 px-2.5 py-0.5 text-xs text-stone-400 hover:border-fuchsia-500 hover:text-fuchsia-300 transition"
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Live swatch preview */}
+      <div className="flex items-center gap-3">
+        <div
+          className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-stone-700"
+          style={{
+            filter: buildCssFilter(params),
+            background: 'linear-gradient(135deg, #f59e0b 0%, #3b82f6 30%, #10b981 60%, #ef4444 100%)',
+          }}
+        />
+        <p className="text-xs text-stone-600 leading-relaxed">
+          Live preview (approximate).<br />
+          Tint and channel balance apply on render.
+        </p>
+      </div>
+
+      {/* Sliders */}
+      <div className="space-y-2.5">
+        {CUSTOM_SLIDERS.map(s => (
+          <div key={s.key}>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs text-stone-400">{s.label}</span>
+              <span className="text-xs font-mono text-stone-300">
+                {params[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={s.min}
+              max={s.max}
+              step={s.step}
+              value={params[s.key]}
+              onChange={e => onChange({ ...params, [s.key]: parseFloat(e.target.value) })}
+              className="w-full accent-fuchsia-500"
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Reset */}
+      <button
+        onClick={() => onChange(DEFAULT_CUSTOM_PARAMS)}
+        className="text-xs text-stone-600 hover:text-stone-400 transition"
+      >
+        Reset to neutral
+      </button>
+    </div>
+  )
+}
+
 function ThemeSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
   const [hovered, setHovered] = useState<string | null>(null)
@@ -223,24 +347,6 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
               </div>
             ))}
 
-            {/* Create Your Own — coming soon */}
-            <div
-              className="group relative flex items-center gap-2 px-2 py-1.5 border-t border-stone-700/50 cursor-not-allowed"
-              onMouseEnter={() => setHovered('__custom__')}
-              onMouseLeave={() => setHovered(null)}
-            >
-              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-stone-700 ring-1 ring-stone-600 ring-dashed" />
-              <span className="text-sm text-stone-600">Create Your Own</span>
-              <span className="ml-auto text-[10px] text-stone-700 font-medium">Soon</span>
-              {hovered === '__custom__' && (
-                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 w-52 rounded-lg border border-stone-600 bg-stone-900 shadow-xl px-3 py-2.5 z-50 pointer-events-none">
-                  <p className="text-xs font-semibold text-stone-300 mb-1">Custom colour theme</p>
-                  <p className="text-xs text-stone-500 leading-relaxed">
-                    Build your own filter: adjust hue, saturation, brightness, and contrast, then save it as a named theme to reuse across any job.
-                  </p>
-                </div>
-              )}
-            </div>
           </div>
         </>
       )}
@@ -325,7 +431,22 @@ export default function SettingsPanel({ settings, onChange, onPresetApplied }: P
           <InfoIcon tip="Biases search toward this colour theme and applies automatic colour grading.
                          Recommend 'Dark Tones' or 'Low Exposure' for most visible white overlay text." />
         </div>
-        <ThemeSelector value={settings.color_theme} onChange={v => update({ color_theme: v })} />
+        <ThemeSelector
+          value={settings.color_theme}
+          onChange={v => {
+            if (v !== 'custom') {
+              update({ color_theme: v, custom_grade_params: undefined })
+            } else {
+              update({ color_theme: 'custom', custom_grade_params: settings.custom_grade_params ?? DEFAULT_CUSTOM_PARAMS })
+            }
+          }}
+        />
+        {settings.color_theme === 'custom' && (
+          <CustomThemePanel
+            params={settings.custom_grade_params ?? DEFAULT_CUSTOM_PARAMS}
+            onChange={p => update({ custom_grade_params: p })}
+          />
+        )}
       </div>
 
     </div>

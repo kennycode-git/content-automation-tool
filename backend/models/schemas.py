@@ -16,13 +16,24 @@ Security considerations:
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 ALLOWED_RESOLUTIONS = {"1080x1920", "1920x1080", "1080x1080"}
-ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp"}
+ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp", "custom"}
 ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold"}
 ALLOWED_IMAGE_SOURCES = {"unsplash", "pexels", "both"}
+
+
+class CustomGradeParams(BaseModel):
+    """User-defined parametric colour grade applied via grade_custom() in image_grader.py."""
+    brightness: float = Field(default=1.0, ge=0.0, le=2.0)
+    contrast:   float = Field(default=1.0, ge=0.0, le=2.0)
+    saturation: float = Field(default=1.0, ge=0.0, le=2.0)
+    exposure:   float = Field(default=1.0, ge=0.5, le=1.5)
+    warmth:     float = Field(default=0.0, ge=-1.0, le=1.0)
+    tint:       float = Field(default=0.0, ge=-1.0, le=1.0)
+    hue_shift:  float = Field(default=0.0, ge=-180.0, le=180.0)
 
 
 class GenerateRequest(BaseModel):
@@ -45,6 +56,7 @@ class GenerateRequest(BaseModel):
     uploaded_only: bool = False
     accent_folder: Optional[str] = Field(default=None)
     image_source: str = Field(default="unsplash")
+    custom_grade_params: Optional[CustomGradeParams] = None
 
     @field_validator("search_terms")
     @classmethod
@@ -84,6 +96,12 @@ class GenerateRequest(BaseModel):
             raise ValueError(f"image_source must be one of: {', '.join(sorted(ALLOWED_IMAGE_SOURCES))}")
         return v
 
+    @model_validator(mode="after")
+    def check_custom_params(self) -> "GenerateRequest":
+        if self.color_theme == "custom" and self.custom_grade_params is None:
+            raise ValueError("custom_grade_params is required when color_theme is 'custom'")
+        return self
+
 
 class JobStatusResponse(BaseModel):
     job_id: str
@@ -94,10 +112,12 @@ class JobStatusResponse(BaseModel):
     error_message: Optional[str] = None
     batch_title: Optional[str] = None
     # Config fields extracted from JSONB for display
+    search_terms: Optional[List[str]] = None
     color_theme: Optional[str] = None
     resolution: Optional[str] = None
     seconds_per_image: Optional[float] = None
     total_seconds: Optional[float] = None
+    max_per_query: Optional[int] = None
     preset_name: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None

@@ -28,25 +28,26 @@ frontend/
     │   ├── supabase.ts        # Supabase client (anon key), getAccessToken()
     │   └── api.ts             # Typed fetch wrappers for FastAPI backend
     ├── pages/
-    │   ├── Login.tsx          # Email/password + magic link auth
+    │   ├── Login.tsx          # Invite-only trial login: email → set password or sign in; PasswordField component with eye toggle on all password inputs
     │   ├── Dashboard.tsx      # Main tool: batch editor + settings + job status
     │   ├── Photos.tsx         # Photo extraction tool (Pexels only, module-level cache)
-    │   ├── Pricing.tsx        # Plan selection → Stripe Checkout
-    │   └── Account.tsx        # Plan info, render usage, sign out
+    │   ├── Pricing.tsx        # Plan selection → Stripe Checkout (responsive grid)
+    │   ├── Account.tsx        # Plan info, render usage, sign out
+    │   └── Admin.tsx          # Admin dashboard: invite management, user list, render adjustment
     └── components/
         ├── AppNavbar.tsx      # Shared navbar: logo, tool tabs, profile dropdown
         ├── BatchEditor.tsx    # # Title-syntax textarea + visual card editor
         ├── SettingsPanel.tsx  # Resolution, timing, collapsed theme dropdown
         ├── AdvancedModal.tsx  # Centered dialog: presets, image source, accent, advanced opts
         ├── InspirationCarousel.tsx  # Horizontal style cards with hover-to-play video previews
-        ├── OnboardingTour.tsx # Spotlight-style first-use tour (7 steps)
+        ├── OnboardingTour.tsx # Spotlight-style first-use tour (8 steps + welcome screen)
         ├── PromptModal.tsx    # AI batch prompt template with copy button
         ├── TermBundles.tsx    # Pre-built search term bundles (7 bundles)
         ├── PresetManager.tsx  # Named settings presets CRUD
         ├── JobPanel.tsx       # Live job status with 3s polling + download button
         ├── RecentJobs.tsx     # Last 10 jobs list with colour grade, delete, duplicate
         ├── Toast.tsx          # Auto-dismiss toast notifications
-        └── PreviewModal.tsx   # Staged image preview before generating
+        └── PreviewModal.tsx   # Staged image preview before generating (wrapping tabs, dark scrollbar)
 ```
 
 ## Running Locally
@@ -73,11 +74,12 @@ VITE_DEV_BYPASS=true                               ← REMOVE before deploy
 ## Routes
 | Path | Auth | Description |
 |------|------|-------------|
-| /login | Public | Sign in / magic link |
+| /login | Public | Invite-only trial login (email → set password or sign in) |
 | /pricing | Public | Plan selection → Stripe |
 | /dashboard | Protected | Main video generation tool |
 | /photos | Protected | Photo extraction tool (Pexels) |
 | /account | Protected | Plan + usage + sign out |
+| /admin | Protected | Admin dashboard (invite management, users, render adjustment) |
 
 ## Required Environment Variables
 ```
@@ -177,8 +179,18 @@ duplicated in `RecentJobs.tsx` and `InspirationCarousel.tsx` for standalone use.
 - Stops polling when status is `done` or `failed`
 - Step-based determinate progress bar: Queued=5% → Loading uploaded=10% → Fetching/API limit=20% → Downloading=40% → Applying=60% → Rendering=75% → Uploading=90% → Done=100%
 - Magnifying glass icon (hover) shows `ProgressOverlay` with pipeline steps + pulsing active step
+- `ProgressOverlay` is sticky: outer wrapper div covers the gap with `pt-2`, mouse events on wrapper so mouse can travel from button to overlay without dismissing. 200ms hide timeout cancelled on overlay enter.
+- Hovering "Searching for photos" or "Collecting photos" step rows (active or done) shows an inline detail sub-panel:
+  - Terms count, target image count (terms × max_per_query), source (Pexels/Unsplash)
+  - Live download count "X/Y photos downloaded" or "X photos collected" when done
+  - Source persisted in `sourceRef` so it still shows after message changes to "Applying…"
+  - Fallback: shows target count if poll missed the download phase entirely
+- `imageCountRef` tracks `{ done, total }` parsed from `"Downloading X/Y images…"` messages
+- `sourceRef` persists source once seen in any progress message
+- `JobStatusResponse` backend schema now includes `search_terms` and `max_per_query` (was missing from single-job endpoint)
 - Metadata strip: color theme badge, resolution, duration, preset name
 - Download uses fetch-blob so the file saves with the batch title as filename
+- `submittingRef` (useRef) guards against double-submit on mobile (touch fires both touchend + click before React re-render disables button)
 
 ### RecentJobs
 - Polls last 10 jobs every 30s
@@ -189,7 +201,8 @@ duplicated in `RecentJobs.tsx` and `InspirationCarousel.tsx` for standalone use.
 
 ### PreviewModal
 - Full-screen modal for reviewing staged images before rendering
-- Batch tabs (when >1 batch), controls bar outside scroll area
+- Batch tabs (when >1 batch) use horizontal scroll with dark thin scrollbar (`.scrollbar-dark` CSS class)
+- Controls bar outside scroll area
 - Multi-select with checkmarks, Select all / Deselect all
 - Drag-and-drop + file picker to add images; images upload immediately in background
 - Removes failed uploads from the confirmed batch
@@ -204,11 +217,13 @@ duplicated in `RecentJobs.tsx` and `InspirationCarousel.tsx` for standalone use.
 - TermBundles panel for quick-start term loading
 
 ### OnboardingTour
-- 7-step spotlight-style tour shown once per browser (`localStorage` key: `cogito_tour_seen`)
+- 8-step spotlight-style tour + welcome screen (step -1, first visit only)
+- Shown once per browser (`localStorage` key: `cogito_tour_seen`); re-triggerable via `?` button
 - Exported `TOUR_STORAGE_KEY` constant used by Dashboard to check/set tour state
 - Spotlight uses CSS `box-shadow` spread to dim everything except the target element
 - Tracks target element via `requestAnimationFrame` loop (handles scroll/resize)
-- Steps: batch editor → classic text mode → colour themes → advanced settings → colour variants → preview → generate
+- **Scrolls target into view** (`scrollIntoView({ behavior: 'smooth', block: 'center' })`) on each step
+- Steps: batch editor → classic text mode → video settings → colour themes → advanced settings → colour variants → preview → generate
 - Keyboard nav: Arrow keys, Enter (next), Escape (close)
 
 ### PromptModal
@@ -263,11 +278,14 @@ vercel --prod
 - [x] URL expiry warning + Refresh URL button
 - [x] Dev bypass mode (VITE_DEV_BYPASS=true)
 - [x] Ctrl/Cmd+Enter keyboard shortcut to Generate
-- [ ] Phase 6: Vercel deployment
-  - [ ] Remove VITE_DEV_BYPASS from .env.local / Vercel env vars
-  - [ ] Replace placeholder Supabase URL + anon key with real project values
-  - [ ] `npm run build` to verify no TS errors before deploying
-  - [ ] Set all env vars in Vercel dashboard
+- [x] Invite-only trial login flow (email → check-invite → set password or sign in)
+- [x] Password recovery flow (forgot password → reset email → new-password step)
+- [x] Admin page (/admin) — invite management, user list, render adjustment
+- [x] OnboardingTour: 8 steps, scrolls to target on each step
+- [x] PreviewModal batch tabs: dark thin scrollbar, horizontal scroll
+- [x] Pricing page: responsive grid (3-col on sm+, no overflow)
+- [x] Phase 6: Vercel deployed (auto-deploys on push to main)
+  - [x] Env vars set in Vercel dashboard
   - [ ] Update vercel.json CSP connect-src with real Railway URL
   - [ ] Update vercel.json CSP with real Supabase project domain
 - [ ] E2E test: login → generate → poll → download

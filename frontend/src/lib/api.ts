@@ -38,6 +38,16 @@ const DEV_MOCK_JOB: JobStatus = {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface CustomGradeParams {
+  brightness: number
+  contrast: number
+  saturation: number
+  exposure: number
+  warmth: number
+  tint: number
+  hue_shift: number
+}
+
 export interface GenerateRequest {
   search_terms: string[]
   resolution?: string
@@ -53,6 +63,7 @@ export interface GenerateRequest {
   uploaded_only?: boolean
   accent_folder?: string | null
   image_source?: 'unsplash' | 'pexels' | 'both'
+  custom_grade_params?: CustomGradeParams
 }
 
 export interface GenerateResponse {
@@ -77,6 +88,7 @@ export interface JobStatus {
   color_theme?: string | null
   max_per_query?: number | null
   preset_name?: string | null
+  custom_grade_params?: CustomGradeParams | null
   created_at: string
   completed_at: string | null
 }

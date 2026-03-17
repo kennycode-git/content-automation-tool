@@ -21,7 +21,11 @@ backend/
 │   ├── auth.py                # JWT validation dependency (get_current_user_id)
 │   ├── generate.py            # POST /api/generate — subscription gate + job dispatch
 │   ├── jobs.py                # GET/DELETE /api/jobs, GET /api/jobs/{id}
-│   └── stripe_webhook.py      # POST /stripe/webhook — Stripe event handler
+│   ├── presets.py             # CRUD /api/presets — named settings presets
+│   ├── preview.py             # POST /api/preview-stage — image staging without render
+│   ├── stripe_webhook.py      # POST /stripe/webhook — Stripe event handler
+│   ├── trial_auth.py          # POST /api/auth/check-invite + claim-invite (no auth)
+│   └── admin.py               # /api/admin/* — invite management, users, email (X-Admin-Key)
 ├── services/
 │   ├── image_pipeline.py      # Unsplash fetch (extracted from unsplash_extract_plus.py)
 │   ├── image_grader.py        # Colour grading (extracted from color_grade.py)
@@ -66,7 +70,15 @@ ENABLE_DOCS=true .venv/Scripts/uvicorn main:app --reload --port 8001
 | POST | /api/upload-images | JWT | Upload user images to Supabase Storage |
 | POST | /api/prefetch-images | JWT | Pre-fetch Unsplash images to storage |
 | POST | /api/jobs/{id}/resign | JWT | Re-generate expired signed URL for completed job |
+| GET | /api/usage | JWT | Get current plan, render count, trial expiry |
 | POST | /stripe/webhook | Stripe sig | Handle subscription events |
+| POST | /api/auth/check-invite | None | Check if email is in trial_invites (not_found/unclaimed/claimed) |
+| POST | /api/auth/claim-invite | None | Create Supabase auth user from trial invite + mark claimed |
+| POST | /api/admin/invite | X-Admin-Key | Add email to trial_invites |
+| DELETE | /api/admin/invite | X-Admin-Key | Remove email from trial_invites |
+| GET | /api/admin/users | X-Admin-Key | List invites enriched with subscription + usage data |
+| POST | /api/admin/send-invite | X-Admin-Key | Send invite email via Resend |
+| POST | /api/admin/adjust-renders | X-Admin-Key | Reset or add to a user's monthly render count |
 
 ## Required Environment Variables
 ```
@@ -78,6 +90,9 @@ STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
 FRONTEND_URL              # CORS allow-origin (Vercel URL)
 RAILWAY_PUBLIC_DOMAIN     # TrustedHost middleware
+ADMIN_SECRET_KEY          # X-Admin-Key header value for admin endpoints
+RESEND_API_KEY            # Resend email API key (for admin invite emails)
+RESEND_FROM_EMAIL         # From address (default: noreply@passiveclip.com)
 ```
 
 ## Security Architecture
@@ -112,6 +127,8 @@ RAILWAY_PUBLIC_DOMAIN     # TrustedHost middleware
                                    then retry — job never terminates on rate limit
       2. download_and_save()     — concurrent downloads via ThreadPoolExecutor(max_workers=8)
                                    uses urls["regular"] (not "full") for speed
+                                   on_progress callback updates DB after each image: "Downloading X/Y images…"
+                                   _make_download_progress_cb() in job_manager.py creates the sync callback
       2.5 apply_theme_grading()  — colour grade images (no-op for theme='none')
       3. render_slideshow()      — ffmpeg → output.mp4 (uses graded dir if grading applied)
       4. upload_output()         — Supabase Storage outputs/{user_id}/{job_id}.mp4
@@ -173,9 +190,20 @@ All 9 values listed in `ALLOWED_COLOR_THEMES` in `models/schemas.py`.
 ## Database Schema
 See `../supabase/schema.sql` for full schema with RLS policies.
 
-## What Is NOT In This Backend
-- Long-form pipeline (WhisperX, audio stitching, Pexels, draft video) — dropped for MVP
-- Accent/philosopher image injection — can be added as Pro feature post-MVP
+## Trial Auth Flow
+Closed-beta invite system — no public sign-up.
+1. Admin adds email to `trial_invites` table (via Supabase dashboard or `POST /api/admin/invite`)
+2. Admin sends invite link manually or via `POST /api/admin/send-invite` (Resend)
+3. User visits `/login`, enters email → `check-invite` returns unclaimed
+4. User sets password → `claim-invite` creates Supabase auth user + marks invite claimed
+5. Frontend auto signs in via `supabase.auth.signInWithPassword`
+- `claimed=true` prevents re-activation; user uses "Forgot password?" to reset
+
+## Admin Panel
+- All endpoints secured by `X-Admin-Key: <ADMIN_SECRET_KEY>` header
+- `GET /api/admin/users` — enriched view: invite status + plan + render count + last job
+- `POST /api/admin/adjust-renders` — `action='reset'` (restore full allowance) or `action='add'` (credit extra renders)
+- Email sending uses Resend API (`httpx` async client)
 
 ## Local Verification
 ```bash
@@ -204,8 +232,12 @@ python test_local.py
   - [x] User image uploads: POST /api/upload-images (user-uploads bucket)
   - [x] Presets CRUD: POST/GET/DELETE /api/presets
   - [x] URL re-signing: POST /api/jobs/{id}/resign
+  - [x] Trial auth: POST /api/auth/check-invite + claim-invite
+  - [x] Admin endpoints: invite CRUD, enriched user list, send invite email, adjust renders
+  - [x] email-validator added to requirements.txt for pydantic EmailStr
+  - [x] httpx added to requirements.txt for Resend async calls
 - [x] Local dev running (backend :8001 healthy, frontend :5175 live)
-- [ ] Phase 6: Railway deployment
-  - [ ] Set env vars in Railway dashboard
-  - [ ] `git push railway main`
+- [x] Phase 6: Railway deployed (auto-deploys on push to main)
+  - [x] Set env vars in Railway dashboard
   - [ ] Register Stripe webhook endpoint → copy secret to STRIPE_WEBHOOK_SECRET
+  - [ ] Set ADMIN_SECRET_KEY, RESEND_API_KEY, RESEND_FROM_EMAIL in Railway

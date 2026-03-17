@@ -22,6 +22,52 @@ import { supabase } from '../lib/supabase'
 
 type Step = 'email' | 'set-password' | 'signin' | 'reset' | 'new-password'
 
+function PasswordField({ value, onChange, placeholder, autoFocus, minLength, id }: {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  autoFocus?: boolean
+  minLength?: number
+  id?: string
+}) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        type={show ? 'text' : 'password'}
+        required
+        autoFocus={autoFocus}
+        minLength={minLength}
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full rounded-lg border border-stone-700 bg-stone-800 px-3 py-2 pr-9 text-sm text-stone-100 placeholder-stone-500 focus:border-brand-500 focus:outline-none"
+      />
+      <button
+        type="button"
+        onClick={() => setShow(s => !s)}
+        className="absolute inset-y-0 right-2.5 flex items-center text-stone-500 hover:text-stone-300 transition-colors"
+        tabIndex={-1}
+        aria-label={show ? 'Hide password' : 'Show password'}
+      >
+        {show ? (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M17.94 10A9.54 9.54 0 0 1 10 17a9.54 9.54 0 0 1-7.94-7 9.54 9.54 0 0 1 7.94-7 9.54 9.54 0 0 1 7.94 7z"/>
+            <circle cx="10" cy="10" r="3"/>
+            <line x1="3" y1="3" x2="17" y2="17"/>
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M17.94 10A9.54 9.54 0 0 1 10 17a9.54 9.54 0 0 1-7.94-7 9.54 9.54 0 0 1 7.94-7 9.54 9.54 0 0 1 7.94 7z"/>
+            <circle cx="10" cy="10" r="3"/>
+          </svg>
+        )}
+      </button>
+    </div>
+  )
+}
+
 const API_URL = import.meta.env.VITE_API_URL as string
 
 export default function Login({ recovering = false }: { recovering?: boolean }) {
@@ -175,11 +221,8 @@ export default function Login({ recovering = false }: { recovering?: boolean }) 
             <p className="mb-1 text-sm text-stone-400">Welcome! Set a password for</p>
             <p className="mb-5 truncate text-sm font-medium text-stone-200">{email}</p>
             <form onSubmit={handleClaimInvite} className="space-y-3">
-              <input type="password" required minLength={6} autoFocus
-                placeholder="Password (min 6 characters)" value={password}
-                onChange={e => setPassword(e.target.value)} className={inputClass} />
-              <input type="password" required placeholder="Confirm password" value={confirm}
-                onChange={e => setConfirm(e.target.value)} className={inputClass} />
+              <PasswordField autoFocus minLength={6} placeholder="Password (min 6 characters)" value={password} onChange={setPassword} />
+              <PasswordField placeholder="Confirm password" value={confirm} onChange={setConfirm} />
               <button type="submit" disabled={loading} className={btnPrimary}>
                 {loading ? 'Activating…' : 'Activate account'}
               </button>
@@ -196,8 +239,7 @@ export default function Login({ recovering = false }: { recovering?: boolean }) 
             <p className="mb-1 text-sm text-stone-400">Welcome back</p>
             <p className="mb-5 truncate text-sm font-medium text-stone-200">{email}</p>
             <form onSubmit={handleSignIn} className="space-y-3">
-              <input type="password" required autoFocus placeholder="Password" value={password}
-                onChange={e => setPassword(e.target.value)} className={inputClass} />
+              <PasswordField autoFocus placeholder="Password" value={password} onChange={setPassword} />
               <button type="submit" disabled={loading} className={btnPrimary}>
                 {loading ? 'Signing in…' : 'Sign in'}
               </button>
@@ -235,12 +277,8 @@ export default function Login({ recovering = false }: { recovering?: boolean }) 
           <>
             <p className="mb-6 text-sm text-stone-400">Choose a new password</p>
             <form onSubmit={handleSetNewPassword} className="space-y-3">
-              <input type="password" required minLength={6} autoFocus
-                placeholder="New password (min 6 characters)" value={password}
-                onChange={e => setPassword(e.target.value)} className={inputClass} />
-              <input type="password" required
-                placeholder="Confirm new password" value={confirm}
-                onChange={e => setConfirm(e.target.value)} className={inputClass} />
+              <PasswordField autoFocus minLength={6} placeholder="New password (min 6 characters)" value={password} onChange={setPassword} />
+              <PasswordField placeholder="Confirm new password" value={confirm} onChange={setConfirm} />
               <button type="submit" disabled={loading} className={btnPrimary}>
                 {loading ? 'Saving…' : 'Set new password'}
               </button>

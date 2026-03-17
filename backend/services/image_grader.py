@@ -174,6 +174,71 @@ def grade_sepia(img: Image.Image, intensity: float = 0.70) -> Image.Image:
     return Image.fromarray(out, "RGB")
 
 
+def grade_custom(img: Image.Image, params: dict) -> Image.Image:
+    """
+    Apply user-defined parametric colour grade.
+    Operations are applied in a fixed order: exposure → warmth → tint →
+    brightness → contrast → saturation → hue_shift.
+    params keys: brightness, contrast, saturation, exposure, warmth, tint, hue_shift
+    """
+    base = img.convert("RGB")
+    arr = np.array(base, dtype=np.float32)
+
+    # 1. Exposure — global multiplicative level (like a pre-stage darkening)
+    exposure = float(params.get("exposure", 1.0))
+    if abs(exposure - 1.0) > 0.001:
+        arr = (arr * exposure).clip(0, 255)
+
+    # 2. Warmth — push red/blue channels in opposite directions
+    warmth = float(params.get("warmth", 0.0))
+    if warmth > 0:
+        arr[:, :, 0] = (arr[:, :, 0] * (1.0 + warmth * 0.25)).clip(0, 255)  # lift red
+        arr[:, :, 1] = (arr[:, :, 1] * (1.0 + warmth * 0.05)).clip(0, 255)  # mild green lift
+        arr[:, :, 2] = (arr[:, :, 2] * (1.0 - warmth * 0.25)).clip(0, 255)  # cut blue
+    elif warmth < 0:
+        cool = -warmth
+        arr[:, :, 0] = (arr[:, :, 0] * (1.0 - cool * 0.20)).clip(0, 255)   # cut red
+        arr[:, :, 2] = (arr[:, :, 2] * (1.0 + cool * 0.25)).clip(0, 255)   # lift blue
+
+    # 3. Tint — green/magenta axis
+    tint = float(params.get("tint", 0.0))
+    if tint > 0:
+        arr[:, :, 1] = (arr[:, :, 1] * (1.0 - tint * 0.20)).clip(0, 255)        # cut green → magenta
+    elif tint < 0:
+        arr[:, :, 1] = (arr[:, :, 1] * (1.0 + (-tint) * 0.20)).clip(0, 255)     # lift green
+
+    img_out = Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGB")
+
+    # 4. Brightness
+    brightness = float(params.get("brightness", 1.0))
+    if abs(brightness - 1.0) > 0.001:
+        img_out = ImageEnhance.Brightness(img_out).enhance(brightness)
+
+    # 5. Contrast
+    contrast = float(params.get("contrast", 1.0))
+    if abs(contrast - 1.0) > 0.001:
+        img_out = ImageEnhance.Contrast(img_out).enhance(contrast)
+
+    # 6. Saturation
+    saturation = float(params.get("saturation", 1.0))
+    if abs(saturation - 1.0) > 0.001:
+        img_out = ImageEnhance.Color(img_out).enhance(saturation)
+
+    # 7. Hue shift
+    hue_shift_deg = float(params.get("hue_shift", 0.0))
+    if abs(hue_shift_deg) > 0.5:
+        shift_255 = int(round(hue_shift_deg / 360.0 * 255))
+        arr2 = np.array(img_out, dtype=np.uint8)
+        hsv = rgb_to_hsv_np(arr2)
+        h = hsv[:, :, 0].astype(np.int16)
+        h = ((h + shift_255) % 256).astype(np.uint8)
+        img_out = Image.fromarray(
+            hsv_to_rgb_np(np.stack([h, hsv[:, :, 1], hsv[:, :, 2]], axis=2)), "RGB"
+        )
+
+    return img_out
+
+
 def grade_low_exposure(img: Image.Image, intensity: float = 1.0) -> Image.Image:
     """Crush exposure: heavily darken while preserving colour and boosting contrast."""
     base = img.convert("RGB")
@@ -186,7 +251,7 @@ def grade_low_exposure(img: Image.Image, intensity: float = 1.0) -> Image.Image:
     return Image.fromarray(blend(np.array(base), np.array(contrasted), intensity), "RGB")
 
 
-def apply_theme_grading(images_dir: str, output_dir: str, theme: str) -> str:
+def apply_theme_grading(images_dir: str, output_dir: str, theme: str, custom_params: dict = None) -> str:
     """
     Apply per-theme colour grading to all images in images_dir, saving to output_dir.
     Returns output_dir if grading was applied, or images_dir for theme='none' (no-op).
@@ -228,6 +293,8 @@ def apply_theme_grading(images_dir: str, output_dir: str, theme: str) -> str:
                     out = img
             elif theme == "low_exp":
                 out = grade_low_exposure(img)
+            elif theme == "custom":
+                out = grade_custom(img, custom_params) if custom_params else img
             else:
                 out = img
 

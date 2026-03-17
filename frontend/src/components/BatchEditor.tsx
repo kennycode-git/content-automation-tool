@@ -74,6 +74,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
   ])
   const [uploadedPaths, setUploadedPaths] = useState<Record<number, string[]>>({})
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
 
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
     return vBatches.map((b, i) => ({
@@ -283,7 +284,14 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
       ) : (
         <div className="space-y-3">
           {batches.map((batch, idx) => (
-            <div key={idx} className="rounded-xl border border-stone-700 bg-stone-800 p-3">
+            <div
+              key={idx}
+              className={`rounded-xl border bg-stone-800 p-3 transition-colors ${dragOverIdx === idx ? 'border-brand-500/60 bg-stone-800/80' : 'border-stone-700'}`}
+              onDragOver={e => { e.preventDefault(); setDragOverIdx(idx) }}
+              onDragEnter={e => { e.preventDefault(); setDragOverIdx(idx) }}
+              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverIdx(null) }}
+              onDrop={e => { e.preventDefault(); setDragOverIdx(null); handleFileUpload(idx, e.dataTransfer.files) }}
+            >
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 flex-1 min-w-0 group">
                   <svg className="w-3 h-3 text-stone-600 group-focus-within:text-brand-500 flex-shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -310,7 +318,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                 className="w-full rounded-lg border border-stone-700 bg-stone-900 px-2 py-1.5 font-mono text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
               />
               {/* Image upload */}
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <label className="cursor-pointer rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200">
                   {uploading[idx] ? 'Uploading…' : 'Upload photos'}
                   <input
@@ -323,9 +331,20 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                   />
                 </label>
                 {(uploadedPaths[idx]?.length ?? 0) > 0 && (
-                  <span className="text-xs text-stone-500">
-                    {uploadedPaths[idx].length} photo{uploadedPaths[idx].length !== 1 ? 's' : ''} added
-                  </span>
+                  uploadedPaths[idx].map((path, pi) => (
+                    <span key={pi} className="flex items-center gap-1 rounded border border-stone-700 bg-stone-900 px-2 py-0.5 text-xs text-stone-400">
+                      <span className="max-w-[120px] truncate">{path.split('/').pop()}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = { ...uploadedPaths, [idx]: uploadedPaths[idx].filter((_, i) => i !== pi) }
+                          setUploadedPaths(next)
+                          onBatchesChange(visualToBatchOutputs(batches, next))
+                        }}
+                        className="text-stone-600 hover:text-red-400 transition-colors leading-none"
+                      >✕</button>
+                    </span>
+                  ))
                 )}
               </div>
             </div>

@@ -67,6 +67,7 @@ export default function Dashboard({ session }: Props) {
   })
   const [pendingCount, setPendingCount] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [pendingReuse, setPendingReuse] = useState<{ title: string | null; terms: string[] } | null>(null)
@@ -171,6 +172,7 @@ export default function Dashboard({ session }: Props) {
   }
 
   const handleGenerate = useCallback(async () => {
+    if (submittingRef.current) return
     if (trialExpired) {
       setError('Your trial has ended. Upgrade to continue generating.')
       return
@@ -181,6 +183,7 @@ export default function Dashboard({ session }: Props) {
       return
     }
     setError(null)
+    submittingRef.current = true
     setSubmitting(true)
     setPendingCount(prev => prev + validBatches.length)
     try {
@@ -203,11 +206,13 @@ export default function Dashboard({ session }: Props) {
       setError(e instanceof Error ? e.message : 'Unknown error')
       setPendingCount(0)
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }, [batches, settings, trialExpired, appliedPresetName, uploadedOnly, accentFolder, resolvedSource])
 
   const handleGenerateVariants = useCallback(async () => {
+    if (submittingRef.current) return
     if (trialExpired) {
       setError('Your trial has ended. Upgrade to continue generating.')
       return
@@ -222,6 +227,7 @@ export default function Dashboard({ session }: Props) {
       return
     }
     setError(null)
+    submittingRef.current = true
     setSubmitting(true)
     const themesToRun = VARIANT_THEMES.filter(t => checkedThemes.has(t.value))
     const totalJobs = validBatches.length * themesToRun.length
@@ -253,6 +259,7 @@ export default function Dashboard({ session }: Props) {
       setError(e instanceof Error ? e.message : 'Unknown error')
       setPendingCount(0)
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
       setVariantStatus(null)
     }

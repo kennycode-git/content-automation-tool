@@ -123,6 +123,7 @@ async def generate(
         uploaded_only=body.uploaded_only,
         accent_folder=body.accent_folder or None,
         image_source=body.image_source,
+        custom_grade_params=body.custom_grade_params.model_dump() if body.custom_grade_params else None,
     )
     job_id = await create_job(user_id, config, db)
 

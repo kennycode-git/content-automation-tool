@@ -47,6 +47,7 @@ class JobConfig:
     uploaded_only: bool = False
     accent_folder: Optional[str] = None
     image_source: str = "unsplash"
+    custom_grade_params: Optional[Dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -62,6 +63,8 @@ class JobConfig:
         if self.preset_name:
             d["preset_name"] = self.preset_name
         d["image_source"] = self.image_source
+        if self.custom_grade_params:
+            d["custom_grade_params"] = self.custom_grade_params
         return d
 
     def parse_resolution(self):
@@ -89,6 +92,19 @@ async def create_job(user_id: str, config: JobConfig, db) -> str:
     job_id = result.data[0]["id"]
     logger.info("Created job %s for user %s", job_id, user_id)
     return job_id
+
+
+def _make_download_progress_cb(job_id: str, user_id: str):
+    """Returns a sync callback for live download progress (called from ThreadPoolExecutor)."""
+    from db.supabase_client import get_client
+    def cb(done: int, total: int):
+        try:
+            get_client().table("jobs").update({
+                "progress_message": f"Downloading {done}/{total} images…"
+            }).eq("id", job_id).eq("user_id", user_id).neq("status", "deleted").execute()
+        except Exception as exc:
+            logger.warning("Download progress update failed: %s", exc)
+    return cb
 
 
 async def update_job_status(job_id: str, user_id: str, status: str, db, **kwargs) -> None:
@@ -323,15 +339,16 @@ async def run_pipeline(job_id: str, user_id: str, config: JobConfig, db) -> None
                 raise RuntimeError("No images returned for the given search terms.")
 
             if items:
-                await update_job_status(job_id, user_id, "running", db, progress_message=f"Downloading {len(items)} images…")
-                saved = await asyncio.to_thread(download_and_save, items, images_dir, width, height)
+                await update_job_status(job_id, user_id, "running", db, progress_message=f"Downloading 0/{len(items)} images…")
+                progress_cb = _make_download_progress_cb(job_id, user_id)
+                saved = await asyncio.to_thread(download_and_save, items, images_dir, width, height, 8, progress_cb)
                 if saved == 0 and not config.uploaded_image_paths:
                     raise RuntimeError("No images could be downloaded.")
 
         # --- Step 2.5: Apply colour grading ---
         await update_job_status(job_id, user_id, "running", db, progress_message="Applying colour grade…")
         graded_dir = os.path.join(tmp_root, "graded")
-        render_input = await asyncio.to_thread(apply_theme_grading, images_dir, graded_dir, config.color_theme)
+        render_input = await asyncio.to_thread(apply_theme_grading, images_dir, graded_dir, config.color_theme, config.custom_grade_params)
 
         # --- Step 2.7: Inject accent images (ungraded, sprinkled into render pool) ---
         if config.accent_folder:

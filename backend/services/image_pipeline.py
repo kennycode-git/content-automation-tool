@@ -275,11 +275,13 @@ def download_and_save(
     tw: int,
     th: int,
     max_workers: int = 8,
+    on_progress: Optional[callable] = None,
 ) -> int:
     """Download, resize, and save images to dest_dir concurrently. Returns count saved."""
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
-    logger.info("Saving %d images to: %s (workers=%d)", len(items), dest_dir, max_workers)
+    total = len(items)
+    logger.info("Saving %d images to: %s (workers=%d)", total, dest_dir, max_workers)
 
     saved = 0
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -292,7 +294,12 @@ def download_and_save(
             ok = future.result()
             if ok:
                 saved += 1
-                logger.info("%d/%d saved %s", idx, len(items), fid)
+                logger.info("%d/%d saved %s", saved, total, fid)
+                if on_progress:
+                    try:
+                        on_progress(saved, total)
+                    except Exception as e:
+                        logger.warning("on_progress callback failed: %s", e)
 
-    logger.info("Saved %d/%d images.", saved, len(items))
+    logger.info("Saved %d/%d images.", saved, total)
     return saved
