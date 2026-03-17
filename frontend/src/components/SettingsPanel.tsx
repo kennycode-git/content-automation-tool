@@ -177,17 +177,17 @@ function ThemePreviewPopup({ theme }: { theme: typeof COLOR_THEMES[number] }) {
   )
 }
 
-function LiveImageGrid({ params }: { params: CustomGradeParams }) {
+function LivePreviewBanner({ params }: { params: CustomGradeParams }) {
   const cssFilter = buildCssFilter(params)
   return (
-    <div className="rounded-lg overflow-hidden bg-stone-950 flex-shrink-0 self-stretch" style={{ width: '5.5rem', minHeight: '9rem' }}>
+    <div className="rounded-lg overflow-hidden bg-stone-950 w-full" style={{ height: '5rem' }}>
       <video
         src="/theme-previews/eastern-philosophy.mp4"
         autoPlay
         muted
         loop
         playsInline
-        style={{ filter: cssFilter, width: '100%', height: '100%', objectFit: 'cover' }}
+        style={{ filter: cssFilter, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 30%' }}
       />
     </div>
   )
@@ -233,26 +233,29 @@ function buildCssFilter(p: CustomGradeParams): string {
 
 function CustomThemePanel({ params, onChange }: { params: CustomGradeParams; onChange: (p: CustomGradeParams) => void }) {
   return (
-    <div className="mt-2 rounded-lg border border-stone-700 bg-stone-900/60 p-3 space-y-3">
-      {/* Creative presets */}
-      <div>
-        <p className="mb-1.5 text-xs text-stone-500">Starting points</p>
-        <div className="flex flex-wrap gap-1.5">
-          {CREATIVE_PRESETS.map(p => (
-            <button
-              key={p.name}
-              onClick={() => onChange(p.params)}
-              className="rounded-full border border-stone-700 px-2.5 py-0.5 text-xs text-stone-400 hover:border-fuchsia-500 hover:text-fuchsia-300 transition"
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div className="mt-2 rounded-lg border border-stone-700 bg-stone-900/60 overflow-hidden">
+      {/* Live preview banner — full width, landscape crop */}
+      <LivePreviewBanner params={params} />
 
-      {/* Sliders + live image preview side by side */}
-      <div className="flex gap-3">
-        <div className="flex-1 space-y-2.5 min-w-0">
+      <div className="p-3 space-y-3">
+        {/* Starting points */}
+        <div>
+          <p className="mb-1.5 text-xs text-stone-500">Starting points</p>
+          <div className="flex flex-wrap gap-1.5">
+            {CREATIVE_PRESETS.map(p => (
+              <button
+                key={p.name}
+                onClick={() => onChange(p.params)}
+                className="rounded-full border border-stone-700 px-2.5 py-0.5 text-xs text-stone-400 hover:border-violet-500 hover:text-violet-300 transition"
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sliders — full width */}
+        <div className="space-y-2.5">
           {CUSTOM_SLIDERS.map(s => (
             <div key={s.key}>
               <div className="mb-1 flex items-center justify-between">
@@ -268,21 +271,20 @@ function CustomThemePanel({ params, onChange }: { params: CustomGradeParams; onC
                 step={s.step}
                 value={params[s.key]}
                 onChange={e => onChange({ ...params, [s.key]: parseFloat(e.target.value) })}
-                className="w-full accent-fuchsia-500"
+                className="w-full accent-violet-500"
               />
             </div>
           ))}
         </div>
-        <LiveImageGrid params={params} />
-      </div>
 
-      {/* Reset */}
-      <button
-        onClick={() => onChange(DEFAULT_CUSTOM_PARAMS)}
-        className="text-xs text-stone-600 hover:text-stone-400 transition"
-      >
-        Reset to neutral
-      </button>
+        {/* Reset */}
+        <button
+          onClick={() => onChange(DEFAULT_CUSTOM_PARAMS)}
+          className="text-xs text-stone-600 hover:text-stone-400 transition"
+        >
+          Reset to neutral
+        </button>
+      </div>
     </div>
   )
 }
