@@ -21,6 +21,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+# Limit concurrent pipelines to avoid OOM on Railway's 512MB instance.
+# Each pipeline peaks at ~150-200MB (downloads + grading + ffmpeg).
+_pipeline_semaphore = asyncio.Semaphore(2)
+
 from db.supabase_client import get_client
 from services.image_pipeline import fetch_images, download_and_save, RateLimitError
 from services.image_grader import apply_theme_grading
@@ -124,7 +128,7 @@ async def get_job(job_id: str, user_id: str, db) -> Optional[dict]:
         .select("id, user_id, status, progress_message, output_url, thumbnail_url, error_message, batch_title, config, created_at, completed_at")
         .eq("id", job_id)
         .eq("user_id", user_id)  # ownership gate
-        .single()
+        .maybe_single()
         .execute()
     )
     return result.data if result.data else None
@@ -188,7 +192,7 @@ def _copy_uploaded_images(paths: List[str], dest_dir: str, width: int, height: i
             return False
 
     saved = 0
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(_copy_one, (i, path)): path for i, path in enumerate(paths)}
         for future in as_completed(futures):
             if future.result():
@@ -244,6 +248,7 @@ def _download_accent_images(folder: str, dest_dir: str, width: int, height: int,
 async def run_pipeline(job_id: str, user_id: str, config: JobConfig, db) -> None:
     """
     Full short-form pipeline executed as a FastAPI BackgroundTask.
+    Acquires _pipeline_semaphore before executing to cap concurrent memory usage.
 
     Steps:
       1. fetch_images  — query Unsplash and/or Pexels
@@ -256,6 +261,11 @@ async def run_pipeline(job_id: str, user_id: str, config: JobConfig, db) -> None
 
     Temp dir is always cleaned up in the finally block.
     """
+    async with _pipeline_semaphore:
+        await _run_pipeline_inner(job_id, user_id, config, db)
+
+
+async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) -> None:
     access_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
     pexels_key = os.environ.get("PEXELS_ACCESS_KEY", "")
     width, height = config.parse_resolution()
@@ -341,7 +351,7 @@ async def run_pipeline(job_id: str, user_id: str, config: JobConfig, db) -> None
             if items:
                 await update_job_status(job_id, user_id, "running", db, progress_message=f"Downloading 0/{len(items)} images…")
                 progress_cb = _make_download_progress_cb(job_id, user_id)
-                saved = await asyncio.to_thread(download_and_save, items, images_dir, width, height, 8, progress_cb)
+                saved = await asyncio.to_thread(download_and_save, items, images_dir, width, height, 4, progress_cb)
                 if saved == 0 and not config.uploaded_image_paths:
                     raise RuntimeError("No images could be downloaded.")
 
@@ -498,7 +508,19 @@ async def run_variants_pipeline(
     """
     Fetch images once from Unsplash, then render all theme variants from the same
     source images. job_ids and themes are parallel lists.
+    Acquires _pipeline_semaphore to cap concurrent memory usage.
     """
+    async with _pipeline_semaphore:
+        await _run_variants_pipeline_inner(job_ids, themes, user_id, config, db)
+
+
+async def _run_variants_pipeline_inner(
+    job_ids: List[str],
+    themes: List[str],
+    user_id: str,
+    config: JobConfig,
+    db,
+) -> None:
     access_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
     width, height = config.parse_resolution()
 
@@ -538,7 +560,7 @@ async def run_variants_pipeline(
         for job_id in job_ids:
             await update_job_status(job_id, user_id, "running", db, progress_message=f"Downloading {len(items)} images…")
 
-        saved = await asyncio.to_thread(download_and_save, items, shared_images_dir, width, height)
+        saved = await asyncio.to_thread(download_and_save, items, shared_images_dir, width, height, 4)
         if saved == 0:
             raise RuntimeError("No images could be downloaded.")
 
