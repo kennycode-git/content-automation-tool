@@ -177,18 +177,27 @@ function ThemePreviewPopup({ theme }: { theme: typeof COLOR_THEMES[number] }) {
   )
 }
 
+const BANNER_VIDEOS = [
+  '/theme-previews/eastern-philosophy.mp4',
+  '/theme-previews/nature-philosophy.mp4',
+]
+
 function LivePreviewBanner({ params }: { params: CustomGradeParams }) {
   const cssFilter = buildCssFilter(params)
   return (
-    <div className="rounded-lg overflow-hidden bg-stone-950 w-full" style={{ height: '5rem' }}>
-      <video
-        src="/theme-previews/eastern-philosophy.mp4"
-        autoPlay
-        muted
-        loop
-        playsInline
-        style={{ filter: cssFilter, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 30%' }}
-      />
+    <div className="flex gap-0.5 bg-stone-950 w-full" style={{ height: '8rem' }}>
+      {BANNER_VIDEOS.map((src, i) => (
+        <div key={i} className="flex-1 overflow-hidden">
+          <video
+            src={src}
+            autoPlay
+            muted
+            loop
+            playsInline
+            style={{ filter: cssFilter, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 40%' }}
+          />
+        </div>
+      ))}
     </div>
   )
 }
