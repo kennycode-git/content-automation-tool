@@ -136,10 +136,9 @@ async def get_job(job_id: str, user_id: str, db) -> Optional[dict]:
         .select("id, user_id, status, progress_message, output_url, thumbnail_url, error_message, batch_title, config, created_at, completed_at")
         .eq("id", job_id)
         .eq("user_id", user_id)  # ownership gate
-        .maybe_single()
         .execute()
     )
-    return result.data if result.data else None
+    return result.data[0] if result.data else None
 
 
 async def list_jobs(user_id: str, db, limit: int = 10) -> List[dict]:

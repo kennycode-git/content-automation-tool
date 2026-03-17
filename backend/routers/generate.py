@@ -73,10 +73,9 @@ async def generate(
             db.table("subscriptions")
             .select("status, plan, trial_expires_at")
             .eq("user_id", user_id)
-            .maybe_single()
             .execute()
         )
-        sub = sub_result.data
+        sub = sub_result.data[0] if sub_result.data else None
         if not sub or sub.get("status") != "active":
             raise HTTPException(status_code=403, detail="No active subscription.")
 
@@ -96,11 +95,9 @@ async def generate(
                 .select("render_count")
                 .eq("user_id", user_id)
                 .eq("month", _current_month())
-                .maybe_single()
                 .execute()
             )
-            usage = usage_result.data
-            count = usage["render_count"] if usage else 0
+            count = usage_result.data[0]["render_count"] if usage_result.data else 0
             if count >= limit:
                 raise HTTPException(
                     status_code=429,
@@ -204,9 +201,9 @@ async def generate_variants(
         # --- Subscription gate ---
         sub_result = (
             db.table("subscriptions").select("status, plan, trial_expires_at")
-            .eq("user_id", user_id).maybe_single().execute()
+            .eq("user_id", user_id).execute()
         )
-        sub = sub_result.data
+        sub = sub_result.data[0] if sub_result.data else None
         if not sub or sub.get("status") != "active":
             raise HTTPException(status_code=403, detail="No active subscription.")
 
@@ -224,10 +221,9 @@ async def generate_variants(
             usage_result = (
                 db.table("usage").select("render_count")
                 .eq("user_id", user_id).eq("month", _current_month())
-                .maybe_single().execute()
+                .execute()
             )
-            usage = usage_result.data
-            count = usage["render_count"] if usage else 0
+            count = usage_result.data[0]["render_count"] if usage_result.data else 0
             if count + len(body.themes) > limit:
                 raise HTTPException(
                     status_code=429,
@@ -344,10 +340,9 @@ async def get_usage(user_id: str = Depends(get_current_user_id)):
         db.table("subscriptions")
         .select("status, plan, trial_expires_at")
         .eq("user_id", user_id)
-        .maybe_single()
         .execute()
     )
-    sub = sub_result.data or {}
+    sub = sub_result.data[0] if sub_result.data else {}
     plan = sub.get("plan", "none")
 
     trial_expires_at = sub.get("trial_expires_at") if plan == "trial" else None
@@ -364,10 +359,9 @@ async def get_usage(user_id: str = Depends(get_current_user_id)):
         .select("render_count")
         .eq("user_id", user_id)
         .eq("month", _current_month())
-        .maybe_single()
         .execute()
     )
-    render_count = (usage_result.data or {}).get("render_count", 0)
+    render_count = usage_result.data[0]["render_count"] if usage_result.data else 0
     limit = PLAN_LIMITS.get(plan)
 
     return {

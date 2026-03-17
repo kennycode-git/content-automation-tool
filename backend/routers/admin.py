@@ -60,11 +60,10 @@ async def add_invite(body: InviteBody, request: Request):
         sb.table("trial_invites")
         .select("email, claimed")
         .eq("email", email)
-        .maybe_single()
         .execute()
     )
     if existing.data:
-        status = "claimed" if existing.data["claimed"] else "unclaimed"
+        status = "claimed" if existing.data[0]["claimed"] else "unclaimed"
         return {"added": False, "status": status, "message": f"{email} already in trial_invites ({status})."}
 
     sb.table("trial_invites").insert({"email": email}).execute()
@@ -236,10 +235,9 @@ async def adjust_renders(body: AdjustRendersBody, request: Request):
         .select("render_count")
         .eq("user_id", body.user_id)
         .eq("month", month)
-        .maybe_single()
         .execute()
     )
-    current = (row.data or {}).get("render_count", 0)
+    current = row.data[0]["render_count"] if row.data else 0
 
     if body.action == "reset":
         new_count = 0

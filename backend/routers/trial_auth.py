@@ -45,12 +45,11 @@ async def check_invite(body: EmailBody):
         sb.table("trial_invites")
         .select("claimed")
         .eq("email", email)
-        .maybe_single()
         .execute()
     )
-    if result.data is None:
+    if not result.data:
         return {"status": "not_found"}
-    return {"status": "claimed" if result.data["claimed"] else "unclaimed"}
+    return {"status": "claimed" if result.data[0]["claimed"] else "unclaimed"}
 
 
 @router.post("/auth/claim-invite")
@@ -70,12 +69,11 @@ async def claim_invite(body: ClaimBody):
         sb.table("trial_invites")
         .select("claimed")
         .eq("email", email)
-        .maybe_single()
         .execute()
     )
-    if result.data is None:
+    if not result.data:
         raise HTTPException(status_code=403, detail="Email not registered for trial.")
-    if result.data["claimed"]:
+    if result.data[0]["claimed"]:
         raise HTTPException(
             status_code=409,
             detail="Account already activated — please sign in.",
