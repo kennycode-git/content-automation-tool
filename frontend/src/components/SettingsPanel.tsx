@@ -55,7 +55,7 @@ const THEME_DOT: Record<string, string> = {
   blue:    'bg-blue-500',
   red:     'bg-red-500',
   bw:      'bg-white ring-1 ring-stone-500',
-  custom:  'bg-fuchsia-500',
+  custom:  'bg-stone-600',
 }
 
 const PRESETS = [
@@ -327,8 +327,8 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
               >
                 <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[t.value]}`} />
                 <span className="text-sm">{t.label}</span>
-                {/* Eye icon sits right after label text (hidden for Natural) */}
-                {t.value !== 'none' && (
+                {/* Eye icon sits right after label text (hidden for Natural and Create Your Own) */}
+                {t.value !== 'none' && t.value !== 'custom' && (
                   <div
                     className="relative ml-1"
                     onMouseEnter={e => { e.stopPropagation(); setHovered(t.value) }}
