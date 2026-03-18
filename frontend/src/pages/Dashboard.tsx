@@ -77,6 +77,8 @@ export default function Dashboard({ session }: Props) {
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [checkedThemes, setCheckedThemes] = useState<Set<string>>(new Set(['dark', 'bw', 'none']))
   const [jobEstimates, setJobEstimates] = useState<Record<string, number>>({})
+  const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set())
+  const activeJobsRef = useRef(activeJobs)
   const [variantStatus, setVariantStatus] = useState<string | null>(null)
   const [uploadedOnly, setUploadedOnly] = useState(false)
   const [accentFolder, setAccentFolder] = useState<string | null>(null)
@@ -146,11 +148,23 @@ export default function Dashboard({ session }: Props) {
   // Persist active jobs + minimized state across page refreshes
   useEffect(() => {
     try { localStorage.setItem('cogito_active_jobs', JSON.stringify(activeJobs)) } catch { /* ignore */ }
+    activeJobsRef.current = activeJobs
   }, [activeJobs])
 
   useEffect(() => {
     try { localStorage.setItem('cogito_minimized_jobs', JSON.stringify([...minimizedJobs])) } catch { /* ignore */ }
   }, [minimizedJobs])
+
+  // Browser notifications
+  function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }
+  function notifyJobDone(name: string) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return
+    new Notification('PassiveClip', { body: `${name} is ready to download`, icon: '/logo.png' })
+  }
 
   function dismissJob(jobId: string) {
     setActiveJobs(prev => prev.filter(j => j.jobId !== jobId))
@@ -183,6 +197,7 @@ export default function Dashboard({ session }: Props) {
       setError('Enter at least one search term.')
       return
     }
+    requestNotificationPermission()
     setError(null)
     submittingRef.current = true
     setSubmitting(true)
@@ -227,6 +242,7 @@ export default function Dashboard({ session }: Props) {
       setError('Select at least one theme variant.')
       return
     }
+    requestNotificationPermission()
     setError(null)
     submittingRef.current = true
     setSubmitting(true)
@@ -349,8 +365,38 @@ export default function Dashboard({ session }: Props) {
 
   function handleJobDone(job: JobStatus) {
     setPendingCount(prev => Math.max(0, prev - 1))
+    setCompletedJobIds(prev => new Set([...prev, job.job_id]))
+    // Auto-minimize when multiple jobs are running (e.g. variants) to avoid card clutter
+    if (activeJobsRef.current.length > 1) {
+      setMinimizedJobs(prev => new Set([...prev, job.job_id]))
+    }
     const name = job.batch_title || 'Video'
     addToast(`✅ ${name} ready. Download below`)
+    notifyJobDone(name)
+  }
+
+  async function handleRetry(job: JobStatus) {
+    if (!job.search_terms?.length) return
+    try {
+      const res = await generateVideo({
+        search_terms: job.search_terms,
+        resolution: job.resolution ?? undefined,
+        seconds_per_image: job.seconds_per_image ?? undefined,
+        total_seconds: job.total_seconds ?? undefined,
+        fps: job.fps ?? undefined,
+        allow_repeats: job.allow_repeats ?? undefined,
+        color_theme: job.color_theme ?? undefined,
+        max_per_query: job.max_per_query ?? undefined,
+        batch_title: job.batch_title ?? undefined,
+        preset_name: job.preset_name ?? undefined,
+        custom_grade_params: job.custom_grade_params ?? undefined,
+      })
+      setPendingCount(prev => prev + 1)
+      setActiveJobs(prev => [{ jobId: res.job_id, title: job.batch_title ?? null }, ...prev])
+      dismissJob(job.job_id)
+    } catch (e: unknown) {
+      addToast(`❌ Retry failed: ${e instanceof Error ? e.message : 'Unknown error'}`)
+    }
   }
 
   const handleEditImages = useCallback(async (terms: string[], batchTitle: string | null) => {
@@ -704,10 +750,16 @@ export default function Dashboard({ session }: Props) {
                     {activeJobs.length > 1 ? `Current jobs (${activeJobs.length})` : 'Current job'}
                   </h2>
                   {activeJobs.length > 1 && (() => {
+                    const doneCount = activeJobs.filter(j => completedJobIds.has(j.jobId)).length
                     const maxSecs = Math.max(...activeJobs.map(j => jobEstimates[j.jobId] ?? 0))
-                    if (maxSecs <= 0) return null
-                    const label = maxSecs < 60 ? `~${maxSecs}s` : `~${Math.ceil(maxSecs / 60)}m`
-                    return <span className="text-xs text-stone-600">{label} remaining</span>
+                    if (doneCount > 0) {
+                      return <span className="text-xs text-stone-500">{doneCount} / {activeJobs.length} done</span>
+                    }
+                    if (maxSecs > 0) {
+                      const label = maxSecs < 60 ? `~${maxSecs}s` : `~${Math.ceil(maxSecs / 60)}m`
+                      return <span className="text-xs text-stone-600">{label} remaining</span>
+                    }
+                    return null
                   })()}
                 </div>
                 <div className="space-y-3">
@@ -722,6 +774,7 @@ export default function Dashboard({ session }: Props) {
                       onDone={handleJobDone}
                       onCancel={() => cancelJob(jobId)}
                       onEstimate={secs => setJobEstimates(prev => ({ ...prev, [jobId]: secs }))}
+                      onRetry={handleRetry}
                     />
                   ))}
                 </div>

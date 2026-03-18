@@ -231,9 +231,10 @@ interface Props {
   onDone?: (job: JobStatus) => void
   onCancel?: () => Promise<void>
   onEstimate?: (secs: number) => void
+  onRetry?: (job: JobStatus) => void
 }
 
-export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel, onEstimate }: Props) {
+export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel, onEstimate, onRetry }: Props) {
   const [cancelling, setCancelling] = useState(false)
   const [showOverlay, setShowOverlay] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -452,10 +453,22 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
             </div>
           )}
 
-          {job.status === 'failed' && job.error_message && (
-            <p className="mt-3 rounded-lg bg-red-950 px-3 py-2 text-xs text-red-400">
-              {friendlyError(job.error_message)}
-            </p>
+          {job.status === 'failed' && (
+            <div className="mt-3 space-y-2">
+              {job.error_message && (
+                <p className="rounded-lg bg-red-950 px-3 py-2 text-xs text-red-400">
+                  {friendlyError(job.error_message)}
+                </p>
+              )}
+              {onRetry && job.search_terms?.length ? (
+                <button
+                  onClick={() => onRetry(job)}
+                  className="text-xs text-stone-500 hover:text-stone-200 transition-colors"
+                >
+                  ↩ Retry
+                </button>
+              ) : null}
+            </div>
           )}
         </>
       )}
