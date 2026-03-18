@@ -31,8 +31,8 @@ const PRESETS: Preset[] = [
     bundleLabel: 'Buddhism',
     gradient: 'from-amber-950 via-stone-900 to-amber-950',
     customGradeParams: {
-      brightness: 1.0, contrast: 0.95, saturation: 0.80,
-      exposure: 0.88, warmth: 0.40, tint: 0.05, hue_shift: 8,
+      brightness: 0.80, contrast: 1.50, saturation: 0.20,
+      exposure: 0.70, warmth: -0.10, tint: 0.05, hue_shift: 180,
     },
   },
   {
@@ -70,6 +70,17 @@ const PRESETS: Preset[] = [
     theme: 'blue',
     bundleLabel: 'Psychology',
     gradient: 'from-blue-950 via-stone-950 to-blue-950',
+  },
+  {
+    id: 'surrealism',
+    label: 'Surrealism',
+    theme: 'custom',
+    bundleLabel: 'Surrealism',
+    gradient: 'from-violet-950 via-indigo-950 to-stone-950',
+    customGradeParams: {
+      brightness: 1.00, contrast: 1.65, saturation: 1.75,
+      exposure: 0.70, warmth: 0.15, tint: 0.25, hue_shift: 180,
+    },
   },
   {
     id: 'shadow',
