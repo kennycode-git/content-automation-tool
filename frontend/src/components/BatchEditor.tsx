@@ -35,11 +35,19 @@ interface VisualBatch {
   accentFolder?: string | null           // undefined = inherit global, null = explicit none
 }
 
+interface PendingBundle {
+  title: string | null
+  terms: string[]
+  colorTheme?: string
+  customGradeParams?: CustomGradeParams
+  accentFolder?: string | null
+}
+
 interface Props {
   onBatchesChange: (batches: BatchOutput[]) => void
   pendingReuse?: { title: string | null; terms: string[] } | null
   onReuseHandled?: () => void
-  pendingBundles?: { title: string | null; terms: string[] }[] | null
+  pendingBundles?: PendingBundle[] | null
   onBundlesHandled?: () => void
   onOpenPrompt?: () => void
 }
@@ -351,6 +359,9 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
       const newCards: VisualBatch[] = pendingBundles.map(b => ({
         title: b.title ?? 'Batch',
         terms: b.terms.join('\n'),
+        colorTheme: b.colorTheme,
+        customGradeParams: b.customGradeParams,
+        accentFolder: b.accentFolder,
       }))
       const onlyEmptyBatch = batches.length === 1 && !batches[0].terms.trim()
       const updated = onlyEmptyBatch ? newCards : [...batches, ...newCards]

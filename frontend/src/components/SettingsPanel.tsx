@@ -68,6 +68,7 @@ interface Props {
   settings: VideoSettings
   onChange: (s: VideoSettings) => void
   onPresetApplied?: (name: string) => void
+  themeDisabled?: boolean
 }
 
 function InfoIcon({ tip }: { tip: string }) {
@@ -389,7 +390,7 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
   )
 }
 
-export default function SettingsPanel({ settings, onChange, onPresetApplied }: Props) {
+export default function SettingsPanel({ settings, onChange, onPresetApplied, themeDisabled }: Props) {
   function update(patch: Partial<VideoSettings>) {
     onChange({ ...settings, ...patch })
   }
@@ -462,26 +463,32 @@ export default function SettingsPanel({ settings, onChange, onPresetApplied }: P
 
       <div>
         <div className="mb-1 flex items-center gap-1">
-          <label className="text-xs text-stone-400">Colour theme</label>
-          <InfoIcon tip="Biases search toward this colour theme and applies automatic colour grading.
+          <label className={`text-xs ${themeDisabled ? 'text-stone-600' : 'text-stone-400'}`}>Colour theme</label>
+          {themeDisabled ? (
+            <InfoIcon tip="All batches have a per-batch theme set — global theme is overridden. Clear per-batch overrides to use this." />
+          ) : (
+            <InfoIcon tip="Biases search toward this colour theme and applies automatic colour grading.
                          Recommend 'Dark Tones' or 'Low Exposure' for most visible white overlay text." />
+          )}
         </div>
-        <ThemeSelector
-          value={settings.color_theme}
-          onChange={v => {
-            if (v !== 'custom') {
-              update({ color_theme: v, custom_grade_params: undefined })
-            } else {
-              update({ color_theme: 'custom', custom_grade_params: settings.custom_grade_params ?? DEFAULT_CUSTOM_PARAMS })
-            }
-          }}
-        />
-        {settings.color_theme === 'custom' && (
-          <CustomThemePanel
-            params={settings.custom_grade_params ?? DEFAULT_CUSTOM_PARAMS}
-            onChange={p => update({ custom_grade_params: p })}
+        <div className={themeDisabled ? 'pointer-events-none opacity-40' : ''}>
+          <ThemeSelector
+            value={settings.color_theme}
+            onChange={v => {
+              if (v !== 'custom') {
+                update({ color_theme: v, custom_grade_params: undefined })
+              } else {
+                update({ color_theme: 'custom', custom_grade_params: settings.custom_grade_params ?? DEFAULT_CUSTOM_PARAMS })
+              }
+            }}
           />
-        )}
+          {settings.color_theme === 'custom' && (
+            <CustomThemePanel
+              params={settings.custom_grade_params ?? DEFAULT_CUSTOM_PARAMS}
+              onChange={p => update({ custom_grade_params: p })}
+            />
+          )}
+        </div>
       </div>
 
     </div>

@@ -16,7 +16,7 @@ import type { JobStatus, PreviewBatchResult, UsageInfo } from '../lib/api'
 import BatchEditor from '../components/BatchEditor'
 import type { BatchOutput } from '../components/BatchEditor'
 import SettingsPanel from '../components/SettingsPanel'
-import type { VideoSettings } from '../components/SettingsPanel'
+import type { VideoSettings, CustomGradeParams } from '../components/SettingsPanel'
 import JobPanel from '../components/JobPanel'
 import RecentJobs from '../components/RecentJobs'
 import TermBundles from '../components/TermBundles'
@@ -71,7 +71,7 @@ export default function Dashboard({ session }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [pendingReuse, setPendingReuse] = useState<{ title: string | null; terms: string[] } | null>(null)
-  const [pendingBundles, setPendingBundles] = useState<{ title: string | null; terms: string[] }[] | null>(null)
+  const [pendingBundles, setPendingBundles] = useState<{ title: string | null; terms: string[]; colorTheme?: string; customGradeParams?: CustomGradeParams; accentFolder?: string | null }[] | null>(null)
   const [appliedPresetName, setAppliedPresetName] = useState<string | null>(null)
   const [showVariants, setShowVariants] = useState(false)
   const [showPromptModal, setShowPromptModal] = useState(false)
@@ -510,9 +510,19 @@ export default function Dashboard({ session }: Props) {
         <InspirationCarousel
           key={carouselKey}
           onApply={(theme, bundles, appliedAccent, customGradeParams) => {
-            setSettings(prev => ({ ...prev, color_theme: theme, custom_grade_params: customGradeParams ?? undefined }))
-            setPendingBundles(bundles)
-            setAccentFolder(appliedAccent ?? null)
+            if (bundles.length > 0) {
+              // Embed theme/accent as per-batch overrides on the new cards
+              setPendingBundles(bundles.map(b => ({
+                ...b,
+                colorTheme: theme,
+                customGradeParams: customGradeParams ?? undefined,
+                accentFolder: appliedAccent ?? null,
+              })))
+            } else {
+              // No bundle (e.g. Gothic) — apply globally as fallback
+              setSettings(prev => ({ ...prev, color_theme: theme, custom_grade_params: customGradeParams ?? undefined }))
+              setAccentFolder(appliedAccent ?? null)
+            }
           }}
           onHide={() => setCarouselVisible(false)}
         />
@@ -570,6 +580,7 @@ export default function Dashboard({ session }: Props) {
                 settings={settings}
                 onChange={s => { setSettings(s); setAppliedPresetName(null) }}
                 onPresetApplied={setAppliedPresetName}
+                themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
               />
             </div>
 
