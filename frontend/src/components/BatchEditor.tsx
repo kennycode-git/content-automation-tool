@@ -7,10 +7,12 @@
  *
  * Each # block becomes a separate job when submitted.
  * classicText is persisted to localStorage so it survives page refresh.
+ * Visual mode cards support a per-batch style popover (theme + accent override).
  */
 
 import { useEffect, useRef, useState } from 'react'
 import { uploadImages } from '../lib/api'
+import type { CustomGradeParams } from './SettingsPanel'
 
 const STORAGE_KEY = 'cogito_classic_text'
 const DEFAULT_CLASSIC_TEXT =
@@ -20,11 +22,17 @@ export interface BatchOutput {
   title: string | null
   terms: string[]
   uploaded_image_paths?: string[]
+  color_theme?: string                   // undefined = inherit global
+  custom_grade_params?: CustomGradeParams
+  accent_folder_override?: string | null // undefined = inherit global, null = explicit none
 }
 
 interface VisualBatch {
   title: string
   terms: string
+  colorTheme?: string                    // undefined = inherit global
+  customGradeParams?: CustomGradeParams
+  accentFolder?: string | null           // undefined = inherit global, null = explicit none
 }
 
 interface Props {
@@ -35,6 +43,188 @@ interface Props {
   onBundlesHandled?: () => void
   onOpenPrompt?: () => void
 }
+
+// ── Style popover constants ────────────────────────────────────────────────────
+
+const BATCH_THEME_OPTIONS: { value: string | undefined; label: string; shortLabel: string; dot: string }[] = [
+  { value: undefined,  label: 'Global (default)', shortLabel: 'Global',  dot: 'bg-stone-600 opacity-50' },
+  { value: 'none',     label: 'Natural',           shortLabel: 'Natural', dot: 'bg-stone-400' },
+  { value: 'dark',     label: 'Dark Tones',         shortLabel: 'Dark',    dot: 'bg-stone-900 ring-1 ring-stone-600' },
+  { value: 'sepia',    label: 'Sepia',              shortLabel: 'Sepia',   dot: 'bg-amber-800' },
+  { value: 'warm',     label: 'Amber',              shortLabel: 'Amber',   dot: 'bg-amber-500' },
+  { value: 'low_exp',  label: 'Low Exposure',        shortLabel: 'Low Exp', dot: 'bg-stone-950 ring-1 ring-stone-700' },
+  { value: 'grey',     label: 'Silver',             shortLabel: 'Silver',  dot: 'bg-slate-400' },
+  { value: 'blue',     label: 'Cobalt',             shortLabel: 'Cobalt',  dot: 'bg-blue-500' },
+  { value: 'red',      label: 'Crimson',            shortLabel: 'Crimson', dot: 'bg-red-500' },
+  { value: 'bw',       label: 'Monochrome',         shortLabel: 'Mono',    dot: 'bg-white ring-1 ring-stone-500' },
+  { value: 'custom',   label: 'Custom',             shortLabel: 'Custom',  dot: 'bg-violet-600' },
+]
+
+const BATCH_ACCENT_OPTIONS: { value: string | null | undefined; label: string; dot: string }[] = [
+  { value: undefined, label: 'Global', dot: 'bg-stone-600 opacity-50' },
+  { value: null,      label: 'None',   dot: 'bg-stone-500' },
+  { value: 'blue',    label: 'Blue',   dot: 'bg-blue-500' },
+  { value: 'red',     label: 'Red',    dot: 'bg-red-500' },
+  { value: 'gold',    label: 'Gold',   dot: 'bg-amber-400' },
+]
+
+const DEFAULT_GRADE: CustomGradeParams = {
+  brightness: 1.0, contrast: 1.0, saturation: 1.0,
+  exposure: 1.0, warmth: 0.0, tint: 0.0, hue_shift: 0,
+}
+
+const CUSTOM_SLIDERS: { key: keyof CustomGradeParams; label: string; min: number; max: number; step: number; unit: string }[] = [
+  { key: 'brightness', label: 'Brightness', min: 0,    max: 2,   step: 0.05, unit: '' },
+  { key: 'contrast',   label: 'Contrast',   min: 0,    max: 2,   step: 0.05, unit: '' },
+  { key: 'saturation', label: 'Saturation', min: 0,    max: 2,   step: 0.05, unit: '' },
+  { key: 'exposure',   label: 'Exposure',   min: 0.5,  max: 1.5, step: 0.05, unit: '' },
+  { key: 'warmth',     label: 'Warmth',     min: -1,   max: 1,   step: 0.05, unit: '' },
+  { key: 'tint',       label: 'Tint',       min: -1,   max: 1,   step: 0.05, unit: '' },
+  { key: 'hue_shift',  label: 'Hue Shift',  min: -180, max: 180, step: 1,    unit: '°' },
+]
+
+const PHILOSOPHER_NAMES = ['Marcus Aurelius', 'Seneca', 'Nietzsche', 'Socrates', 'Aristotle', 'Epictetus']
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function AdjustIcon() {
+  return (
+    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+    </svg>
+  )
+}
+
+function BatchStylePopover({
+  batch,
+  onChange,
+  onClose,
+}: {
+  batch: VisualBatch
+  onChange: (patch: Partial<VisualBatch>) => void
+  onClose: () => void
+}) {
+  const params = batch.customGradeParams ?? DEFAULT_GRADE
+
+  return (
+    <>
+      {/* Click-away overlay */}
+      <div className="fixed inset-0 z-20" onClick={onClose} />
+
+      {/* Popover panel */}
+      <div className="absolute top-full left-0 mt-1 z-30 w-72 rounded-xl border border-stone-700 bg-stone-900 shadow-2xl">
+        <div className="p-3 space-y-3">
+
+          {/* Theme */}
+          <div>
+            <p className="mb-2 text-[10px] font-semibold tracking-widest uppercase text-stone-500">Colour theme</p>
+            <div className="grid grid-cols-2 gap-1">
+              {BATCH_THEME_OPTIONS.map(opt => {
+                const isSelected = batch.colorTheme === opt.value
+                return (
+                  <button
+                    key={opt.value ?? '_global'}
+                    onClick={() => onChange({
+                      colorTheme: opt.value,
+                      customGradeParams: opt.value === 'custom'
+                        ? (batch.customGradeParams ?? DEFAULT_GRADE)
+                        : undefined,
+                    })}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-left transition ${
+                      isSelected
+                        ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
+                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Custom grade sliders */}
+            {batch.colorTheme === 'custom' && (
+              <div className="mt-3 space-y-2 pt-2 border-t border-stone-800">
+                {CUSTOM_SLIDERS.map(s => (
+                  <div key={s.key}>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[10px] text-stone-400">{s.label}</span>
+                      <span className="text-[10px] font-mono text-stone-300">
+                        {params[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={s.min}
+                      max={s.max}
+                      step={s.step}
+                      value={params[s.key]}
+                      onChange={e => onChange({
+                        customGradeParams: { ...params, [s.key]: parseFloat(e.target.value) },
+                      })}
+                      className="w-full accent-violet-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <hr className="border-stone-800" />
+
+          {/* Accent */}
+          <div>
+            <p className="mb-2 text-[10px] font-semibold tracking-widest uppercase text-stone-500">Accent images</p>
+            <div className="flex flex-wrap gap-1.5">
+              {BATCH_ACCENT_OPTIONS.map(opt => {
+                const key = opt.value === undefined ? '_global' : opt.value === null ? '_none' : opt.value
+                const isSelected = batch.accentFolder === opt.value
+                return (
+                  <button
+                    key={key}
+                    onClick={() => onChange({ accentFolder: opt.value })}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition ${
+                      isSelected
+                        ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
+                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <hr className="border-stone-800" />
+
+          {/* Philosopher — coming soon */}
+          <div className="opacity-40 pointer-events-none select-none">
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Philosopher</p>
+              <span className="text-[9px] font-semibold bg-stone-800 text-stone-500 border border-stone-700/60 px-1.5 py-0.5 rounded-full">Soon</span>
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {PHILOSOPHER_NAMES.map(name => (
+                <div
+                  key={name}
+                  className="flex items-center justify-center px-2 py-1.5 rounded-lg border border-stone-700 bg-stone-800/60 text-[10px] text-stone-500 text-center leading-tight"
+                >
+                  {name}
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function parseBatchText(text: string): string[] {
   return text
@@ -63,6 +253,8 @@ function parseClassicIntoBatches(text: string): BatchOutput[] {
   return batches
 }
 
+// ── Main component ─────────────────────────────────────────────────────────────
+
 export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHandled, pendingBundles, onBundlesHandled, onOpenPrompt }: Props) {
   const [classicMode, setClassicMode] = useState(false)
   const [classicText, setClassicText] = useState<string>(() => {
@@ -75,12 +267,16 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
   const [uploadedPaths, setUploadedPaths] = useState<Record<number, string[]>>({})
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
+  const [openPopover, setOpenPopover] = useState<number | null>(null)
 
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
     return vBatches.map((b, i) => ({
       title: b.title.trim() || null,
       terms: parseBatchText(b.terms),
       uploaded_image_paths: paths[i] ?? [],
+      color_theme: b.colorTheme,
+      custom_grade_params: b.customGradeParams,
+      accent_folder_override: b.accentFolder,
     }))
   }
 
@@ -158,6 +354,12 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
 
   function handleBatchTitleChange(idx: number, title: string) {
     const updated = batches.map((b, i) => (i === idx ? { ...b, title } : b))
+    setBatches(updated)
+    onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
+  }
+
+  function handleBatchOverride(idx: number, patch: Partial<VisualBatch>) {
+    const updated = batches.map((b, i) => (i === idx ? { ...b, ...patch } : b))
     setBatches(updated)
     onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
   }
@@ -283,72 +485,120 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
         </div>
       ) : (
         <div className="space-y-3">
-          {batches.map((batch, idx) => (
-            <div
-              key={idx}
-              className={`rounded-xl border bg-stone-800 p-3 transition-colors ${dragOverIdx === idx ? 'border-brand-500/60 bg-stone-800/80' : 'border-stone-700'}`}
-              onDragOver={e => { e.preventDefault(); setDragOverIdx(idx) }}
-              onDragEnter={e => { e.preventDefault(); setDragOverIdx(idx) }}
-              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverIdx(null) }}
-              onDrop={e => { e.preventDefault(); setDragOverIdx(null); handleFileUpload(idx, e.dataTransfer.files) }}
-            >
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 flex-1 min-w-0 group">
-                  <svg className="w-3 h-3 text-stone-600 group-focus-within:text-brand-500 flex-shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                  <input
-                    value={batch.title}
-                    onChange={e => handleBatchTitleChange(idx, e.target.value)}
-                    className="bg-transparent text-sm font-semibold text-stone-100 focus:outline-none border-b border-dashed border-stone-600 hover:border-stone-400 focus:border-brand-500 transition-colors pb-0.5 min-w-0 w-full"
-                    placeholder="Batch title…"
-                  />
+          {batches.map((batch, idx) => {
+            const themeOpt = BATCH_THEME_OPTIONS.find(o => o.value === batch.colorTheme)
+            const hasThemeOverride = batch.colorTheme !== undefined
+            const hasAccentOverride = batch.accentFolder !== undefined
+            const hasOverride = hasThemeOverride || hasAccentOverride
+
+            return (
+              <div
+                key={idx}
+                className={`rounded-xl border bg-stone-800 p-3 transition-colors ${dragOverIdx === idx ? 'border-brand-500/60 bg-stone-800/80' : 'border-stone-700'}`}
+                onDragOver={e => { e.preventDefault(); setDragOverIdx(idx) }}
+                onDragEnter={e => { e.preventDefault(); setDragOverIdx(idx) }}
+                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverIdx(null) }}
+                onDrop={e => { e.preventDefault(); setDragOverIdx(null); handleFileUpload(idx, e.dataTransfer.files) }}
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0 group">
+                    <svg className="w-3 h-3 text-stone-600 group-focus-within:text-brand-500 flex-shrink-0 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    <input
+                      value={batch.title}
+                      onChange={e => handleBatchTitleChange(idx, e.target.value)}
+                      className="bg-transparent text-sm font-semibold text-stone-100 focus:outline-none border-b border-dashed border-stone-600 hover:border-stone-400 focus:border-brand-500 transition-colors pb-0.5 min-w-0 w-full"
+                      placeholder="Batch title…"
+                    />
+                  </div>
+                  {batches.length > 1 && (
+                    <button onClick={() => removeBatch(idx)} className="text-xs text-stone-600 hover:text-red-400 flex-shrink-0">
+                      ✕ Remove
+                    </button>
+                  )}
                 </div>
-                {batches.length > 1 && (
-                  <button onClick={() => removeBatch(idx)} className="text-xs text-stone-600 hover:text-red-400 flex-shrink-0">
-                    ✕ Remove
-                  </button>
-                )}
+
+                <textarea
+                  value={batch.terms}
+                  onChange={e => handleBatchTermsChange(idx, e.target.value)}
+                  rows={3}
+                  placeholder="one search term per line"
+                  className="w-full rounded-lg border border-stone-700 bg-stone-900 px-2 py-1.5 font-mono text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
+                />
+
+                {/* Bottom row: style override button + image upload */}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+
+                  {/* Per-batch style trigger */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setOpenPopover(p => p === idx ? null : idx)}
+                      className={`flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs transition ${
+                        hasOverride
+                          ? 'border-stone-600 bg-stone-700/60 text-stone-300 hover:border-stone-500'
+                          : 'border-stone-700 text-stone-500 hover:border-stone-600 hover:text-stone-400'
+                      }`}
+                    >
+                      {hasThemeOverride ? (
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${themeOpt?.dot ?? 'bg-stone-500'}`} />
+                      ) : (
+                        <AdjustIcon />
+                      )}
+                      <span>
+                        {hasThemeOverride
+                          ? themeOpt?.shortLabel ?? 'Custom'
+                          : 'Style'}
+                        {hasAccentOverride && (
+                          <span className="text-stone-500 ml-1">
+                            · {BATCH_ACCENT_OPTIONS.find(o => o.value === batch.accentFolder)?.label ?? 'accent'}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+
+                    {openPopover === idx && (
+                      <BatchStylePopover
+                        batch={batch}
+                        onChange={patch => handleBatchOverride(idx, patch)}
+                        onClose={() => setOpenPopover(null)}
+                      />
+                    )}
+                  </div>
+
+                  {/* Image upload */}
+                  <label className="cursor-pointer rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200">
+                    {uploading[idx] ? 'Uploading…' : 'Upload photos'}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      className="hidden"
+                      disabled={uploading[idx]}
+                      onChange={e => handleFileUpload(idx, e.target.files)}
+                    />
+                  </label>
+
+                  {(uploadedPaths[idx]?.length ?? 0) > 0 && (
+                    uploadedPaths[idx].map((path, pi) => (
+                      <span key={pi} className="flex items-center gap-1 rounded border border-stone-700 bg-stone-900 px-2 py-0.5 text-xs text-stone-400">
+                        <span className="max-w-[120px] truncate">{path.split('/').pop()}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = { ...uploadedPaths, [idx]: uploadedPaths[idx].filter((_, i) => i !== pi) }
+                            setUploadedPaths(next)
+                            onBatchesChange(visualToBatchOutputs(batches, next))
+                          }}
+                          className="text-stone-600 hover:text-red-400 transition-colors leading-none"
+                        >✕</button>
+                      </span>
+                    ))
+                  )}
+                </div>
               </div>
-              <textarea
-                value={batch.terms}
-                onChange={e => handleBatchTermsChange(idx, e.target.value)}
-                rows={3}
-                placeholder="one search term per line"
-                className="w-full rounded-lg border border-stone-700 bg-stone-900 px-2 py-1.5 font-mono text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
-              />
-              {/* Image upload */}
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <label className="cursor-pointer rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200">
-                  {uploading[idx] ? 'Uploading…' : 'Upload photos'}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                    className="hidden"
-                    disabled={uploading[idx]}
-                    onChange={e => handleFileUpload(idx, e.target.files)}
-                  />
-                </label>
-                {(uploadedPaths[idx]?.length ?? 0) > 0 && (
-                  uploadedPaths[idx].map((path, pi) => (
-                    <span key={pi} className="flex items-center gap-1 rounded border border-stone-700 bg-stone-900 px-2 py-0.5 text-xs text-stone-400">
-                      <span className="max-w-[120px] truncate">{path.split('/').pop()}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = { ...uploadedPaths, [idx]: uploadedPaths[idx].filter((_, i) => i !== pi) }
-                          setUploadedPaths(next)
-                          onBatchesChange(visualToBatchOutputs(batches, next))
-                        }}
-                        className="text-stone-600 hover:text-red-400 transition-colors leading-none"
-                      >✕</button>
-                    </span>
-                  ))
-                )}
-              </div>
-            </div>
-          ))}
+            )
+          })}
           <button
             onClick={addBatch}
             className="text-xs text-brand-500 hover:underline"

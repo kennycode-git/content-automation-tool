@@ -51,6 +51,14 @@ const PRESETS: Preset[] = [
     accentFolder: 'gold',
   },
   {
+    id: 'blue-dark-acc',
+    label: 'Gothic',
+    theme: 'dark',
+    bundleLabel: 'Gothic',
+    gradient: 'from-slate-950 via-blue-950 to-stone-950',
+    accentFolder: 'blue',
+  },
+  {
     id: 'eastern-philosophy',
     label: 'Eastern Philosophy',
     theme: 'none',
@@ -228,7 +236,10 @@ function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) =
       {/* Label */}
       <div className="px-2.5 py-2 bg-stone-900">
         <p className="text-xs font-semibold text-stone-200 truncate">{preset.label}</p>
-        <ThemePill theme={preset.theme} />
+        <div className="flex items-center justify-between">
+          <ThemePill theme={preset.theme} />
+          {preset.accentFolder && <AccentDot accent={preset.accentFolder} />}
+        </div>
       </div>
     </div>
   )
@@ -251,6 +262,27 @@ function ThemePill({ theme }: { theme: string }) {
     <span className="mt-1 inline-flex items-center gap-1">
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${THEME_DOT[theme] ?? 'bg-stone-500'}`} />
       <span className="text-[10px] text-stone-500">{THEME_LABELS[theme] ?? theme}</span>
+    </span>
+  )
+}
+
+const ACCENT_DOT: Record<string, string> = {
+  blue: 'bg-blue-500',
+  red:  'bg-red-500',
+  gold: 'bg-amber-400',
+}
+
+const ACCENT_LABEL: Record<string, string> = {
+  blue: 'Blue',
+  red:  'Red',
+  gold: 'Gold',
+}
+
+function AccentDot({ accent }: { accent: string }) {
+  return (
+    <span className="mt-1 inline-flex items-center gap-1" title={`${ACCENT_LABEL[accent] ?? accent} accent`}>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ACCENT_DOT[accent] ?? 'bg-stone-500'}`} />
+      <span className="text-[10px] text-stone-600">{ACCENT_LABEL[accent] ?? accent}</span>
     </span>
   )
 }
