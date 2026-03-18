@@ -370,6 +370,14 @@ export default function Dashboard({ session }: Props) {
   function handleJobDone(job: JobStatus) {
     setPendingCount(prev => Math.max(0, prev - 1))
     setCompletedJobIds(prev => new Set([...prev, job.job_id]))
+
+    // Only notify once per job across page refreshes
+    const NOTIFIED_KEY = 'cogito_notified_jobs'
+    let notified: string[] = []
+    try { notified = JSON.parse(localStorage.getItem(NOTIFIED_KEY) || '[]') } catch { /* ignore */ }
+    if (notified.includes(job.job_id)) return
+    try { localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notified, job.job_id])) } catch { /* ignore */ }
+
     const name = job.batch_title || 'Video'
     addToast(`✅ ${name} ready. Download below`)
     notifyJobDone(name)
