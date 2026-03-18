@@ -23,6 +23,7 @@ ALLOWED_RESOLUTIONS = {"1080x1920", "1920x1080", "1080x1080"}
 ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp", "custom"}
 ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold"}
 ALLOWED_IMAGE_SOURCES = {"unsplash", "pexels", "both"}
+ALLOWED_PHILOSOPHERS = {"marcus_aurelius", "seneca", "epictetus", "nietzsche", "socrates", "aristotle"}
 
 
 class CustomGradeParams(BaseModel):
@@ -57,6 +58,8 @@ class GenerateRequest(BaseModel):
     accent_folder: Optional[str] = Field(default=None)
     image_source: str = Field(default="unsplash")
     custom_grade_params: Optional[CustomGradeParams] = None
+    philosopher: Optional[str] = Field(default=None)
+    grade_philosopher: bool = False
 
     @field_validator("search_terms")
     @classmethod
@@ -94,6 +97,13 @@ class GenerateRequest(BaseModel):
     def validate_image_source(cls, v: str) -> str:
         if v not in ALLOWED_IMAGE_SOURCES:
             raise ValueError(f"image_source must be one of: {', '.join(sorted(ALLOWED_IMAGE_SOURCES))}")
+        return v
+
+    @field_validator("philosopher")
+    @classmethod
+    def validate_philosopher(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ALLOWED_PHILOSOPHERS:
+            raise ValueError(f"philosopher must be one of: {', '.join(sorted(ALLOWED_PHILOSOPHERS))}")
         return v
 
     @model_validator(mode="after")

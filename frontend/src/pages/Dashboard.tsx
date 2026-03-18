@@ -82,6 +82,8 @@ export default function Dashboard({ session }: Props) {
   const [variantStatus, setVariantStatus] = useState<string | null>(null)
   const [uploadedOnly, setUploadedOnly] = useState(false)
   const [accentFolder, setAccentFolder] = useState<string | null>(null)
+  const [philosopher, setPhilosopher] = useState<string | null>(null)
+  const [gradePhilosopher, setGradePhilosopher] = useState(false)
   const [staging, setStaging] = useState(false)
   const [stagingError, setStagingError] = useState<string | null>(null)
   const [stagingUsedPexels, setStagingUsedPexels] = useState(false)
@@ -213,6 +215,8 @@ export default function Dashboard({ session }: Props) {
           preset_name: appliedPresetName ?? undefined,
           uploaded_only: uploadedOnly || undefined,
           accent_folder: accentFolder ?? undefined,
+          philosopher: philosopher ?? undefined,
+          grade_philosopher: gradePhilosopher || undefined,
           image_source: resolvedSource,
         })
         submitted.push({ jobId: res.job_id, title: batch.title })
@@ -225,7 +229,7 @@ export default function Dashboard({ session }: Props) {
       submittingRef.current = false
       setSubmitting(false)
     }
-  }, [batches, settings, trialExpired, appliedPresetName, uploadedOnly, accentFolder, resolvedSource])
+  }, [batches, settings, trialExpired, appliedPresetName, uploadedOnly, accentFolder, philosopher, gradePhilosopher, resolvedSource])
 
   const handleGenerateVariants = useCallback(async () => {
     if (submittingRef.current) return
@@ -338,6 +342,8 @@ export default function Dashboard({ session }: Props) {
           uploaded_image_paths: batch.images.map(img => img.storage_path),
           uploaded_only: true,
           accent_folder: accentFolder ?? undefined,
+          philosopher: philosopher ?? undefined,
+          grade_philosopher: gradePhilosopher || undefined,
           preset_name: appliedPresetName ?? undefined,
           image_source: resolvedSource,
         })
@@ -350,7 +356,7 @@ export default function Dashboard({ session }: Props) {
     } finally {
       setSubmitting(false)
     }
-  }, [settings, accentFolder, appliedPresetName, resolvedSource])
+  }, [settings, accentFolder, philosopher, gradePhilosopher, appliedPresetName, resolvedSource])
 
   // Ctrl/Cmd+Enter to generate
   useEffect(() => {
@@ -366,10 +372,6 @@ export default function Dashboard({ session }: Props) {
   function handleJobDone(job: JobStatus) {
     setPendingCount(prev => Math.max(0, prev - 1))
     setCompletedJobIds(prev => new Set([...prev, job.job_id]))
-    // Auto-minimize when multiple jobs are running (e.g. variants) to avoid card clutter
-    if (activeJobsRef.current.length > 1) {
-      setMinimizedJobs(prev => new Set([...prev, job.job_id]))
-    }
     const name = job.batch_title || 'Video'
     addToast(`✅ ${name} ready. Download below`)
     notifyJobDone(name)
@@ -795,10 +797,14 @@ export default function Dashboard({ session }: Props) {
           imageSource={imageSource}
           uploadedOnly={uploadedOnly}
           accentFolder={accentFolder}
+          philosopher={philosopher}
+          gradePhilosopher={gradePhilosopher}
           onSettingsChange={s => { setSettings(s); setAppliedPresetName(null) }}
           onImageSourceChange={v => setImageSource(v)}
           onUploadedOnlyChange={setUploadedOnly}
           onAccentFolderChange={setAccentFolder}
+          onPhilosopherChange={setPhilosopher}
+          onGradePhilosopherChange={setGradePhilosopher}
           onPresetApplied={setAppliedPresetName}
           onClose={() => setShowAdvanced(false)}
         />

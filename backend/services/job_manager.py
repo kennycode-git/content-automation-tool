@@ -63,6 +63,8 @@ class JobConfig:
     accent_folder: Optional[str] = None
     image_source: str = "unsplash"
     custom_grade_params: Optional[Dict] = None
+    philosopher: Optional[str] = None
+    grade_philosopher: bool = False
 
     def to_dict(self) -> dict:
         d = {
@@ -211,10 +213,11 @@ def _copy_uploaded_images(paths: List[str], dest_dir: str, width: int, height: i
     return saved
 
 
-def _download_accent_images(folder: str, dest_dir: str, width: int, height: int, max_count: int) -> int:
+def _download_accent_images(folder: str, dest_dir: str, width: int, height: int, max_count: int, file_prefix: str = "accent") -> int:
     """
     Download a random subset of accent images from the accent bucket, resize/crop,
     and save as JPEG into dest_dir WITHOUT any colour grading.
+    file_prefix avoids filename collisions when multiple accent passes write to the same dir.
     Returns the number of images saved.
     """
     import random
@@ -246,7 +249,7 @@ def _download_accent_images(folder: str, dest_dir: str, width: int, height: int,
             left = (new_w - width) // 2
             top = (new_h - height) // 2
             img = img.crop((left, top, left + width, top + height))
-            out_path = os.path.join(dest_dir, f"accent_{i:04d}.jpg")
+            out_path = os.path.join(dest_dir, f"{file_prefix}_{i:04d}.jpg")
             img.save(out_path, "JPEG", quality=90)
             saved += 1
         except Exception as e:
@@ -425,9 +428,9 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
         render_input = await asyncio.to_thread(apply_theme_grading, images_dir, graded_dir, config.color_theme, config.custom_grade_params)
 
         # --- Step 2.7: Inject accent images (ungraded, sprinkled into render pool) ---
+        needed_frames = max(1, int(config.total_seconds / config.seconds_per_image))
         if config.accent_folder:
             await update_job_status(job_id, user_id, "running", db, progress_message="Adding accent images…")
-            needed_frames = max(1, int(config.total_seconds / config.seconds_per_image))
             max_accent = max(1, needed_frames // 5)  # ~20% of frames
             await asyncio.to_thread(
                 _download_accent_images,
@@ -436,7 +439,37 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
                 width,
                 height,
                 max_accent,
+                "accent",
             )
+
+        # --- Step 2.8: Inject philosopher images (optionally graded) ---
+        if config.philosopher:
+            await update_job_status(job_id, user_id, "running", db, progress_message="Adding philosopher images…")
+            max_phil = max(1, needed_frames // 5)  # ~20% of frames
+            phil_staging = os.path.join(tmp_root, "phil_staging")
+            await asyncio.to_thread(
+                _download_accent_images,
+                f"philosopher/{config.philosopher}",
+                phil_staging,
+                width,
+                height,
+                max_phil,
+                "phil",
+            )
+            if config.grade_philosopher and config.color_theme != "none":
+                phil_graded = os.path.join(tmp_root, "phil_graded")
+                graded_phil_dir = await asyncio.to_thread(
+                    apply_theme_grading, phil_staging, phil_graded, config.color_theme, config.custom_grade_params
+                )
+                for fname in os.listdir(graded_phil_dir):
+                    src = os.path.join(graded_phil_dir, fname)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, os.path.join(render_input, fname))
+            else:
+                for fname in os.listdir(phil_staging):
+                    src = os.path.join(phil_staging, fname)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, os.path.join(render_input, fname))
 
         # --- Step 3: Render video ---
         await update_job_status(job_id, user_id, "running", db, progress_message="Rendering video…")

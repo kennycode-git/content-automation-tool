@@ -121,6 +121,8 @@ async def generate(
         accent_folder=body.accent_folder or None,
         image_source=body.image_source,
         custom_grade_params=body.custom_grade_params.model_dump() if body.custom_grade_params else None,
+        philosopher=body.philosopher or None,
+        grade_philosopher=body.grade_philosopher,
     )
     job_id = await create_job(user_id, config, db)
 

@@ -64,6 +64,8 @@ export interface GenerateRequest {
   accent_folder?: string | null
   image_source?: 'unsplash' | 'pexels' | 'both'
   custom_grade_params?: CustomGradeParams
+  philosopher?: string | null
+  grade_philosopher?: boolean
 }
 
 export interface GenerateResponse {
