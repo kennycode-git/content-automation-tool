@@ -29,13 +29,9 @@ interface Props {
   settings: VideoSettings
   imageSource: 'auto' | 'unsplash' | 'pexels' | 'both'
   accentFolder: string | null
-  philosopher: string | null
-  gradePhilosopher: boolean
   onSettingsChange: (s: VideoSettings) => void
   onImageSourceChange: (v: 'auto' | 'unsplash' | 'pexels' | 'both') => void
   onAccentFolderChange: (v: string | null) => void
-  onPhilosopherChange: (v: string | null) => void
-  onGradePhilosopherChange: (v: boolean) => void
   onPresetApplied: (name: string) => void
   onClose: () => void
 }
@@ -44,13 +40,9 @@ export default function AdvancedModal({
   settings,
   imageSource,
   accentFolder,
-  philosopher,
-  gradePhilosopher,
   onSettingsChange,
   onImageSourceChange,
   onAccentFolderChange,
-  onPhilosopherChange,
-  onGradePhilosopherChange,
   onPresetApplied,
   onClose,
 }: Props) {

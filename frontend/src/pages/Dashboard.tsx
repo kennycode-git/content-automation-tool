@@ -794,13 +794,9 @@ export default function Dashboard({ session }: Props) {
           settings={settings}
           imageSource={imageSource}
           accentFolder={accentFolder}
-          philosopher={philosopher}
-          gradePhilosopher={gradePhilosopher}
           onSettingsChange={s => { setSettings(s); setAppliedPresetName(null) }}
           onImageSourceChange={v => setImageSource(v)}
           onAccentFolderChange={setAccentFolder}
-          onPhilosopherChange={setPhilosopher}
-          onGradePhilosopherChange={setGradePhilosopher}
           onPresetApplied={setAppliedPresetName}
           onClose={() => setShowAdvanced(false)}
         />
