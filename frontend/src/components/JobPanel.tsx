@@ -196,6 +196,32 @@ function stepProgress(status: string, msg: string | null): number {
   return 5
 }
 
+// Rough seconds-remaining estimates per pipeline stage
+function estimatedSecsRemaining(status: string, msg: string | null, imageCount: { done: number; total: number } | null): number {
+  if (status === 'done' || status === 'failed') return 0
+  if (!msg || msg === 'Queued') return 50
+  if (msg.startsWith('Loading uploaded') || msg.startsWith('Fetching') || msg.startsWith('API limit')) return 40
+  if (msg.startsWith('Downloading')) {
+    if (imageCount && imageCount.total > 0) {
+      const frac = 1 - imageCount.done / imageCount.total
+      return Math.round(4 + frac * 24) // 4–28s depending on progress
+    }
+    return 28
+  }
+  if (msg.startsWith('Applying')) return 16
+  if (msg.startsWith('Rendering')) return 10
+  if (msg.startsWith('Uploading')) return 4
+  return 50
+}
+
+function formatEta(secs: number): string {
+  if (secs <= 0) return ''
+  if (secs < 60) return `~${secs}s`
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return s > 0 ? `~${m}m ${s}s` : `~${m}m`
+}
+
 interface Props {
   jobId: string
   title?: string | null
@@ -204,9 +230,10 @@ interface Props {
   onDismiss?: () => void
   onDone?: (job: JobStatus) => void
   onCancel?: () => Promise<void>
+  onEstimate?: (secs: number) => void
 }
 
-export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel }: Props) {
+export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel, onEstimate }: Props) {
   const [cancelling, setCancelling] = useState(false)
   const [showOverlay, setShowOverlay] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -246,7 +273,10 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
     if (m) imageCountRef.current = { done: parseInt(m[1], 10), total: m[2] ? parseInt(m[2], 10) : parseInt(m[1], 10) }
     if (msg.includes('Pexels')) sourceRef.current = 'Pexels'
     else if (msg.includes('Unsplash')) sourceRef.current = 'Unsplash'
-  }, [job?.progress_message])
+    if (onEstimate && job) {
+      onEstimate(estimatedSecsRemaining(job.status, job.progress_message, imageCountRef.current))
+    }
+  }, [job?.progress_message, job?.status])
 
   if (isLoading) return <div className="text-sm text-stone-500">Loading…</div>
   if (error) return <div className="text-sm text-red-400">Error loading job status.</div>
@@ -382,14 +412,23 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
             <p className="text-xs text-stone-400 mb-2">{job.progress_message}</p>
           )}
 
-          {!isTerminal && (
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-700">
-              <div
-                className="h-1.5 rounded-full bg-brand-500 transition-all duration-700"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-          )}
+          {!isTerminal && (() => {
+            const etaSecs = estimatedSecsRemaining(job.status, job.progress_message, imageCountRef.current)
+            const eta = job.status !== 'queued' && job.status !== 'failed' ? formatEta(etaSecs) : ''
+            return (
+              <div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-700">
+                  <div
+                    className="h-1.5 rounded-full bg-brand-500 transition-all duration-700"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                {eta && (
+                  <p className="mt-1 text-right text-[10px] text-stone-600">{eta} remaining</p>
+                )}
+              </div>
+            )
+          })()}
 
           {job.status === 'done' && job.output_url && (
             <div className="mt-3 space-y-2">

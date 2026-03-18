@@ -76,6 +76,7 @@ export default function Dashboard({ session }: Props) {
   const [showVariants, setShowVariants] = useState(false)
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [checkedThemes, setCheckedThemes] = useState<Set<string>>(new Set(['dark', 'bw', 'none']))
+  const [jobEstimates, setJobEstimates] = useState<Record<string, number>>({})
   const [variantStatus, setVariantStatus] = useState<string | null>(null)
   const [uploadedOnly, setUploadedOnly] = useState(false)
   const [accentFolder, setAccentFolder] = useState<string | null>(null)
@@ -698,9 +699,17 @@ export default function Dashboard({ session }: Props) {
 
             {activeJobs.length > 0 && (
               <div>
-                <h2 className="mb-3 text-sm font-semibold text-stone-300">
-                  {activeJobs.length > 1 ? `Current jobs (${activeJobs.length})` : 'Current job'}
-                </h2>
+                <div className="flex items-baseline gap-2 mb-3">
+                  <h2 className="text-sm font-semibold text-stone-300">
+                    {activeJobs.length > 1 ? `Current jobs (${activeJobs.length})` : 'Current job'}
+                  </h2>
+                  {activeJobs.length > 1 && (() => {
+                    const maxSecs = Math.max(...activeJobs.map(j => jobEstimates[j.jobId] ?? 0))
+                    if (maxSecs <= 0) return null
+                    const label = maxSecs < 60 ? `~${maxSecs}s` : `~${Math.ceil(maxSecs / 60)}m`
+                    return <span className="text-xs text-stone-600">{label} remaining</span>
+                  })()}
+                </div>
                 <div className="space-y-3">
                   {activeJobs.map(({ jobId, title }) => (
                     <JobPanel
@@ -712,6 +721,7 @@ export default function Dashboard({ session }: Props) {
                       onDismiss={() => dismissJob(jobId)}
                       onDone={handleJobDone}
                       onCancel={() => cancelJob(jobId)}
+                      onEstimate={secs => setJobEstimates(prev => ({ ...prev, [jobId]: secs }))}
                     />
                   ))}
                 </div>
