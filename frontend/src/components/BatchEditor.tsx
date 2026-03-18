@@ -73,6 +73,18 @@ const DEFAULT_GRADE: CustomGradeParams = {
   exposure: 1.0, warmth: 0.0, tint: 0.0, hue_shift: 0,
 }
 
+function gradeToFilter(p: CustomGradeParams): string {
+  const hue = p.hue_shift + (p.warmth * -12) + (p.tint * 8)
+  const parts = [
+    `brightness(${(p.brightness * p.exposure).toFixed(3)})`,
+    `contrast(${p.contrast.toFixed(3)})`,
+    `saturate(${p.saturation.toFixed(3)})`,
+    `hue-rotate(${hue.toFixed(1)}deg)`,
+  ]
+  if (p.warmth > 0) parts.push(`sepia(${(p.warmth * 0.4).toFixed(3)})`)
+  return parts.join(' ')
+}
+
 const CUSTOM_SLIDERS: { key: keyof CustomGradeParams; label: string; min: number; max: number; step: number; unit: string }[] = [
   { key: 'brightness', label: 'Brightness', min: 0,    max: 2,   step: 0.05, unit: '' },
   { key: 'contrast',   label: 'Contrast',   min: 0,    max: 2,   step: 0.05, unit: '' },
@@ -146,6 +158,15 @@ function BatchStylePopover({
             {/* Custom grade sliders */}
             {batch.colorTheme === 'custom' && (
               <div className="mt-3 space-y-2 pt-2 border-t border-stone-800">
+                <div className="flex items-start gap-2 mb-1">
+                  <video
+                    src="/theme-previews/eastern-philosophy.mp4"
+                    autoPlay muted loop playsInline
+                    className="w-14 rounded-md shrink-0 object-cover"
+                    style={{ aspectRatio: '9/16', filter: gradeToFilter(params) }}
+                  />
+                  <p className="text-[10px] text-stone-500 leading-relaxed pt-0.5">Dial in your own colour grade with the sliders below.</p>
+                </div>
                 {CUSTOM_SLIDERS.map(s => (
                   <div key={s.key}>
                     <div className="flex items-center justify-between mb-0.5">

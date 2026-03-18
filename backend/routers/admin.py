@@ -178,27 +178,35 @@ async def send_invite_email(body: InviteBody, request: Request):
         raise HTTPException(status_code=500, detail="RESEND_API_KEY not configured.")
 
     email = body.email.lower()
-    html = f"""
-    <div style="font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;background:#1c1917;color:#e7e5e4;padding:40px;border-radius:16px;">
-      <div style="margin-bottom:28px;">
-        <span style="color:#f59e0b;font-size:22px;font-weight:700;">PassiveClip</span>
-      </div>
-      <h1 style="color:#f5f5f4;font-size:20px;font-weight:700;margin:0 0 12px;">You've been invited.</h1>
-      <p style="color:#a8a29e;font-size:15px;line-height:1.7;margin:0 0 28px;">
-        You've been given access to PassiveClip — a tool for generating short-form
-        philosophy and mindset content at scale using AI-curated visuals.
-      </p>
-      <a href="https://passiveclip.com"
-         style="display:inline-block;background:#f59e0b;color:#000;font-weight:700;
-                padding:13px 28px;border-radius:10px;text-decoration:none;font-size:15px;">
-        Get started →
-      </a>
-      <p style="color:#57534e;font-size:12px;margin-top:32px;line-height:1.6;">
-        Sign up using this exact email address: <strong style="color:#78716c;">{email}</strong><br>
-        If you didn't expect this, you can ignore it.
-      </p>
+    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<div style="background:#fff;border-radius:4px;overflow:hidden;font-family:Arial,sans-serif;max-width:600px">
+  <div style="background:#111;padding:28px 40px;text-align:left">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:0">
+      <img src="https://www.passiveclip.com/logo.png" alt="" style="height:36px;width:auto;display:block">
+      <img src="https://www.passiveclip.com/just%20text.png" alt="PassiveClip" style="height:28px;width:auto;display:block">
     </div>
-    """
+  </div>
+  <div style="height:3px;background:#F5A623"></div>
+  <div style="padding:44px 40px 36px;background:#fff">
+    <p style="font-size:18px;line-height:1.75;color:#111;margin-bottom:20px;font-family:Arial,sans-serif;font-weight:700">You've been invited to PassiveClip.</p>
+    <p style="font-size:15px;line-height:1.75;color:#333;margin-bottom:16px;font-family:Arial,sans-serif">PassiveClip turns a list of keywords into rendered MP4 videos: stock images, colour grades, smooth transitions, all handled automatically.</p>
+    <p style="font-size:15px;line-height:1.75;color:#333;margin-bottom:16px;font-family:Arial,sans-serif">It's built for channels that need a steady stream of background video without spending hours in an editor. Accept the invite to set up your account.</p>
+    <div style="margin:32px 0">
+      <a href="https://www.passiveclip.com/login" style="display:inline-block;background:#F5A623;font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:15px 32px;text-decoration:none;border-radius:2px;font-family:Arial,sans-serif;color:#111">Accept invite</a>
+    </div>
+    <hr style="border:none;border-top:1px solid #eee;margin:32px 0">
+    <p style="font-size:15px;color:#333;line-height:1.75;margin-bottom:8px;font-family:Arial,sans-serif">Sign in using: <strong>{email}</strong></p>
+    <p style="font-size:15px;color:#333;line-height:1.75;margin-bottom:16px;font-family:Arial,sans-serif">This invite expires in 48 hours. If you weren't expecting this, you can safely ignore it.</p>
+  </div>
+  <div style="background:#111;padding:20px 40px">
+    <p style="font-size:11px;color:#555;line-height:1.8;font-family:'Courier New',monospace;letter-spacing:0.04em">PassiveClip · Automated video for content creators</p>
+  </div>
+</div>
+</body>
+</html>"""
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
