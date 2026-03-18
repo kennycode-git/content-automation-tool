@@ -141,7 +141,7 @@ interface Props {
   onLoad: (bundles: { title: string | null; terms: string[] }[]) => void
 }
 
-const MOBILE_VISIBLE = 3
+const INITIAL_VISIBLE = 3
 
 export default function TermBundles({ onLoad }: Props) {
   const [open, setOpen] = useState(true)
@@ -186,7 +186,7 @@ export default function TermBundles({ onLoad }: Props) {
               <label
                 key={b.label}
                 className={`flex items-center gap-1.5 cursor-pointer rounded-full border px-3 py-1 text-xs transition ${
-                  i >= MOBILE_VISIBLE && !showAll ? 'hidden sm:flex' : 'flex'
+                  i >= INITIAL_VISIBLE && !showAll ? 'hidden' : 'flex'
                 } ${
                   selected.has(b.label)
                     ? 'border-brand-500 bg-brand-500/10 text-brand-400'
@@ -205,9 +205,9 @@ export default function TermBundles({ onLoad }: Props) {
             {!showAll && (
               <button
                 onClick={() => setShowAll(true)}
-                className="sm:hidden flex items-center rounded-full border border-stone-700 bg-stone-800 px-3 py-1 text-xs text-stone-500 hover:text-stone-300 transition"
+                className="flex items-center rounded-full border border-stone-700 bg-stone-800 px-3 py-1 text-xs text-stone-500 hover:text-stone-300 transition"
               >
-                +{BUNDLES.length - MOBILE_VISIBLE} more
+                +{BUNDLES.length - INITIAL_VISIBLE} more
               </button>
             )}
           </div>
