@@ -284,12 +284,15 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   })
 
   const doneFired = useRef(false)
+  const jobRef = useRef(job)
+  jobRef.current = job
   useEffect(() => {
     if (job?.status === 'done' && onDone && !doneFired.current) {
       doneFired.current = true
-      onDone(job)
+      onDone(jobRef.current!)
     }
-  }, [job?.status, job, onDone])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.status])
 
   // Persist image count + source so they remain visible after message changes
   useEffect(() => {

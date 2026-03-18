@@ -8,6 +8,11 @@
 import { useRef, useState } from 'react'
 import { BUNDLES } from './TermBundles'
 
+interface CustomGradeParams {
+  brightness: number; contrast: number; saturation: number
+  exposure: number; warmth: number; tint: number; hue_shift: number
+}
+
 interface Preset {
   id: string
   label: string
@@ -15,9 +20,21 @@ interface Preset {
   bundleLabel: string
   gradient: string
   accentFolder?: string | null
+  customGradeParams?: CustomGradeParams
 }
 
 const PRESETS: Preset[] = [
+  {
+    id: 'buddhism',
+    label: 'Buddhism',
+    theme: 'custom',
+    bundleLabel: 'Buddhism',
+    gradient: 'from-amber-950 via-stone-900 to-amber-950',
+    customGradeParams: {
+      brightness: 1.0, contrast: 0.95, saturation: 0.80,
+      exposure: 0.88, warmth: 0.40, tint: 0.05, hue_shift: 8,
+    },
+  },
   {
     id: 'dark-academia',
     label: 'Dark Academia',
@@ -58,7 +75,7 @@ const PRESETS: Preset[] = [
     id: 'shadow',
     label: 'Shadow',
     theme: 'dark',
-    bundleLabel: 'Gothic / Shadow',
+    bundleLabel: 'Shadow',
     gradient: 'from-stone-950 via-slate-900 to-stone-950',
   },
   {
@@ -71,7 +88,7 @@ const PRESETS: Preset[] = [
 ]
 
 interface Props {
-  onApply: (theme: string, bundles: { title: string | null; terms: string[] }[], accentFolder?: string | null) => void
+  onApply: (theme: string, bundles: { title: string | null; terms: string[] }[], accentFolder?: string | null, customGradeParams?: CustomGradeParams) => void
   onHide?: () => void
 }
 
@@ -88,7 +105,7 @@ export default function InspirationCarousel({ onApply, onHide }: Props) {
 
   function handleApply(preset: Preset) {
     const bundle = BUNDLES.find(b => b.label === preset.bundleLabel)
-    onApply(preset.theme, bundle ? [{ title: bundle.label, terms: bundle.terms }] : [], preset.accentFolder ?? null)
+    onApply(preset.theme, bundle ? [{ title: bundle.label, terms: bundle.terms }] : [], preset.accentFolder ?? null, preset.customGradeParams)
   }
 
   function scroll(dir: 'left' | 'right') {
@@ -209,12 +226,13 @@ function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) =
 const THEME_LABELS: Record<string, string> = {
   none: 'Natural', dark: 'Dark', sepia: 'Sepia', warm: 'Amber',
   low_exp: 'Low Exp', grey: 'Silver', blue: 'Cobalt', red: 'Crimson', bw: 'Mono',
+  custom: 'Custom',
 }
 
 const THEME_DOT: Record<string, string> = {
   none: 'bg-stone-400', dark: 'bg-stone-900 ring-1 ring-stone-600', sepia: 'bg-amber-800',
   warm: 'bg-amber-600', low_exp: 'bg-stone-950 ring-1 ring-stone-700', grey: 'bg-stone-500',
-  blue: 'bg-blue-700', red: 'bg-red-800', bw: 'bg-stone-100',
+  blue: 'bg-blue-700', red: 'bg-red-800', bw: 'bg-stone-100', custom: 'bg-violet-600',
 }
 
 function ThemePill({ theme }: { theme: string }) {

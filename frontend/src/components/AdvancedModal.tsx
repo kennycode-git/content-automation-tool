@@ -28,13 +28,11 @@ const PHILOSOPHER_OPTIONS = [
 interface Props {
   settings: VideoSettings
   imageSource: 'auto' | 'unsplash' | 'pexels' | 'both'
-  uploadedOnly: boolean
   accentFolder: string | null
   philosopher: string | null
   gradePhilosopher: boolean
   onSettingsChange: (s: VideoSettings) => void
   onImageSourceChange: (v: 'auto' | 'unsplash' | 'pexels' | 'both') => void
-  onUploadedOnlyChange: (v: boolean) => void
   onAccentFolderChange: (v: string | null) => void
   onPhilosopherChange: (v: string | null) => void
   onGradePhilosopherChange: (v: boolean) => void
@@ -45,13 +43,11 @@ interface Props {
 export default function AdvancedModal({
   settings,
   imageSource,
-  uploadedOnly,
   accentFolder,
   philosopher,
   gradePhilosopher,
   onSettingsChange,
   onImageSourceChange,
-  onUploadedOnlyChange,
   onAccentFolderChange,
   onPhilosopherChange,
   onGradePhilosopherChange,
@@ -101,17 +97,6 @@ export default function AdvancedModal({
             <option value="pexels">Pexels</option>
           </select>
         </div>
-
-        {/* Uploaded images only */}
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={uploadedOnly}
-            onChange={e => onUploadedOnlyChange(e.target.checked)}
-            className="accent-brand-500"
-          />
-          <span className="text-sm text-stone-300">Use uploaded images only</span>
-        </label>
 
         {/* Accent images */}
         <div>
@@ -180,17 +165,6 @@ export default function AdvancedModal({
             className="w-full accent-brand-500"
           />
         </div>
-
-        {/* Allow repeats */}
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={settings.allow_repeats}
-            onChange={e => update({ allow_repeats: e.target.checked })}
-            className="accent-brand-500"
-          />
-          <span className="text-sm text-stone-300">Allow image repeats</span>
-        </label>
 
         <hr className="border-stone-800" />
 

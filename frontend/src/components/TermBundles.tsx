@@ -16,6 +16,21 @@ interface Bundle {
 
 export const BUNDLES: Bundle[] = [
   {
+    label: 'Buddhism',
+    terms: [
+      'golden buddha statue temple warm candlelight serene ancient',
+      'lotus flower still dark pond reflection dawn peaceful',
+      'tibetan prayer flags mountain wind high altitude golden',
+      'monk orange robe walking misty temple path serene',
+      'incense smoke curling dark shrine warm glowing altar',
+      'stone buddha face moss covered ancient forest peaceful',
+      'mandala intricate golden sand warm ceremonial spiritual pattern',
+      'tibetan monastery cliff edge dramatic mountain warm morning',
+      'meditation cushion dark quiet room candlelight warm stillness',
+      'cherry blossom falling warm soft petals impermanence beauty',
+    ],
+  },
+  {
     label: 'Stoic Philosophy',
     terms: [
       'marble roman bust dark museum shadows weathered emperor',
@@ -61,7 +76,7 @@ export const BUNDLES: Bundle[] = [
     ],
   },
   {
-    label: 'Gothic / Shadow',
+    label: 'Shadow',
     terms: [
       'dark forest mist dark shadows dense overgrown atmospheric',
       'candlelight flickering darkness dark cathedral shadows dancing eerie',

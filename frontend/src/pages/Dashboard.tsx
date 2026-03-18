@@ -80,7 +80,6 @@ export default function Dashboard({ session }: Props) {
   const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set())
   const activeJobsRef = useRef(activeJobs)
   const [variantStatus, setVariantStatus] = useState<string | null>(null)
-  const [uploadedOnly, setUploadedOnly] = useState(false)
   const [accentFolder, setAccentFolder] = useState<string | null>(null)
   const [philosopher, setPhilosopher] = useState<string | null>(null)
   const [gradePhilosopher, setGradePhilosopher] = useState(false)
@@ -213,7 +212,6 @@ export default function Dashboard({ session }: Props) {
           batch_title: batch.title,
           uploaded_image_paths: batch.uploaded_image_paths?.length ? batch.uploaded_image_paths : undefined,
           preset_name: appliedPresetName ?? undefined,
-          uploaded_only: uploadedOnly || undefined,
           accent_folder: accentFolder ?? undefined,
           philosopher: philosopher ?? undefined,
           grade_philosopher: gradePhilosopher || undefined,
@@ -229,7 +227,7 @@ export default function Dashboard({ session }: Props) {
       submittingRef.current = false
       setSubmitting(false)
     }
-  }, [batches, settings, trialExpired, appliedPresetName, uploadedOnly, accentFolder, philosopher, gradePhilosopher, resolvedSource])
+  }, [batches, settings, trialExpired, appliedPresetName, accentFolder, philosopher, gradePhilosopher, resolvedSource])
 
   const handleGenerateVariants = useCallback(async () => {
     if (submittingRef.current) return
@@ -492,8 +490,8 @@ export default function Dashboard({ session }: Props) {
       {carouselVisible ? (
         <InspirationCarousel
           key={carouselKey}
-          onApply={(theme, bundles, appliedAccent) => {
-            setSettings(prev => ({ ...prev, color_theme: theme }))
+          onApply={(theme, bundles, appliedAccent, customGradeParams) => {
+            setSettings(prev => ({ ...prev, color_theme: theme, custom_grade_params: customGradeParams ?? undefined }))
             setPendingBundles(bundles)
             setAccentFolder(appliedAccent ?? null)
           }}
@@ -795,13 +793,11 @@ export default function Dashboard({ session }: Props) {
         <AdvancedModal
           settings={settings}
           imageSource={imageSource}
-          uploadedOnly={uploadedOnly}
           accentFolder={accentFolder}
           philosopher={philosopher}
           gradePhilosopher={gradePhilosopher}
           onSettingsChange={s => { setSettings(s); setAppliedPresetName(null) }}
           onImageSourceChange={v => setImageSource(v)}
-          onUploadedOnlyChange={setUploadedOnly}
           onAccentFolderChange={setAccentFolder}
           onPhilosopherChange={setPhilosopher}
           onGradePhilosopherChange={setGradePhilosopher}
