@@ -23,12 +23,12 @@ const PIPELINE_STEPS = [
 
 const QUOTES = [
   { text: 'The impediment to action advances action. What stands in the way becomes the way.', author: 'Marcus Aurelius' },
-  { text: 'Begin at once to live, and count each day as a separate life.', author: 'Seneca' },
-  { text: 'Knowing yourself is the beginning of all wisdom.', author: 'Aristotle' },
-  { text: 'You have power over your mind, not outside events. Realise this, and you will find strength.', author: 'Marcus Aurelius' },
+  { text: 'Begin at once to live, and count each separate day as a separate life.', author: 'Seneca' },
+  { text: 'Some things are in our control and others not.', author: 'Epictetus' },
+  { text: 'If it is not right, do not do it; if it is not true, do not say it.', author: 'Marcus Aurelius' },
   { text: 'No man ever steps in the same river twice, for it is not the same river and he is not the same man.', author: 'Heraclitus' },
-  { text: 'It is not that I\'m so smart, it is just that I stay with problems longer.', author: 'Albert Einstein' },
-  { text: 'Patience is bitter, but its fruit is sweet.', author: 'Aristotle' },
+  { text: 'It is not that we have a short time to live, but that we waste a lot of it.', author: 'Seneca' },
+  { text: 'While we are postponing, life speeds by.', author: 'Seneca' },
   { text: 'The unexamined life is not worth living.', author: 'Socrates' },
 ]
 
