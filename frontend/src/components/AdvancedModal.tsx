@@ -194,38 +194,25 @@ export default function AdvancedModal({
 
         <hr className="border-stone-800" />
 
-        {/* Select Philosopher */}
-        <div>
-          <p className="text-xs text-stone-400 mb-2">
-            Philosopher inserts{' '}
-            <span className="text-stone-600">(~20% of frames, portrait images)</span>
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            {PHILOSOPHER_OPTIONS.map(opt => (
-              <button
-                key={opt.value}
-                onClick={() => onPhilosopherChange(philosopher === opt.value ? null : opt.value)}
-                className={`px-2 py-2 rounded-lg border text-xs text-center transition ${
-                  philosopher === opt.value
-                    ? 'border-brand-500 bg-brand-500/10 text-stone-100'
-                    : 'border-stone-700 bg-stone-800 text-stone-400 hover:border-stone-500 hover:text-stone-200'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+        {/* Select Philosopher — coming soon */}
+        <div className="group/phil relative cursor-not-allowed select-none">
+          <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-60 rounded-lg border border-stone-600 bg-stone-900 px-3 py-2.5 shadow-xl opacity-0 group-hover/phil:opacity-100 transition-opacity z-50">
+            <p className="text-xs font-semibold text-white mb-1">Philosopher Image Inserts</p>
+            <p className="text-xs text-stone-300 leading-relaxed">Automatically inserts HD portrait images of your chosen philosopher into the video carousel alongside your search results.</p>
           </div>
-          {philosopher && (
-            <label className="mt-2 flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={gradePhilosopher}
-                onChange={e => onGradePhilosopherChange(e.target.checked)}
-                className="accent-brand-500"
-              />
-              <span className="text-xs text-stone-300">Apply colour grade to philosopher images</span>
-            </label>
-          )}
+          <div className="opacity-50">
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-xs text-stone-400">Select philosopher</p>
+              <span className="text-[9px] font-semibold tracking-wide bg-stone-800 text-stone-600 border border-stone-700/60 px-1.5 py-0.5 rounded-full">Soon</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 pointer-events-none">
+              {PHILOSOPHER_OPTIONS.map(opt => (
+                <div key={opt.value} className="flex items-center justify-center px-2 py-2 rounded-lg border border-stone-700 bg-stone-800/60 text-xs text-stone-500 text-center">
+                  {opt.label}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>
