@@ -96,6 +96,7 @@ export default function Dashboard({ session }: Props) {
   const [showStagingOverlay, setShowStagingOverlay] = useState(false)
   const genDropdownRef = useRef<HTMLDivElement>(null)
   const stagingAbortRef = useRef<AbortController | null>(null)
+  const stagingOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Usage query
   const { data: usageInfo } = useQuery<UsageInfo>({
@@ -206,13 +207,22 @@ export default function Dashboard({ session }: Props) {
     try {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of validBatches) {
+        const effectiveTheme = batch.color_theme ?? settings.color_theme
+        const effectiveGradeParams = effectiveTheme === 'custom'
+          ? (batch.custom_grade_params ?? settings.custom_grade_params)
+          : undefined
+        const effectiveAccent = batch.accent_folder_override !== undefined
+          ? batch.accent_folder_override
+          : accentFolder
         const res = await generateVideo({
           search_terms: batch.terms,
           ...settings,
+          color_theme: effectiveTheme,
+          custom_grade_params: effectiveGradeParams,
           batch_title: batch.title,
           uploaded_image_paths: batch.uploaded_image_paths?.length ? batch.uploaded_image_paths : undefined,
           preset_name: appliedPresetName ?? undefined,
-          accent_folder: accentFolder ?? undefined,
+          accent_folder: effectiveAccent ?? undefined,
           philosopher: philosopher ?? undefined,
           grade_philosopher: gradePhilosopher || undefined,
           image_source: resolvedSource,
@@ -302,6 +312,7 @@ export default function Dashboard({ session }: Props) {
           search_terms: b.terms,
           batch_title: b.title,
           uploaded_image_paths: b.uploaded_image_paths?.length ? b.uploaded_image_paths : undefined,
+          color_theme: b.color_theme ?? settings.color_theme,
         })),
         resolution: settings.resolution,
         seconds_per_image: settings.seconds_per_image,
@@ -693,8 +704,8 @@ export default function Dashboard({ session }: Props) {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-stone-200">⏳ Fetching…</span>
                       <button
-                        onMouseEnter={() => setShowStagingOverlay(true)}
-                        onMouseLeave={() => setShowStagingOverlay(false)}
+                        onMouseEnter={() => { if (stagingOverlayTimerRef.current) clearTimeout(stagingOverlayTimerRef.current); setShowStagingOverlay(true) }}
+                        onMouseLeave={() => { stagingOverlayTimerRef.current = setTimeout(() => setShowStagingOverlay(false), 200) }}
                         className="text-stone-500 hover:text-stone-200 transition-colors focus:outline-none"
                         aria-label="Show preview steps"
                       >
@@ -723,7 +734,11 @@ export default function Dashboard({ session }: Props) {
                     <div className="h-1.5 w-2/3 rounded-full bg-brand-500 animate-pulse" />
                   </div>
                   {showStagingOverlay && (
-                    <div className="absolute top-full left-0 right-0 mt-2 rounded-xl border border-stone-600/80 bg-stone-900 shadow-2xl overflow-hidden z-50 pointer-events-none">
+                    <div
+                      className="absolute top-full left-0 right-0 mt-2 rounded-xl border border-stone-600/80 bg-stone-900 shadow-2xl overflow-hidden z-50"
+                      onMouseEnter={() => { if (stagingOverlayTimerRef.current) clearTimeout(stagingOverlayTimerRef.current) }}
+                      onMouseLeave={() => { stagingOverlayTimerRef.current = setTimeout(() => setShowStagingOverlay(false), 200) }}
+                    >
                       <div className="px-4 pt-3 pb-2.5 border-b border-stone-800/80">
                         <p className="text-xs font-semibold text-stone-200">Preparing your preview</p>
                         <p className="text-xs text-stone-500 mt-0.5">Images are fetched and graded. No credit used yet</p>
@@ -745,6 +760,22 @@ export default function Dashboard({ session }: Props) {
                           </div>
                         ))}
                       </div>
+                      {(() => {
+                        const STAGING_QUOTES = [
+                          { text: 'The impediment to action advances action. What stands in the way becomes the way.', author: 'Marcus Aurelius' },
+                          { text: 'Begin at once to live, and count each separate day as a separate life.', author: 'Seneca' },
+                          { text: 'Some things are in our control and others not.', author: 'Epictetus' },
+                          { text: 'While we are postponing, life speeds by.', author: 'Seneca' },
+                          { text: 'The unexamined life is not worth living.', author: 'Socrates' },
+                        ]
+                        const q = STAGING_QUOTES[Math.floor(Date.now() / 10000) % STAGING_QUOTES.length]
+                        return (
+                          <div className="px-4 pb-3 border-t border-stone-800/60 pt-2.5">
+                            <p className="text-[10px] text-stone-600 leading-relaxed italic">"{q.text}"</p>
+                            <p className="text-[10px] text-stone-700 mt-1">— {q.author}</p>
+                          </div>
+                        )
+                      })()}
                     </div>
                   )}
                 </div>
