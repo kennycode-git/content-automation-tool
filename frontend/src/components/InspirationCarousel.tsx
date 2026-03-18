@@ -59,6 +59,14 @@ const PRESETS: Preset[] = [
     accentFolder: 'blue',
   },
   {
+    id: 'the-abyss',
+    label: 'The Abyss',
+    theme: 'dark',
+    bundleLabel: 'The Abyss',
+    gradient: 'from-stone-950 via-red-950 to-stone-950',
+    accentFolder: 'red',
+  },
+  {
     id: 'eastern-philosophy',
     label: 'Eastern Philosophy',
     theme: 'none',
