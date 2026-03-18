@@ -88,6 +88,7 @@ export interface JobStatus {
   color_theme?: string | null
   max_per_query?: number | null
   preset_name?: string | null
+  preview_images?: string[] | null
   custom_grade_params?: CustomGradeParams | null
   created_at: string
   completed_at: string | null

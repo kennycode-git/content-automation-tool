@@ -127,8 +127,9 @@ def fetch_images(
     access_key: str,
     color_theme: str = "none",
     per_page: int = 30,
-    delay: float = 0.3,
+    delay: float = 0.1,
     max_per_query: Optional[int] = None,
+    on_item_found: Optional[callable] = None,
 ) -> List[Tuple[str, str]]:
     """Fetch image (id, url) pairs from Unsplash across multiple queries."""
     results: List[Tuple[str, str]] = []
@@ -174,6 +175,9 @@ def fetch_images(
                 url = item["urls"]["regular"]
                 fid = item["id"]
                 results.append((fid, url))
+                if on_item_found:
+                    thumb = item.get("urls", {}).get("thumb") or item.get("urls", {}).get("small") or ""
+                    on_item_found(fid, url, thumb)
                 pulled += 1
                 logger.debug("Collected %d/%d (global %d/%d)", pulled, want, len(results), need_total)
                 if pulled >= want:
@@ -206,6 +210,9 @@ def fetch_images(
         res = data.get("results", [])
         for item in res:
             results.append((item["id"], item["urls"]["regular"]))
+            if on_item_found:
+                thumb = item.get("urls", {}).get("thumb") or item.get("urls", {}).get("small") or ""
+                on_item_found(item["id"], item["urls"]["regular"], thumb)
             if len(results) >= need_total:
                 break
         added = len(results) - before
@@ -267,6 +274,49 @@ def _download_one(fid: str, url: str, dest_dir: Path, tw: int, th: int) -> bool:
     except Exception as e:
         logger.error("skip %s: %s", fid, e)
         return False
+
+
+def download_from_queue(
+    q,
+    dest_dir: str,
+    tw: int,
+    th: int,
+    total_ref: list,
+    max_workers: int = 8,
+    on_progress=None,
+) -> int:
+    """
+    Consume (fid, url) items from q (a threading.Queue), downloading each image.
+    Stops when it receives a None sentinel.
+    total_ref is a single-element list; total_ref[0] is read for progress reporting
+    and may be updated concurrently by the producer thread.
+    Returns saved count.
+    """
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    saved = 0
+    futures = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            fid, url = item
+            f = pool.submit(_download_one, fid, url, dest, tw, th)
+            futures[f] = fid
+
+        for f in as_completed(futures):
+            if f.result():
+                saved += 1
+                if on_progress:
+                    try:
+                        on_progress(saved, total_ref[0])
+                    except Exception as exc:
+                        logger.warning("on_progress callback failed: %s", exc)
+
+    logger.info("download_from_queue: saved %d/%d images", saved, total_ref[0])
+    return saved
 
 
 def download_and_save(

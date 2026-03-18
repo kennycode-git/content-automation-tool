@@ -33,8 +33,11 @@ def _get_semaphore() -> asyncio.Semaphore:
         _pipeline_semaphore = asyncio.Semaphore(2)
     return _pipeline_semaphore
 
+import queue as _q_mod
+import threading as _threading
+
 from db.supabase_client import get_client
-from services.image_pipeline import fetch_images, download_and_save, RateLimitError
+from services.image_pipeline import fetch_images, download_and_save, download_from_queue, RateLimitError
 from services.image_grader import apply_theme_grading
 from services.video_builder import render_slideshow, extract_thumbnail
 from services.storage import upload_output, upload_thumbnail, get_signed_url, delete_file, list_accent_images, download_accent_image
@@ -300,15 +303,25 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
             source = getattr(config, 'image_source', 'unsplash')
             need_total = max(1, int(config.total_seconds / config.seconds_per_image) + 10)
             items: list = []
+            all_preview_thumbs: list = []
 
-            # Fetch from Unsplash
             switched_to_pexels = False
+
+            # ── Unsplash (concurrent fetch + download) ──────────────────────────
             if source in ("unsplash", "both"):
-                await update_job_status(job_id, user_id, "running", db, progress_message="Fetching images from Unsplash…")
-                while True:
+                q = _q_mod.Queue()
+                total_found = [0]
+                preview_thumbs: list = []
+
+                def _on_unsplash_item(fid, url, thumb=""):
+                    total_found[0] += 1
+                    q.put((fid, url))
+                    if len(preview_thumbs) < 8 and thumb:
+                        preview_thumbs.append(thumb)
+
+                def _do_unsplash_fetch():
                     try:
-                        unsplash_items = await asyncio.to_thread(
-                            fetch_images,
+                        return fetch_images(
                             queries=config.search_terms,
                             need_total=need_total,
                             tw=width,
@@ -316,8 +329,23 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
                             access_key=access_key,
                             color_theme=config.color_theme,
                             max_per_query=config.max_per_query,
+                            on_item_found=_on_unsplash_item,
+                        )
+                    finally:
+                        q.put(None)
+
+                await update_job_status(job_id, user_id, "running", db,
+                    progress_message="Fetching images from Unsplash…")
+                progress_cb = _make_download_progress_cb(job_id, user_id)
+                while True:
+                    try:
+                        unsplash_items, _ = await asyncio.gather(
+                            asyncio.to_thread(_do_unsplash_fetch),
+                            asyncio.to_thread(download_from_queue, q, images_dir, width, height,
+                                              total_found, 8, progress_cb),
                         )
                         items.extend(unsplash_items)
+                        all_preview_thumbs.extend(preview_thumbs)
                         break
                     except RateLimitError as e:
                         if pexels_key and source == "unsplash":
@@ -332,35 +360,64 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
                             await asyncio.sleep(e.wait)
                             await update_job_status(job_id, user_id, "running", db,
                                 progress_message="Fetching images from Unsplash…")
+                            # reset queue and counters for retry
+                            q = _q_mod.Queue()
+                            total_found[0] = 0
+                            preview_thumbs.clear()
 
-            # Fetch from Pexels
+            # ── Pexels (concurrent fetch + download) ────────────────────────────
             if source in ("pexels", "both") or switched_to_pexels:
                 if pexels_key:
                     from services.pexels_pipeline import fetch_images_pexels
-                    await update_job_status(job_id, user_id, "running", db, progress_message="Fetching images from Pexels…")
-                    pexels_items = await asyncio.to_thread(
-                        fetch_images_pexels,
-                        queries=config.search_terms,
-                        need_total=need_total,
-                        tw=width,
-                        th=height,
-                        access_key=pexels_key,
-                        color_theme=config.color_theme,
-                        max_per_query=config.max_per_query,
+                    q2 = _q_mod.Queue()
+                    total_found2 = [0]
+                    preview_thumbs2: list = []
+
+                    def _on_pexels_item(fid, url, thumb=""):
+                        total_found2[0] += 1
+                        q2.put((fid, url))
+                        if len(preview_thumbs2) < 8 and thumb:
+                            preview_thumbs2.append(thumb)
+
+                    def _do_pexels_fetch():
+                        try:
+                            return fetch_images_pexels(
+                                queries=config.search_terms,
+                                need_total=need_total,
+                                tw=width,
+                                th=height,
+                                access_key=pexels_key,
+                                color_theme=config.color_theme,
+                                max_per_query=config.max_per_query,
+                                on_item_found=_on_pexels_item,
+                            )
+                        finally:
+                            q2.put(None)
+
+                    await update_job_status(job_id, user_id, "running", db,
+                        progress_message="Fetching images from Pexels…")
+                    progress_cb2 = _make_download_progress_cb(job_id, user_id)
+                    pexels_items, _ = await asyncio.gather(
+                        asyncio.to_thread(_do_pexels_fetch),
+                        asyncio.to_thread(download_from_queue, q2, images_dir, width, height,
+                                          total_found2, 8, progress_cb2),
                     )
                     items.extend(pexels_items)
+                    all_preview_thumbs.extend(preview_thumbs2)
                 else:
                     logger.warning("PEXELS_ACCESS_KEY not set — skipping Pexels fetch")
 
             if not items and not config.uploaded_image_paths:
                 raise RuntimeError("No images returned for the given search terms.")
 
-            if items:
-                await update_job_status(job_id, user_id, "running", db, progress_message=f"Downloading 0/{len(items)} images…")
-                progress_cb = _make_download_progress_cb(job_id, user_id)
-                saved = await asyncio.to_thread(download_and_save, items, images_dir, width, height, 4, progress_cb)
-                if saved == 0 and not config.uploaded_image_paths:
-                    raise RuntimeError("No images could be downloaded.")
+            # Store preview thumb URLs in job config for frontend display
+            if all_preview_thumbs:
+                try:
+                    cfg_dict = config.to_dict()
+                    cfg_dict["preview_images"] = all_preview_thumbs[:8]
+                    db.table("jobs").update({"config": cfg_dict}).eq("id", job_id).eq("user_id", user_id).execute()
+                except Exception as exc:
+                    logger.warning("Failed to store preview_images: %s", exc)
 
         # --- Step 2.5: Apply colour grading ---
         await update_job_status(job_id, user_id, "running", db, progress_message="Applying colour grade…")
@@ -445,66 +502,6 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
             pass
 
 
-async def _run_single_variant(
-    job_id: str,
-    user_id: str,
-    config: JobConfig,
-    theme: str,
-    shared_images_dir: str,
-    variant_tmp: str,
-    db,
-) -> None:
-    """Apply grading + render + upload for one variant, reading from shared_images_dir."""
-    width, height = config.parse_resolution()
-    output_file = os.path.join(variant_tmp, "output.mp4")
-
-    await update_job_status(job_id, user_id, "running", db, progress_message="Applying colour grade…")
-    graded_dir = os.path.join(variant_tmp, "graded")
-    render_input = await asyncio.to_thread(apply_theme_grading, shared_images_dir, graded_dir, theme)
-
-    await update_job_status(job_id, user_id, "running", db, progress_message="Rendering video…")
-    result = await asyncio.to_thread(
-        render_slideshow,
-        input_folder=render_input,
-        output_file=output_file,
-        width=width,
-        height=height,
-        seconds_per_image=config.seconds_per_image,
-        fps=config.fps,
-        total_seconds=config.total_seconds,
-        allow_repeats=config.allow_repeats,
-        shuffle=True,
-    )
-    if result["returncode"] != 0:
-        logger.error("ffmpeg failed (rc=%d). Last 20 lines:\n%s",
-                     result["returncode"], "\n".join(result["log"][-20:]))
-        raise RuntimeError(f"ffmpeg failed (rc={result['returncode']}). Check server logs.")
-
-    thumb_url = None
-    thumb_file = os.path.join(variant_tmp, "thumb.jpg")
-    try:
-        thumb_ok = await asyncio.to_thread(extract_thumbnail, output_file, thumb_file, config.total_seconds)
-        if thumb_ok:
-            thumb_path = await upload_thumbnail(thumb_file, user_id, job_id)
-            thumb_url = await get_signed_url(thumb_path, expiry_seconds=172800)
-    except Exception as e:
-        logger.warning("Thumbnail failed (non-fatal): %s", e)
-
-    await update_job_status(job_id, user_id, "running", db, progress_message="Uploading output…")
-    storage_path = await upload_output(output_file, user_id, job_id)
-    signed_url = await get_signed_url(storage_path)
-
-    await update_job_status(
-        job_id, user_id, "done", db,
-        output_url=signed_url,
-        thumbnail_url=thumb_url,
-        progress_message="Done",
-        completed_at=datetime.now(timezone.utc).isoformat(),
-    )
-    await _increment_usage(user_id, db)
-    logger.info("Variant job %s (theme=%s) complete", job_id, theme)
-
-
 async def run_variants_pipeline(
     job_ids: List[str],
     themes: List[str],
@@ -536,14 +533,20 @@ async def _run_variants_pipeline_inner(
     os.makedirs(shared_images_dir, exist_ok=True)
 
     try:
-        for job_id in job_ids:
-            await update_job_status(job_id, user_id, "running", db, progress_message="Fetching images…")
-
+        # Fetch images once, download concurrently
+        pexels_key = os.environ.get("PEXELS_ACCESS_KEY", "")
         need_total = max(1, int(config.total_seconds / config.seconds_per_image) + 10)
-        while True:
+
+        q = _q_mod.Queue()
+        total_found = [0]
+
+        def _on_item(fid, url, thumb=""):
+            total_found[0] += 1
+            q.put((fid, url))
+
+        def _do_fetch():
             try:
-                items = await asyncio.to_thread(
-                    fetch_images,
+                return fetch_images(
                     queries=config.search_terms,
                     need_total=need_total,
                     tw=width,
@@ -551,29 +554,45 @@ async def _run_variants_pipeline_inner(
                     access_key=access_key,
                     color_theme="none",
                     max_per_query=config.max_per_query,
+                    on_item_found=_on_item,
+                )
+            finally:
+                q.put(None)
+
+        for jid in job_ids:
+            await update_job_status(jid, user_id, "running", db, progress_message="Fetching images…")
+
+        while True:
+            try:
+                items, _ = await asyncio.gather(
+                    asyncio.to_thread(_do_fetch),
+                    asyncio.to_thread(download_from_queue, q, shared_images_dir, width, height, total_found, 8),
                 )
                 break
             except RateLimitError as e:
-                for job_id in job_ids:
-                    await update_job_status(job_id, user_id, "running", db,
+                for jid in job_ids:
+                    await update_job_status(jid, user_id, "running", db,
                         progress_message=f"API limit reached — retrying in {e.wait}s… grab a cup of tea ☕")
                 await asyncio.sleep(e.wait)
-                for job_id in job_ids:
-                    await update_job_status(job_id, user_id, "running", db,
-                        progress_message="Fetching images…")
+                for jid in job_ids:
+                    await update_job_status(jid, user_id, "running", db, progress_message="Fetching images…")
+                # reset for retry
+                q = _q_mod.Queue()
+                total_found[0] = 0
+
         if not items:
             raise RuntimeError("No images returned for the given search terms.")
 
-        for job_id in job_ids:
-            await update_job_status(job_id, user_id, "running", db, progress_message=f"Downloading {len(items)} images…")
+        # --- Phase A: Grade all themes in parallel ---
+        for jid in job_ids:
+            await update_job_status(jid, user_id, "running", db, progress_message="Applying colour grade…")
 
-        saved = await asyncio.to_thread(download_and_save, items, shared_images_dir, width, height, 4)
-        if saved == 0:
-            raise RuntimeError("No images could be downloaded.")
-
+        variant_info = []
+        grade_coros = []
         for job_id, theme in zip(job_ids, themes):
             variant_tmp = os.path.join(tmp_root, f"v_{job_id[:8]}")
             os.makedirs(variant_tmp, exist_ok=True)
+            graded_dir = os.path.join(variant_tmp, "graded")
             variant_config = JobConfig(
                 search_terms=config.search_terms,
                 resolution=config.resolution,
@@ -585,8 +604,69 @@ async def _run_variants_pipeline_inner(
                 max_per_query=config.max_per_query,
                 batch_title=config.batch_title,
             )
+            grade_coros.append(asyncio.to_thread(apply_theme_grading, shared_images_dir, graded_dir, theme))
+            variant_info.append((job_id, theme, variant_config, variant_tmp))
+
+        grade_results = await asyncio.gather(*grade_coros, return_exceptions=True)
+
+        # --- Phase B: Render + upload (sequential to cap ffmpeg memory) ---
+        for i, (job_id, theme, variant_config, variant_tmp) in enumerate(variant_info):
+            grade_result = grade_results[i]
+            if isinstance(grade_result, Exception):
+                logger.exception("Grading failed for job %s (theme=%s): %s", job_id, theme, grade_result)
+                await update_job_status(
+                    job_id, user_id, "failed", db,
+                    error_message=str(grade_result),
+                    completed_at=datetime.now(timezone.utc).isoformat(),
+                )
+                continue
+
+            render_input = grade_result  # path returned by apply_theme_grading
+            output_file = os.path.join(variant_tmp, "output.mp4")
+
             try:
-                await _run_single_variant(job_id, user_id, variant_config, theme, shared_images_dir, variant_tmp, db)
+                await update_job_status(job_id, user_id, "running", db, progress_message="Rendering video…")
+                result = await asyncio.to_thread(
+                    render_slideshow,
+                    input_folder=render_input,
+                    output_file=output_file,
+                    width=width,
+                    height=height,
+                    seconds_per_image=variant_config.seconds_per_image,
+                    fps=variant_config.fps,
+                    total_seconds=variant_config.total_seconds,
+                    allow_repeats=variant_config.allow_repeats,
+                    shuffle=True,
+                )
+                if result["returncode"] != 0:
+                    logger.error("ffmpeg failed (rc=%d). Last 20 lines:\n%s",
+                                 result["returncode"], "\n".join(result["log"][-20:]))
+                    raise RuntimeError(f"ffmpeg failed (rc={result['returncode']}). Check server logs.")
+
+                thumb_url = None
+                thumb_file = os.path.join(variant_tmp, "thumb.jpg")
+                try:
+                    thumb_ok = await asyncio.to_thread(extract_thumbnail, output_file, thumb_file, variant_config.total_seconds)
+                    if thumb_ok:
+                        thumb_path = await upload_thumbnail(thumb_file, user_id, job_id)
+                        thumb_url = await get_signed_url(thumb_path, expiry_seconds=172800)
+                except Exception as e:
+                    logger.warning("Thumbnail failed (non-fatal): %s", e)
+
+                await update_job_status(job_id, user_id, "running", db, progress_message="Uploading output…")
+                storage_path = await upload_output(output_file, user_id, job_id)
+                signed_url = await get_signed_url(storage_path)
+
+                await update_job_status(
+                    job_id, user_id, "done", db,
+                    output_url=signed_url,
+                    thumbnail_url=thumb_url,
+                    progress_message="Done",
+                    completed_at=datetime.now(timezone.utc).isoformat(),
+                )
+                await _increment_usage(user_id, db)
+                logger.info("Variant job %s (theme=%s) complete", job_id, theme)
+
             except Exception as exc:
                 logger.exception("Variant job %s (theme=%s) failed: %s", job_id, theme, exc)
                 await update_job_status(

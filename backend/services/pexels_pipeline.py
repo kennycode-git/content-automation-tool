@@ -41,8 +41,9 @@ def fetch_images_pexels(
     access_key: str,
     color_theme: str = "none",
     per_page: int = 30,
-    delay: float = 0.3,
+    delay: float = 0.1,
     max_per_query: Optional[int] = None,
+    on_item_found: Optional[callable] = None,
 ) -> List[Tuple[str, str]]:
     """Fetch (id, url) pairs from Pexels across multiple queries.
     Signature mirrors fetch_images() in image_pipeline.py for drop-in use."""
@@ -104,6 +105,10 @@ def fetch_images_pexels(
                 if not url:
                     continue
                 results.append((f"px_{photo['id']}", url))
+                if on_item_found:
+                    src2 = photo.get("src", {})
+                    thumb = src2.get("tiny") or src2.get("small") or ""
+                    on_item_found(f"px_{photo['id']}", url, thumb)
                 pulled += 1
                 if pulled >= want:
                     break

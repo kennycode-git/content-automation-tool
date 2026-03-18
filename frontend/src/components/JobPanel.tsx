@@ -21,6 +21,17 @@ const PIPELINE_STEPS = [
   { key: 'upload',   emoji: '✨', label: 'Almost there',          sub: 'Uploading and generating your download link'},
 ]
 
+const QUOTES = [
+  { text: 'The impediment to action advances action. What stands in the way becomes the way.', author: 'Marcus Aurelius' },
+  { text: 'Begin at once to live, and count each day as a separate life.', author: 'Seneca' },
+  { text: 'Knowing yourself is the beginning of all wisdom.', author: 'Aristotle' },
+  { text: 'You have power over your mind, not outside events. Realise this, and you will find strength.', author: 'Marcus Aurelius' },
+  { text: 'No man ever steps in the same river twice, for it is not the same river and he is not the same man.', author: 'Heraclitus' },
+  { text: 'It is not that I\'m so smart, it is just that I stay with problems longer.', author: 'Albert Einstein' },
+  { text: 'Patience is bitter, but its fruit is sweet.', author: 'Aristotle' },
+  { text: 'The unexamined life is not worth living.', author: 'Socrates' },
+]
+
 function activeStepIdx(msg: string | null): number {
   if (!msg || msg === 'Queued') return -1
   if (msg.startsWith('Loading') || msg.startsWith('Fetching') || msg.startsWith('API limit')) return 0
@@ -66,6 +77,19 @@ function ProgressOverlay({ status, message, imageCount, persistedSource, searchT
           <p className="text-xs text-stone-500 mt-0.5">You can carry on. We'll let you know when it's ready</p>
         )}
       </div>
+
+      {!isQueued && (
+        <div className="px-4 pb-3 border-b border-stone-800/60">
+          {(() => {
+            const q = QUOTES[Math.floor(Date.now() / 10000) % QUOTES.length]
+            return (
+              <p className="text-[10px] text-stone-600 leading-relaxed italic">
+                "{q.text}" — {q.author}
+              </p>
+            )
+          })()}
+        </div>
+      )}
 
       {/* Steps */}
       <div className="px-4 py-3 space-y-2.5">
@@ -416,16 +440,37 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
           {!isTerminal && (() => {
             const etaSecs = estimatedSecsRemaining(job.status, job.progress_message, imageCountRef.current)
             const eta = job.status !== 'queued' && job.status !== 'failed' ? formatEta(etaSecs) : ''
+            const showPreviews = job.preview_images && job.preview_images.length > 0 && !['queued', 'done', 'failed'].includes(job.status)
             return (
               <div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-700">
+                {/* Progress bar */}
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-700 relative">
                   <div
-                    className="h-1.5 rounded-full bg-brand-500 transition-all duration-700"
+                    className="h-1.5 rounded-full bg-brand-500 transition-all duration-700 relative overflow-hidden"
                     style={{ width: `${pct}%` }}
-                  />
+                  >
+                    <div className="absolute inset-0 progress-shimmer" />
+                  </div>
                 </div>
-                {eta && (
-                  <p className="mt-1 text-right text-[10px] text-stone-600">{eta} remaining</p>
+
+                {/* ETA + carry on hint */}
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-[10px] text-stone-600">Keep going — we'll ping you when it's ready</p>
+                  {eta && <p className="text-[10px] text-stone-600">{eta} remaining</p>}
+                </div>
+
+                {/* Preview image strip */}
+                {showPreviews && (
+                  <div className="mt-2 flex gap-1 overflow-x-auto pb-1">
+                    {job.preview_images!.map((url, i) => (
+                      <img
+                        key={i}
+                        src={url}
+                        alt=""
+                        className="h-12 w-8 rounded object-cover flex-shrink-0 opacity-70"
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
             )

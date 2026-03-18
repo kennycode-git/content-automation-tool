@@ -119,6 +119,7 @@ class JobStatusResponse(BaseModel):
     total_seconds: Optional[float] = None
     max_per_query: Optional[int] = None
     preset_name: Optional[str] = None
+    preview_images: Optional[List[str]] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 
