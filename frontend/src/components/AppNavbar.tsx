@@ -15,7 +15,7 @@ import type { UsageInfo } from '../lib/api'
 
 interface Props {
   session: Session
-  activeTool: 'video' | 'photos'
+  activeTool: 'video' | 'photos' | 'schedule'
   onShowTour?: () => void
 }
 
@@ -78,22 +78,19 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
                 : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800'
             }`}
           >
-            Photos
+            Image
+          </Link>
+          <Link
+            to="/schedule"
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${
+              activeTool === 'schedule'
+                ? 'text-stone-100 bg-stone-700/60'
+                : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800'
+            }`}
+          >
+            Scheduling
           </Link>
           <div className="hidden lg:flex items-center gap-0.5">
-            <div className="group relative">
-              <span className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-stone-600 cursor-default select-none">
-                Overlay Text
-                <span className="text-[9px] font-semibold tracking-wide bg-stone-800 text-stone-600 border border-stone-700/60 px-1.5 py-0.5 rounded-full">
-                  Soon
-                </span>
-              </span>
-              <div className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                <p className="text-xs font-semibold text-white mb-1">Overlay Text</p>
-                <p className="text-xs text-stone-300 leading-relaxed">Add custom text, captions, and titles directly onto your videos, fully styled and positioned.</p>
-              </div>
-            </div>
-
             <div className="group relative">
               <span className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-stone-600 cursor-default select-none">
                 AI Prompting
@@ -104,19 +101,6 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
               <div className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-2 w-52 rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50">
                 <p className="text-xs font-semibold text-white mb-1">AI-Powered Search Terms</p>
                 <p className="text-xs text-stone-300 leading-relaxed">Automatically generate optimised search term batches using AI. Just describe your niche or topic.</p>
-              </div>
-            </div>
-
-            <div className="group relative">
-              <span className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-stone-600 cursor-default select-none">
-                Scheduling
-                <span className="text-[9px] font-semibold tracking-wide bg-stone-800 text-stone-600 border border-stone-700/60 px-1.5 py-0.5 rounded-full">
-                  Soon
-                </span>
-              </span>
-              <div className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                <p className="text-xs font-semibold text-white mb-1">Automated Post Scheduling</p>
-                <p className="text-xs text-stone-300 leading-relaxed">Connect your TikTok and Instagram accounts to automatically schedule and publish your generated videos.</p>
               </div>
             </div>
           </div>
