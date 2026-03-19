@@ -130,11 +130,15 @@ export default function Schedule({ session }: Props) {
   function handleSchedule(e: React.FormEvent) {
     e.preventDefault()
     if (!selectedJobId || !selectedAccountId || !scheduledAt) return
+    const pendingTag = hashtagInput.trim().replace(/^#/, '')
+    const allHashtags = pendingTag && !hashtags.includes(pendingTag)
+      ? [...hashtags, pendingTag]
+      : hashtags
     scheduleMutation.mutate({
       job_id: selectedJobId,
       tiktok_account_id: selectedAccountId,
       caption,
-      hashtags,
+      hashtags: allHashtags,
       privacy_level: privacyLevel,
       scheduled_at: new Date(scheduledAt).toISOString(),
     })

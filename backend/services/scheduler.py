@@ -19,7 +19,7 @@ scheduler = BackgroundScheduler(timezone="UTC")
 
 
 def _storage_path(user_id: str, job_id: str) -> str:
-    return f"outputs/{user_id}/{job_id}.mp4"
+    return f"{user_id}/{job_id}.mp4"
 
 
 def process_due_posts() -> None:
