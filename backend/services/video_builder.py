@@ -61,8 +61,8 @@ def _escape_drawtext(text: str) -> str:
         .replace("'", "\\'")
         .replace(":", "\\:")
         .replace("%", "%%")
-        .replace("\r\n", "\\\\n")  # Windows CRLF → ffmpeg newline sequence (\\n survives AVOption layer → \n → drawtext newline)
-        .replace("\n", "\\\\n")    # Unix LF → ffmpeg newline sequence
+        .replace("\r\n", "\\n")  # Windows CRLF → drawtext newline
+        .replace("\n", "\\n")    # Unix LF → drawtext newline
     )
 
 
@@ -95,9 +95,9 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
 
     fontsize = max(8, int(height * overlay.get("font_size_pct", 0.045)))
     mx, my = int(width * 0.05), int(height * 0.05)
-    alignment = overlay.get("alignment", "center")
-    x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(alignment, "(w-tw)/2")
-    vert = overlay.get("position", "bottom-center").split("-", 1)[0]
+    position = overlay.get("position", "bottom-center")
+    vert, horiz = position.split("-", 1)
+    x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(horiz, "(w-tw)/2")
     y = {"top": str(my), "middle": "(h-th)/2", "bottom": f"h-th-{my}"}.get(vert, f"h-th-{my}")
 
     # Use basename only — render_slideshow sets cwd=_FONTS_DIR so ffmpeg resolves
