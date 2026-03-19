@@ -237,18 +237,10 @@ function overlayColorHex(ov: TextOverlayConfig): string {
   return map[ov.color] ?? '#ffffff'
 }
 
-const ALIGN_JUSTIFY: Record<OverlayAlignment, string> = {
-  left: 'flex-start',
-  center: 'center',
-  right: 'flex-end',
-}
-
 function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   const PREVIEW_H = 200
   const PREVIEW_W = 113  // ~9:16
   const pos = POSITION_FLEX[ov.position as OverlayPosition] ?? POSITION_FLEX['bottom-center']
-  const alignJustify = ALIGN_JUSTIFY[ov.alignment as OverlayAlignment] ?? pos.justify
-  const alignText = ov.alignment === 'left' ? 'left' : ov.alignment === 'right' ? 'right' : 'center'
   const color = overlayColorHex(ov)
   const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
   const fontSize = Math.max(3, Math.round(PREVIEW_H * (ov.font_size_pct ?? 0.045)))
@@ -266,7 +258,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           overflow: 'hidden',
           display: 'flex',
           alignItems: pos.items,
-          justifyContent: alignJustify,
+          justifyContent: pos.justify,
           border: '1px solid #333',
           flexShrink: 0,
         }}
@@ -277,7 +269,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
             fontFamily,
             fontSize,
             lineHeight: 1.25,
-            textAlign: alignText as CanvasTextAlign,
+            textAlign: (ov.alignment ?? 'center') as CanvasTextAlign,
             margin,
             maxWidth: PREVIEW_W - margin * 2,
             wordBreak: 'break-word',
