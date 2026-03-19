@@ -47,7 +47,7 @@ FONT_MAP: Dict[str, str] = {
 COLOR_MAP: Dict[str, str] = {
     "white": "ffffff",
     "cream": "f5f0e8",
-    "gold":  "d4a017",
+    "gold":  "f5e317",
     "black": "000000",
 }
 
@@ -93,8 +93,12 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
     else:
         hex_color = COLOR_MAP.get(color_key, "ffffff")
 
-    fontsize = int(height * overlay.get("font_size_pct", 0.045))
-    x, y = _drawtext_xy(overlay.get("position", "bottom-center"), width, height)
+    fontsize = max(8, int(height * overlay.get("font_size_pct", 0.045)))
+    mx, my = int(width * 0.05), int(height * 0.05)
+    alignment = overlay.get("alignment", "center")
+    x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(alignment, "(w-tw)/2")
+    vert = overlay.get("position", "bottom-center").split("-", 1)[0]
+    y = {"top": str(my), "middle": "(h-th)/2", "bottom": f"h-th-{my}"}.get(vert, f"h-th-{my}")
 
     # Use basename only — render_slideshow sets cwd=_FONTS_DIR so ffmpeg resolves
     # the relative path there. This avoids the Windows drive-letter colon (C:/)

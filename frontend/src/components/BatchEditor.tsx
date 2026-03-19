@@ -162,7 +162,7 @@ const OVERLAY_FONT_GROUPS: { category: string; fonts: { value: OverlayFont; labe
 const OVERLAY_COLORS: { value: OverlayColor; label: string; dot: string }[] = [
   { value: 'white', label: 'White', dot: 'bg-white ring-1 ring-stone-500' },
   { value: 'cream', label: 'Cream', dot: 'bg-amber-50 ring-1 ring-stone-500' },
-  { value: 'gold',  label: 'Gold',  dot: 'bg-amber-400' },
+  { value: 'gold',  label: 'Yellow', dot: 'bg-yellow-300' },
   { value: 'black', label: 'Black', dot: 'bg-stone-900 ring-1 ring-stone-500' },
 ]
 
@@ -190,6 +190,14 @@ const OVERLAY_ALIGNMENTS: { value: OverlayAlignment; label: string }[] = [
   { value: 'center', label: 'Center' },
   { value: 'right',  label: 'Right' },
 ]
+
+const OVERLAY_PRESETS_KEY = 'cogito_overlay_presets'
+
+type OverlayPreset = {
+  id: string
+  name: string
+  settings: Omit<TextOverlayConfig, 'text' | 'enabled'>
+}
 
 // ── Overlay preview helpers ────────────────────────────────────────────────────
 
@@ -225,17 +233,25 @@ const POSITION_FLEX: Record<OverlayPosition, { items: string; justify: string; t
 
 function overlayColorHex(ov: TextOverlayConfig): string {
   if (ov.color === 'custom') return ov.custom_color ?? '#ffffff'
-  const map: Record<string, string> = { white: '#ffffff', cream: '#f5f0e8', gold: '#d4a017', black: '#000000' }
+  const map: Record<string, string> = { white: '#ffffff', cream: '#f5f0e8', gold: '#f5e317', black: '#000000' }
   return map[ov.color] ?? '#ffffff'
 }
 
+const ALIGN_JUSTIFY: Record<OverlayAlignment, string> = {
+  left: 'flex-start',
+  center: 'center',
+  right: 'flex-end',
+}
+
 function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
-  const PREVIEW_H = 140
-  const PREVIEW_W = 79  // ~9:16
+  const PREVIEW_H = 200
+  const PREVIEW_W = 113  // ~9:16
   const pos = POSITION_FLEX[ov.position as OverlayPosition] ?? POSITION_FLEX['bottom-center']
+  const alignJustify = ALIGN_JUSTIFY[ov.alignment as OverlayAlignment] ?? pos.justify
+  const alignText = ov.alignment === 'left' ? 'left' : ov.alignment === 'right' ? 'right' : 'center'
   const color = overlayColorHex(ov)
   const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
-  const fontSize = Math.max(6, Math.round(PREVIEW_H * (ov.font_size_pct ?? 0.045)))
+  const fontSize = Math.max(3, Math.round(PREVIEW_H * (ov.font_size_pct ?? 0.045)))
   const margin = Math.round(PREVIEW_H * 0.05)
   const displayText = ov.text.trim() || 'Preview text'
 
@@ -250,7 +266,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           overflow: 'hidden',
           display: 'flex',
           alignItems: pos.items,
-          justifyContent: pos.justify,
+          justifyContent: alignJustify,
           border: '1px solid #333',
           flexShrink: 0,
         }}
@@ -261,7 +277,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
             fontFamily,
             fontSize,
             lineHeight: 1.25,
-            textAlign: pos.textAlign as CanvasTextAlign,
+            textAlign: alignText as CanvasTextAlign,
             margin,
             maxWidth: PREVIEW_W - margin * 2,
             wordBreak: 'break-word',
@@ -300,6 +316,28 @@ function BatchStylePopover({
   onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
 }) {
   const params = batch.customGradeParams ?? DEFAULT_GRADE
+  const [overlayPresets, setOverlayPresets] = useState<OverlayPreset[]>(() => {
+    try { return JSON.parse(localStorage.getItem(OVERLAY_PRESETS_KEY) || '[]') } catch { return [] }
+  })
+  const [savingPreset, setSavingPreset] = useState(false)
+  const [presetName, setPresetName] = useState('')
+
+  function saveOverlayPreset(ov: TextOverlayConfig) {
+    const name = presetName.trim() || 'Preset'
+    const { text: _t, enabled: _e, ...settings } = ov
+    const preset: OverlayPreset = { id: crypto.randomUUID(), name, settings }
+    const updated = [...overlayPresets, preset]
+    setOverlayPresets(updated)
+    try { localStorage.setItem(OVERLAY_PRESETS_KEY, JSON.stringify(updated)) } catch { /* ignore */ }
+    setSavingPreset(false)
+    setPresetName('')
+  }
+
+  function deleteOverlayPreset(id: string) {
+    const updated = overlayPresets.filter(p => p.id !== id)
+    setOverlayPresets(updated)
+    try { localStorage.setItem(OVERLAY_PRESETS_KEY, JSON.stringify(updated)) } catch { /* ignore */ }
+  }
 
   return (
     <>
@@ -451,6 +489,69 @@ function BatchStylePopover({
               const ov = batch.textOverlay!
               return (
                 <div className="space-y-2.5">
+
+                  {/* Presets */}
+                  {(overlayPresets.length > 0 || true) && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[9px] font-semibold tracking-widest uppercase text-stone-600">Style presets</p>
+                        {!savingPreset && (
+                          <button
+                            onClick={() => setSavingPreset(true)}
+                            className="text-[9px] text-stone-500 hover:text-stone-300 transition"
+                          >
+                            + Save current
+                          </button>
+                        )}
+                      </div>
+                      {savingPreset && (
+                        <div className="flex gap-1 mb-1">
+                          <input
+                            type="text"
+                            value={presetName}
+                            onChange={e => setPresetName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') saveOverlayPreset(ov)
+                              if (e.key === 'Escape') { setSavingPreset(false); setPresetName('') }
+                            }}
+                            placeholder="Preset name…"
+                            autoFocus
+                            className="flex-1 rounded border border-stone-700 bg-stone-800 px-2 py-0.5 text-[10px] text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
+                          />
+                          <button
+                            onClick={() => saveOverlayPreset(ov)}
+                            className="rounded bg-stone-700 px-2 py-0.5 text-[10px] text-stone-200 hover:bg-stone-600 transition"
+                          >Save</button>
+                          <button
+                            onClick={() => { setSavingPreset(false); setPresetName('') }}
+                            className="rounded bg-stone-800 px-2 py-0.5 text-[10px] text-stone-500 hover:text-stone-300 transition"
+                          >✕</button>
+                        </div>
+                      )}
+                      {overlayPresets.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {overlayPresets.map(preset => (
+                            <div key={preset.id} className="group flex items-center gap-0.5">
+                              <button
+                                onClick={() => onChange({ textOverlay: { ...ov, ...preset.settings } })}
+                                className="rounded bg-stone-800 border border-stone-700 px-2 py-0.5 text-[10px] text-stone-300 hover:text-stone-100 hover:border-stone-500 transition"
+                              >
+                                {preset.name}
+                              </button>
+                              <button
+                                onClick={() => deleteOverlayPreset(preset.id)}
+                                className="hidden group-hover:flex items-center justify-center w-3.5 h-3.5 rounded-full bg-stone-700 text-stone-500 hover:bg-stone-600 hover:text-stone-300 text-[8px] transition"
+                              >✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {overlayPresets.length === 0 && !savingPreset && (
+                        <p className="text-[9px] text-stone-700 italic">No presets saved yet</p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Text input */}
                   <textarea
                     rows={2}
@@ -591,9 +692,9 @@ function BatchStylePopover({
                     </div>
                     <input
                       type="range"
-                      min={0.02}
+                      min={0.01}
                       max={0.12}
-                      step={0.005}
+                      step={0.002}
                       value={ov.font_size_pct ?? 0.045}
                       onChange={e => onChange({ textOverlay: { ...ov, font_size_pct: parseFloat(e.target.value) } })}
                       className="w-full accent-brand-500"
