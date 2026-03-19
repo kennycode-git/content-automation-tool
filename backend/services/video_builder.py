@@ -61,8 +61,8 @@ def _escape_drawtext(text: str) -> str:
         .replace("'", "\\'")
         .replace(":", "\\:")
         .replace("%", "%%")
-        .replace("\r\n", "\\n")  # Windows CRLF → ffmpeg newline sequence
-        .replace("\n", "\\n")    # Unix LF → ffmpeg newline sequence
+        .replace("\r\n", "\\\\n")  # Windows CRLF → ffmpeg newline sequence (\\n survives AVOption layer → \n → drawtext newline)
+        .replace("\n", "\\\\n")    # Unix LF → ffmpeg newline sequence
     )
 
 
