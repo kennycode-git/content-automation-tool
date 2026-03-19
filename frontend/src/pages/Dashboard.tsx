@@ -226,6 +226,7 @@ export default function Dashboard({ session }: Props) {
           philosopher: philosopher ?? undefined,
           grade_philosopher: gradePhilosopher || undefined,
           image_source: resolvedSource,
+          text_overlay: batch.text_overlay ?? undefined,
         })
         submitted.push({ jobId: res.job_id, title: batch.title })
       }
@@ -308,12 +309,19 @@ export default function Dashboard({ session }: Props) {
     stagingAbortRef.current = abort
     try {
       const res = await stagePreview({
-        batches: validBatches.map(b => ({
-          search_terms: b.terms,
-          batch_title: b.title,
-          uploaded_image_paths: b.uploaded_image_paths?.length ? b.uploaded_image_paths : undefined,
-          color_theme: b.color_theme ?? settings.color_theme,
-        })),
+        batches: validBatches.map(b => {
+          const effectiveTheme = b.color_theme ?? settings.color_theme
+          const effectiveGradeParams = effectiveTheme === 'custom'
+            ? (b.custom_grade_params ?? settings.custom_grade_params)
+            : undefined
+          return {
+            search_terms: b.terms,
+            batch_title: b.title,
+            uploaded_image_paths: b.uploaded_image_paths?.length ? b.uploaded_image_paths : undefined,
+            color_theme: effectiveTheme,
+            custom_grade_params: effectiveGradeParams as Record<string, number> | undefined,
+          }
+        }),
         resolution: settings.resolution,
         seconds_per_image: settings.seconds_per_image,
         total_seconds: settings.total_seconds,

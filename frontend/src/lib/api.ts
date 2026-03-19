@@ -48,6 +48,30 @@ export interface CustomGradeParams {
   hue_shift: number
 }
 
+export type OverlayFont =
+  | 'garamond' | 'cormorant' | 'playfair' | 'crimson' | 'philosopher' | 'lora'
+  | 'outfit' | 'raleway' | 'josefin' | 'inter'
+  | 'cinzel' | 'cinzel_deco' | 'uncial'
+  | 'jetbrains' | 'space_mono'
+export type OverlayColor     = 'white' | 'cream' | 'gold' | 'black' | 'custom'
+export type OverlayAlignment = 'left' | 'center' | 'right'
+export type OverlayPosition  =
+  | 'top-left'    | 'top-center'    | 'top-right'
+  | 'middle-left' | 'middle-center' | 'middle-right'
+  | 'bottom-left' | 'bottom-center' | 'bottom-right'
+
+export interface TextOverlayConfig {
+  enabled: boolean
+  text: string
+  font: OverlayFont
+  color: OverlayColor
+  custom_color?: string | null
+  background_box: boolean
+  alignment: OverlayAlignment
+  position: OverlayPosition
+  font_size_pct?: number
+}
+
 export interface GenerateRequest {
   search_terms: string[]
   resolution?: string
@@ -66,6 +90,7 @@ export interface GenerateRequest {
   custom_grade_params?: CustomGradeParams
   philosopher?: string | null
   grade_philosopher?: boolean
+  text_overlay?: TextOverlayConfig | null
 }
 
 export interface GenerateResponse {
@@ -209,6 +234,8 @@ export interface PreviewBatchRequest {
   search_terms: string[]
   batch_title?: string | null
   uploaded_image_paths?: string[]
+  color_theme?: string
+  custom_grade_params?: Record<string, number>
 }
 
 export interface PreviewStageRequest {
@@ -301,4 +328,99 @@ export async function getUsage(): Promise<UsageInfo> {
   if (DEV_BYPASS) return { plan: 'trial', status: 'active', render_count: 3, limit: 100, trial_expires_at: null, trial_expired: false }
   const res = await fetch(`${API_URL}/api/usage`, { headers: await authHeaders() })
   return handleResponse<UsageInfo>(res)
+}
+
+// ─── TikTok ───────────────────────────────────────────────────────────────────
+
+export interface TikTokAccount {
+  id: string
+  tiktok_user_id: string
+  display_name: string | null
+  avatar_url: string | null
+  created_at: string
+}
+
+export interface ScheduledPost {
+  id: string
+  job_id: string
+  batch_title: string | null
+  tiktok_account_id: string | null
+  tiktok_display_name: string | null
+  caption: string
+  hashtags: string[]
+  privacy_level: string
+  scheduled_at: string
+  status: 'pending' | 'posting' | 'posted' | 'failed' | 'cancelled'
+  tiktok_publish_id: string | null
+  error_message: string | null
+  created_at: string
+}
+
+export interface SchedulePostRequest {
+  job_id: string
+  tiktok_account_id: string
+  caption?: string
+  hashtags?: string[]
+  privacy_level?: string
+  scheduled_at: string
+}
+
+export async function getTikTokAuthUrl(): Promise<{ url: string }> {
+  const res = await fetch(`${API_URL}/api/tiktok/auth-url`, { headers: await authHeaders() })
+  return handleResponse<{ url: string }>(res)
+}
+
+export async function exchangeTikTokCode(code: string, state: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/tiktok/exchange`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, state }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail ?? `HTTP ${res.status}`)
+  }
+}
+
+export async function getTikTokAccounts(): Promise<TikTokAccount[]> {
+  if (DEV_BYPASS) return []
+  const res = await fetch(`${API_URL}/api/tiktok/accounts`, { headers: await authHeaders() })
+  return handleResponse<TikTokAccount[]>(res)
+}
+
+export async function disconnectTikTok(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/tiktok/accounts/${id}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail ?? `HTTP ${res.status}`)
+  }
+}
+
+export async function schedulePost(req: SchedulePostRequest): Promise<{ id: string }> {
+  const res = await fetch(`${API_URL}/api/tiktok/schedule`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<{ id: string }>(res)
+}
+
+export async function getScheduledPosts(): Promise<ScheduledPost[]> {
+  if (DEV_BYPASS) return []
+  const res = await fetch(`${API_URL}/api/tiktok/scheduled`, { headers: await authHeaders() })
+  return handleResponse<ScheduledPost[]>(res)
+}
+
+export async function cancelScheduledPost(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/tiktok/scheduled/${id}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail ?? `HTTP ${res.status}`)
+  }
 }
