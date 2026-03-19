@@ -80,16 +80,12 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
           >
             Image
           </Link>
-          <Link
-            to="/schedule"
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${
-              activeTool === 'schedule'
-                ? 'text-stone-100 bg-stone-700/60'
-                : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800'
-            }`}
-          >
+          <span className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-stone-600 cursor-default select-none">
             Scheduling
-          </Link>
+            <span className="text-[9px] font-semibold tracking-wide bg-stone-800 text-stone-600 border border-stone-700/60 px-1.5 py-0.5 rounded-full">
+              Soon
+            </span>
+          </span>
           <div className="hidden lg:flex items-center gap-0.5">
             <div className="group relative">
               <span className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-stone-600 cursor-default select-none">
