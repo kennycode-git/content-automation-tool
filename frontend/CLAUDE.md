@@ -40,7 +40,7 @@ frontend/
         ├── SettingsPanel.tsx  # Resolution, timing, collapsed theme dropdown
         ├── AdvancedModal.tsx  # Centered dialog: presets, image source, accent, advanced opts
         ├── InspirationCarousel.tsx  # Horizontal style cards with hover-to-play video previews
-        ├── OnboardingTour.tsx # Spotlight-style first-use tour (8 steps + welcome screen)
+        ├── OnboardingTour.tsx # Spotlight-style first-use tour (10 steps + welcome screen)
         ├── PromptModal.tsx    # AI batch prompt template with copy button
         ├── TermBundles.tsx    # Pre-built search term bundles (7 bundles)
         ├── PresetManager.tsx  # Named settings presets CRUD
@@ -124,6 +124,12 @@ persisted to `localStorage` (key: `cogito_classic_text`). Emits `onBatchesChange
 
 Default content: one card with title "Stoicism" and three starter terms.
 
+Each visual card has a **Style** button (`data-tour="batch-style-btn"` on first card) opening `BatchStylePopover`:
+- Colour theme override (global or any of the 9 themes, Custom with grade sliders + live video preview)
+- Accent images override (Global / None / Blue / Red / Gold)
+- Philosopher placeholder (coming soon, disabled)
+- **Text overlay**: toggle, textarea (200 char), live `OverlayPreview` (200x113px 9:16 thumbnail), font picker (15 fonts / 4 groups), colour (White / Cream / Yellow / Black / Custom hex), background box, 3x3 position grid, alignment (L/C/R controls `textAlign` only -- position grid controls placement), font size slider (1-12%, step 0.2%), overlay style presets (save/load/delete via `cogito_overlay_presets` in localStorage, stores all settings except text and enabled state)
+
 ### InspirationCarousel
 Horizontal scrollable strip of 7 style presets (Dark Academia, Stoic Philosophy, Eastern Philosophy,
 Existentialism, Psychology, Gothic/Shadow, Nature as Philosophy). Each card:
@@ -152,11 +158,10 @@ Collapsed custom dropdown for color_theme (9 themes, eye icon trigger, click-awa
 ### AdvancedModal
 - Custom presets panel (PresetManager)
 - Extractor model: Auto (recommended) | Unsplash | Pexels (dropdown)
-- "Use uploaded images only" checkbox
 - Accent images picker: None / Blue / Red / Gold (with video preview on hover)
-- Max images per query slider (1–30)
-- Allow repeats checkbox
-- Select philosopher (coming soon — disabled section with tooltip)
+- Max images per query slider (1--30)
+- Select philosopher (coming soon, disabled section with tooltip)
+- Note: "Allow image repeats" and "Use uploaded images only" checkboxes have been removed
 
 ### Colour Themes (9)
 | Value | Label | Dot colour |
@@ -217,13 +222,13 @@ duplicated in `RecentJobs.tsx` and `InspirationCarousel.tsx` for standalone use.
 - TermBundles panel for quick-start term loading
 
 ### OnboardingTour
-- 8-step spotlight-style tour + welcome screen (step -1, first visit only)
+- 10-step spotlight-style tour + welcome screen (step -1, first visit only)
 - Shown once per browser (`localStorage` key: `cogito_tour_seen`); re-triggerable via `?` button
 - Exported `TOUR_STORAGE_KEY` constant used by Dashboard to check/set tour state
 - Spotlight uses CSS `box-shadow` spread to dim everything except the target element
 - Tracks target element via `requestAnimationFrame` loop (handles scroll/resize)
 - **Scrolls target into view** (`scrollIntoView({ behavior: 'smooth', block: 'center' })`) on each step
-- Steps: batch editor → classic text mode → video settings → colour themes → advanced settings → colour variants → preview → generate
+- Steps: batch editor → classic text mode → video settings → colour themes → per-batch style → text overlays → advanced settings → colour variants → preview → generate
 - Keyboard nav: Arrow keys, Enter (next), Escape (close)
 
 ### PromptModal

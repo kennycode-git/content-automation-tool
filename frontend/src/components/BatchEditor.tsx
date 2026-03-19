@@ -1033,6 +1033,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                   {/* Per-batch style trigger */}
                   <div className="relative">
                     <button
+                      data-tour={idx === 0 ? 'batch-style-btn' : undefined}
                       onClick={() => setOpenPopover(p => p === idx ? null : idx)}
                       className={`flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs transition ${
                         hasOverride
