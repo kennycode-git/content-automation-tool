@@ -292,7 +292,10 @@ def render_slideshow(
 
     # Set cwd to the fonts directory when drawtext is active so ffmpeg can resolve
     # the relative fontfile basename without a Windows drive-letter colon in the path.
-    use_fonts_cwd = bool(text_overlay and text_overlay.get("enabled") and text_overlay.get("text", "").strip())
+    use_fonts_cwd = (
+        bool(text_overlay and text_overlay.get("enabled") and text_overlay.get("text", "").strip())
+        and os.path.isdir(_FONTS_DIR)
+    )
     popen_cwd = _FONTS_DIR if use_fonts_cwd else None
 
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
