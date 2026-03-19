@@ -65,6 +65,7 @@ class JobConfig:
     custom_grade_params: Optional[Dict] = None
     philosopher: Optional[str] = None
     grade_philosopher: bool = False
+    text_overlay: Optional[Dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -82,6 +83,8 @@ class JobConfig:
         d["image_source"] = self.image_source
         if self.custom_grade_params:
             d["custom_grade_params"] = self.custom_grade_params
+        if self.text_overlay:
+            d["text_overlay"] = self.text_overlay
         return d
 
     def parse_resolution(self):
@@ -400,13 +403,25 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
                     await update_job_status(job_id, user_id, "running", db,
                         progress_message="Fetching images from Pexels…")
                     progress_cb2 = _make_download_progress_cb(job_id, user_id)
-                    pexels_items, _ = await asyncio.gather(
-                        asyncio.to_thread(_do_pexels_fetch),
-                        asyncio.to_thread(download_from_queue, q2, images_dir, width, height,
-                                          total_found2, 8, progress_cb2),
-                    )
-                    items.extend(pexels_items)
-                    all_preview_thumbs.extend(preview_thumbs2)
+                    while True:
+                        try:
+                            pexels_items, _ = await asyncio.gather(
+                                asyncio.to_thread(_do_pexels_fetch),
+                                asyncio.to_thread(download_from_queue, q2, images_dir, width, height,
+                                                  total_found2, 8, progress_cb2),
+                            )
+                            items.extend(pexels_items)
+                            all_preview_thumbs.extend(preview_thumbs2)
+                            break
+                        except RateLimitError as e:
+                            await update_job_status(job_id, user_id, "running", db,
+                                progress_message=f"API limit reached — retrying in {e.wait}s… grab a cup of tea ☕")
+                            await asyncio.sleep(e.wait)
+                            await update_job_status(job_id, user_id, "running", db,
+                                progress_message="Fetching images from Pexels…")
+                            q2 = _q_mod.Queue()
+                            total_found2[0] = 0
+                            preview_thumbs2.clear()
                 else:
                     logger.warning("PEXELS_ACCESS_KEY not set — skipping Pexels fetch")
 
@@ -484,6 +499,7 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
             total_seconds=config.total_seconds,
             allow_repeats=config.allow_repeats,
             shuffle=True,
+            text_overlay=config.text_overlay,
         )
         if result["returncode"] != 0:
             logger.error("ffmpeg failed (rc=%d). Last 20 lines:\n%s",
@@ -670,6 +686,7 @@ async def _run_variants_pipeline_inner(
                     total_seconds=variant_config.total_seconds,
                     allow_repeats=variant_config.allow_repeats,
                     shuffle=True,
+                    text_overlay=config.text_overlay,
                 )
                 if result["returncode"] != 0:
                     logger.error("ffmpeg failed (rc=%d). Last 20 lines:\n%s",

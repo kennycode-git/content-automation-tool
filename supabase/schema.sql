@@ -130,3 +130,43 @@ ALTER TABLE trial_invites ENABLE ROW LEVEL SECURITY;
 --     AND output_url IS NOT NULL
 --     AND status = 'done';
 -- Then for each row: delete from Storage, set output_url = NULL.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- TikTok integration tables
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS tiktok_accounts (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  tiktok_user_id   TEXT NOT NULL,
+  display_name     TEXT,
+  avatar_url       TEXT,
+  access_token     TEXT NOT NULL,
+  refresh_token    TEXT,
+  token_expires_at TIMESTAMPTZ,
+  scope            TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, tiktok_user_id)
+);
+ALTER TABLE tiktok_accounts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users_manage_own_tiktok_accounts"
+  ON tiktok_accounts FOR ALL USING (auth.uid() = user_id);
+
+CREATE TABLE IF NOT EXISTS scheduled_posts (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
+  job_id            UUID NOT NULL REFERENCES jobs ON DELETE CASCADE,
+  tiktok_account_id UUID REFERENCES tiktok_accounts ON DELETE SET NULL,
+  caption           TEXT DEFAULT '',
+  hashtags          TEXT[] DEFAULT '{}',
+  privacy_level     TEXT NOT NULL DEFAULT 'PUBLIC_TO_EVERYONE',
+  scheduled_at      TIMESTAMPTZ NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending','posting','posted','failed','cancelled')),
+  tiktok_publish_id TEXT,
+  error_message     TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE scheduled_posts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "users_manage_own_scheduled_posts"
+  ON scheduled_posts FOR ALL USING (auth.uid() = user_id);

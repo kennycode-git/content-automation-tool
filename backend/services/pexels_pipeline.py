@@ -13,6 +13,8 @@ from typing import List, Optional, Tuple
 
 import requests
 
+from services.image_pipeline import RateLimitError
+
 logger = logging.getLogger(__name__)
 
 PEXELS_API = "https://api.pexels.com/v1/search"
@@ -83,9 +85,8 @@ def fetch_images_pexels(
                 )
                 if r.status_code == 429:
                     wait = int(r.headers.get("Retry-After", 65))
-                    logger.warning("Pexels rate limit — waiting %ds", wait)
-                    time.sleep(wait)
-                    continue
+                    logger.warning("Pexels rate limit — raising RateLimitError(wait=%d)", wait)
+                    raise RateLimitError(wait)
                 r.raise_for_status()
             except requests.HTTPError as e:
                 logger.error("Pexels HTTP error: %s — status: %s — body: %s", e, r.status_code, r.text[:200])
