@@ -350,6 +350,7 @@ export interface ScheduledPost {
   hashtags: string[]
   privacy_level: string
   scheduled_at: string
+  draft_mode: boolean
   status: 'pending' | 'posting' | 'posted' | 'failed' | 'cancelled'
   tiktok_publish_id: string | null
   error_message: string | null
@@ -363,6 +364,7 @@ export interface SchedulePostRequest {
   hashtags?: string[]
   privacy_level?: string
   scheduled_at: string
+  draft_mode?: boolean
 }
 
 export async function getTikTokAuthUrl(): Promise<{ url: string }> {

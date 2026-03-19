@@ -203,12 +203,12 @@ def post_video(
     video_url: str,
     caption: str,
     privacy_level: str = "PUBLIC_TO_EVERYONE",
+    draft: bool = False,
 ) -> str:
     """
     Upload video to TikTok using FILE_UPLOAD strategy.
-    1. Download MP4 from video_url to tempfile
-    2. POST /v2/post/publish/video/init/ → upload_url + publish_id
-    3. PUT video bytes to upload_url with Content-Range header
+    draft=True  → /v2/post/publish/inbox/video/init/ (saves as TikTok draft, requires video.upload scope)
+    draft=False → /v2/post/publish/video/init/ (direct post, requires video.publish scope)
     Returns publish_id.
     """
     tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
@@ -227,24 +227,39 @@ def post_video(
             raise ValueError("Downloaded video is empty")
 
         # Initialise upload
+        if draft:
+            init_url = f"{TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/"
+            init_body = {
+                "source_info": {
+                    "source": "FILE_UPLOAD",
+                    "video_size": video_size,
+                    "chunk_size": video_size,
+                    "total_chunk_count": 1,
+                },
+            }
+            logger.info("TikTok draft mode: saving to inbox")
+        else:
+            init_url = f"{TIKTOK_API_BASE}/v2/post/publish/video/init/"
+            init_body = {
+                "post_info": {
+                    "title": caption[:150] if caption else "",
+                    "privacy_level": privacy_level,
+                    "disable_duet": False,
+                    "disable_comment": False,
+                    "disable_stitch": False,
+                },
+                "source_info": {
+                    "source": "FILE_UPLOAD",
+                    "video_size": video_size,
+                    "chunk_size": video_size,
+                    "total_chunk_count": 1,
+                },
+            }
+
         with httpx.Client(timeout=30) as client:
             init_resp = client.post(
-                f"{TIKTOK_API_BASE}/v2/post/publish/video/init/",
-                json={
-                    "post_info": {
-                        "title": caption[:150] if caption else "",
-                        "privacy_level": privacy_level,
-                        "disable_duet": False,
-                        "disable_comment": False,
-                        "disable_stitch": False,
-                    },
-                    "source_info": {
-                        "source": "FILE_UPLOAD",
-                        "video_size": video_size,
-                        "chunk_size": video_size,
-                        "total_chunk_count": 1,
-                    },
-                },
+                init_url,
+                json=init_body,
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json; charset=UTF-8",

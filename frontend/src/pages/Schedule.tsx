@@ -127,8 +127,7 @@ export default function Schedule({ session }: Props) {
     }
   }
 
-  function handleSchedule(e: React.FormEvent) {
-    e.preventDefault()
+  function handleSchedule(draftMode: boolean) {
     if (!selectedJobId || !selectedAccountId || !scheduledAt) return
     const pendingTag = hashtagInput.trim().replace(/^#/, '')
     const allHashtags = pendingTag && !hashtags.includes(pendingTag)
@@ -141,6 +140,7 @@ export default function Schedule({ session }: Props) {
       hashtags: allHashtags,
       privacy_level: privacyLevel,
       scheduled_at: new Date(scheduledAt).toISOString(),
+      draft_mode: draftMode,
     })
   }
 
@@ -203,7 +203,7 @@ export default function Schedule({ session }: Props) {
         {/* Schedule a Post */}
         <section className="bg-stone-900 border border-stone-800 rounded-xl p-5">
           <h2 className="text-sm font-semibold text-stone-300 mb-4">Schedule a Post</h2>
-          <form onSubmit={handleSchedule} className="space-y-4">
+          <form onSubmit={e => e.preventDefault()} className="space-y-4">
             {/* Video */}
             <div>
               <label className="block text-xs text-stone-400 mb-1">Video</label>
@@ -317,16 +317,24 @@ export default function Schedule({ session }: Props) {
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={
-                scheduleMutation.isPending ||
-                !selectedJobId || !selectedAccountId || !scheduledAt
-              }
-              className="w-full py-2.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-sm font-medium text-stone-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {scheduleMutation.isPending ? 'Scheduling…' : 'Schedule Post'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleSchedule(false)}
+                disabled={scheduleMutation.isPending || !selectedJobId || !selectedAccountId || !scheduledAt}
+                className="flex-1 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-medium text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {scheduleMutation.isPending ? 'Scheduling…' : 'Schedule Post'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSchedule(true)}
+                disabled={scheduleMutation.isPending || !selectedJobId || !selectedAccountId || !scheduledAt}
+                className="flex-1 py-2.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-sm font-medium text-stone-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {scheduleMutation.isPending ? 'Saving…' : 'Save to Drafts'}
+              </button>
+            </div>
           </form>
         </section>
 
@@ -409,6 +417,9 @@ function PostRow({ post, onCancel }: PostRowProps) {
         <p className="text-xs text-stone-500 mt-0.5">
           {post.tiktok_display_name && <span>@{post.tiktok_display_name} · </span>}
           {formatScheduledAt(post.scheduled_at)}
+          {post.draft_mode && (
+            <span className="ml-1.5 text-[10px] font-medium bg-stone-700 text-stone-400 px-1.5 py-0.5 rounded-full">Draft</span>
+          )}
         </p>
         {post.caption && (
           <p className="text-xs text-stone-600 mt-1 truncate max-w-xs">{post.caption}</p>

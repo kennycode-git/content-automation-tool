@@ -92,6 +92,7 @@ def process_due_posts() -> None:
                     video_url=signed_url,
                     caption=full_caption,
                     privacy_level=post.get("privacy_level", "PUBLIC_TO_EVERYONE"),
+                    draft=post.get("draft_mode", False),
                 )
 
                 supabase.table("scheduled_posts").update({

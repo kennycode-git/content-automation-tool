@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   scheduled_at      TIMESTAMPTZ NOT NULL,
   status            TEXT NOT NULL DEFAULT 'pending'
                       CHECK (status IN ('pending','posting','posted','failed','cancelled')),
+  draft_mode        BOOLEAN NOT NULL DEFAULT false,
   tiktok_publish_id TEXT,
   error_message     TEXT,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()

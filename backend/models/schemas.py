@@ -302,6 +302,7 @@ class SchedulePostRequest(BaseModel):
     hashtags: List[str] = Field(default=[])
     privacy_level: str = Field(default="PUBLIC_TO_EVERYONE")
     scheduled_at: datetime
+    draft_mode: bool = False
 
     @field_validator("privacy_level")
     @classmethod

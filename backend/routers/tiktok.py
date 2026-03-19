@@ -149,6 +149,7 @@ async def schedule_post(req: SchedulePostRequest, user_id: str = Depends(get_cur
         "hashtags": req.hashtags,
         "privacy_level": req.privacy_level,
         "scheduled_at": req.scheduled_at.isoformat(),
+        "draft_mode": req.draft_mode,
         "status": "pending",
     }).execute()
 
@@ -178,6 +179,7 @@ async def list_scheduled(user_id: str = Depends(get_current_user_id)):
             "hashtags": row.get("hashtags") or [],
             "privacy_level": row.get("privacy_level", "PUBLIC_TO_EVERYONE"),
             "scheduled_at": row["scheduled_at"],
+            "draft_mode": row.get("draft_mode", False),
             "status": row["status"],
             "tiktok_publish_id": row.get("tiktok_publish_id"),
             "error_message": row.get("error_message"),
