@@ -61,8 +61,8 @@ def _escape_drawtext(text: str) -> str:
         .replace("'", "\\'")
         .replace(":", "\\:")
         .replace("%", "%%")
-        .replace("\r\n", "\\n")  # Windows CRLF → drawtext newline
-        .replace("\n", "\\n")    # Unix LF → drawtext newline
+        .replace("\r\n", "\\\\n")  # Windows CRLF → \\n in filter string; filter graph strips one \ → \n for drawtext
+        .replace("\n", "\\\\n")    # Unix LF → same
     )
 
 
