@@ -33,6 +33,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const BUCKET = 'outputs'
+const UPLOADS_BUCKET = 'user-uploads'
 const BATCH_SIZE = 100
 
 Deno.serve(async (_req: Request) => {
@@ -69,22 +70,22 @@ Deno.serve(async (_req: Request) => {
 
   for (const job of expired) {
     const storagePath = `${job.user_id}/${job.id}.mp4`
+    const thumbPath = `${job.user_id}/${job.id}_thumb.jpg`
 
     try {
-      // Delete from Storage
+      // Delete MP4 and thumbnail from Storage (errors are non-fatal — files may already be gone)
       const { error: storageError } = await supabase.storage
         .from(BUCKET)
-        .remove([storagePath])
+        .remove([storagePath, thumbPath])
 
       if (storageError) {
-        // File may already be gone — log and continue
         console.warn(`Storage delete failed for ${storagePath}: ${storageError.message}`)
       }
 
-      // Null out output_url in DB regardless (URL is expired anyway)
+      // Null out output_url and thumbnail_url in DB regardless (URLs are expired anyway)
       const { error: updateError } = await supabase
         .from('jobs')
-        .update({ output_url: null })
+        .update({ output_url: null, thumbnail_url: null })
         .eq('id', job.id)
 
       if (updateError) {
@@ -101,7 +102,31 @@ Deno.serve(async (_req: Request) => {
     }
   }
 
-  const summary = { cleaned, failed, total: expired.length }
+  // Clean up user-uploads preview images older than 24 hours
+  const uploadCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  let uploadsCleaned = 0
+
+  const { data: userFolders } = await supabase.storage.from(UPLOADS_BUCKET).list('')
+  for (const folder of (userFolders ?? [])) {
+    if (!folder.name) continue
+    const { data: previewFiles } = await supabase.storage
+      .from(UPLOADS_BUCKET)
+      .list(`${folder.name}/preview`)
+    const stale = (previewFiles ?? []).filter(
+      f => f.name && f.created_at && f.created_at < uploadCutoff
+    )
+    if (stale.length === 0) continue
+    const paths = stale.map(f => `${folder.name}/preview/${f.name}`)
+    const { error } = await supabase.storage.from(UPLOADS_BUCKET).remove(paths)
+    if (error) {
+      console.warn(`user-uploads cleanup error for ${folder.name}: ${error.message}`)
+    } else {
+      uploadsCleaned += paths.length
+      console.log(`Cleaned ${paths.length} preview files for user ${folder.name}`)
+    }
+  }
+
+  const summary = { cleaned, failed, total: expired.length, uploadsCleaned }
   console.log('Cleanup complete:', JSON.stringify(summary))
   return new Response(JSON.stringify(summary), { status: 200 })
 })

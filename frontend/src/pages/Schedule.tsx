@@ -431,7 +431,7 @@ function PostRow({ post, onCancel }: PostRowProps) {
         )}
       </div>
       <div className="flex items-center gap-3 shrink-0">
-        <StatusBadge status={post.status} />
+        <StatusBadge status={post.status} draftMode={post.draft_mode} />
         {onCancel && post.status === 'pending' && (
           <button
             onClick={() => onCancel(post.id)}
@@ -445,13 +445,13 @@ function PostRow({ post, onCancel }: PostRowProps) {
   )
 }
 
-function StatusBadge({ status }: { status: ScheduledPost['status'] }) {
+function StatusBadge({ status, draftMode }: { status: ScheduledPost['status']; draftMode?: boolean }) {
   if (status === 'pending')
     return <span className="text-xs text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">Pending</span>
   if (status === 'posting')
     return <span className="text-xs text-amber-300 bg-amber-900/30 px-2 py-0.5 rounded-full">Posting…</span>
   if (status === 'posted')
-    return <span className="text-xs text-lime-300 bg-lime-900/30 px-2 py-0.5 rounded-full">✓ Posted</span>
+    return <span className="text-xs text-lime-300 bg-lime-900/30 px-2 py-0.5 rounded-full">{draftMode ? '✓ Saved' : '✓ Posted'}</span>
   if (status === 'failed')
     return <span className="text-xs text-red-300 bg-red-900/30 px-2 py-0.5 rounded-full">✗ Failed</span>
   if (status === 'cancelled')
