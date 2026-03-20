@@ -53,16 +53,13 @@ COLOR_MAP: Dict[str, str] = {
 
 
 def _escape_drawtext(text: str) -> str:
-    """Escape special characters for ffmpeg drawtext filter value."""
-    # Order matters — backslash must be first; newlines after backslash processing
+    """Escape special characters for ffmpeg drawtext text= option (single line only)."""
     return (
         text
         .replace("\\", "\\\\")
         .replace("'", "\\'")
         .replace(":", "\\:")
         .replace("%", "%%")
-        .replace("\r\n", "\\\\n")  # Windows CRLF → \\n in filter string; filter graph strips one \ → \n for drawtext
-        .replace("\n", "\\\\n")    # Unix LF → same
     )
 
 
@@ -74,14 +71,16 @@ def _drawtext_xy(position: str, width: int, height: int) -> tuple[str, str]:
     return x, y
 
 
-def _build_drawtext(overlay: dict, width: int, height: int, text_file_path: Optional[str] = None) -> Optional[str]:
+def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
     """
-    Build the ffmpeg drawtext filter string from an overlay config dict.
-    Returns None if overlay is disabled, text is blank, or font file is missing.
+    Build drawtext filter(s) for a text overlay.
 
-    text_file_path: absolute path to a temp file containing the raw overlay text.
-    Using textfile= instead of text= avoids all newline/escaping issues — ffmpeg
-    reads the file bytes directly, honouring actual newline characters.
+    Multi-line text is handled by creating one drawtext filter per line with
+    explicit Y positions — no newline characters ever enter a filter string,
+    so all escaping/rendering issues are avoided entirely.
+
+    Returns a comma-joined filter string (e.g. "drawtext=...,drawtext=..."),
+    or None if overlay is disabled, text is blank, or font file is missing.
     """
     if not overlay.get("enabled") or not overlay.get("text", "").strip():
         return None
@@ -102,29 +101,38 @@ def _build_drawtext(overlay: dict, width: int, height: int, text_file_path: Opti
     position = overlay.get("position", "bottom-center")
     vert, horiz = position.split("-", 1)
     x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(horiz, "(w-tw)/2")
-    y = {"top": str(my), "middle": "(h-th)/2", "bottom": f"h-th-{my}"}.get(vert, f"h-th-{my}")
-
     font_path_filter = os.path.basename(font_path)
 
-    # Use textfile= with an absolute path so actual newline chars in the file
-    # render as line breaks — no escaping layer to fight with.
-    if text_file_path:
-        text_part = f"textfile={text_file_path}"
-    else:
-        text_part = f"text={_escape_drawtext(overlay['text'])}"
+    # Split into individual lines — one drawtext filter per line
+    raw = overlay.get("text", "").rstrip("\r\n")
+    lines = raw.replace("\r\n", "\n").split("\n")
+    line_height = max(1, int(fontsize * 1.25))
+    n = len(lines)
 
-    parts = [
-        f"fontfile={font_path_filter}",
-        text_part,
-        f"fontcolor={hex_color}ff",
-        f"fontsize={fontsize}",
-        f"x={x}",
-        f"y={y}",
-    ]
-    if overlay.get("background_box"):
-        parts += ["box=1", "boxcolor=000000@0.55", "boxborderw=18"]
+    filters = []
+    for i, line in enumerate(lines):
+        if not line:
+            continue  # blank line acts as spacer, no filter needed
+        if vert == "top":
+            y = str(my + i * line_height)
+        elif vert == "middle":
+            y = str((height - n * line_height) // 2 + i * line_height)
+        else:  # bottom
+            y = str(height - my - (n - i) * line_height)
 
-    return "drawtext=" + ":".join(parts)
+        parts = [
+            f"fontfile={font_path_filter}",
+            f"text={_escape_drawtext(line)}",
+            f"fontcolor={hex_color}ff",
+            f"fontsize={fontsize}",
+            f"x={x}",
+            f"y={y}",
+        ]
+        if overlay.get("background_box"):
+            parts += ["box=1", "boxcolor=000000@0.55", "boxborderw=18"]
+        filters.append("drawtext=" + ":".join(parts))
+
+    return ",".join(filters) if filters else None
 
 
 def list_images(folder: str) -> List[str]:
@@ -205,24 +213,7 @@ def build_ffmpeg_command(
         f"crop={width}:{height},setsar=1"
     )
     if text_overlay:
-        # Write raw text to a file so drawtext uses textfile= — bypasses all
-        # escape-layer ambiguity and lets actual newline chars render correctly.
-        text_file_path = None
-        raw_text = text_overlay.get("text", "")
-        if text_overlay.get("enabled") and raw_text.strip():
-            text_file_path = out_file.replace(".mp4", "_overlay_text.txt")
-            # textfile= content goes through drawtext escape processing (not filter graph).
-            # Write \n escape sequences instead of actual newlines so drawtext renders
-            # line breaks without also drawing a □ glyph for the raw 0x0A byte.
-            file_text = (
-                raw_text
-                .replace("\\", "\\\\")
-                .replace("\r\n", "\\n")
-                .replace("\n", "\\n")
-            )
-            with open(text_file_path, "w", encoding="utf-8") as tf:
-                tf.write(file_text)
-        dt = _build_drawtext(text_overlay, width, height, text_file_path)
+        dt = _build_drawtext(text_overlay, width, height)
         if dt:
             vf += f",{dt}"
 
