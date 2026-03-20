@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 TIKTOK_AUTH_BASE = "https://www.tiktok.com/v2/auth/authorize/"
 TIKTOK_API_BASE = "https://open.tiktokapis.com"
-SCOPES = "user.info.basic,video.publish"
+SCOPES = "user.info.basic,video.publish,video.upload"
 
 
 def _get_secret() -> str:
@@ -62,6 +62,7 @@ def build_auth_url(user_id: str) -> str:
         "response_type": "code",
         "redirect_uri": redirect_uri,
         "state": state,
+        "force_reauth": "1",
     }
     return f"{TIKTOK_AUTH_BASE}?{urllib.parse.urlencode(params)}"
 
