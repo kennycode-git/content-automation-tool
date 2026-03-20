@@ -74,10 +74,14 @@ def _drawtext_xy(position: str, width: int, height: int) -> tuple[str, str]:
     return x, y
 
 
-def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
+def _build_drawtext(overlay: dict, width: int, height: int, text_file_path: Optional[str] = None) -> Optional[str]:
     """
     Build the ffmpeg drawtext filter string from an overlay config dict.
     Returns None if overlay is disabled, text is blank, or font file is missing.
+
+    text_file_path: absolute path to a temp file containing the raw overlay text.
+    Using textfile= instead of text= avoids all newline/escaping issues — ffmpeg
+    reads the file bytes directly, honouring actual newline characters.
     """
     if not overlay.get("enabled") or not overlay.get("text", "").strip():
         return None
@@ -100,13 +104,18 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
     x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(horiz, "(w-tw)/2")
     y = {"top": str(my), "middle": "(h-th)/2", "bottom": f"h-th-{my}"}.get(vert, f"h-th-{my}")
 
-    # Use basename only — render_slideshow sets cwd=_FONTS_DIR so ffmpeg resolves
-    # the relative path there. This avoids the Windows drive-letter colon (C:/)
-    # that breaks ffmpeg's filter option parser.
     font_path_filter = os.path.basename(font_path)
+
+    # Use textfile= with an absolute path so actual newline chars in the file
+    # render as line breaks — no escaping layer to fight with.
+    if text_file_path:
+        text_part = f"textfile={text_file_path}"
+    else:
+        text_part = f"text={_escape_drawtext(overlay['text'])}"
+
     parts = [
         f"fontfile={font_path_filter}",
-        f"text={_escape_drawtext(overlay['text'])}",
+        text_part,
         f"fontcolor={hex_color}ff",
         f"fontsize={fontsize}",
         f"x={x}",
@@ -196,7 +205,15 @@ def build_ffmpeg_command(
         f"crop={width}:{height},setsar=1"
     )
     if text_overlay:
-        dt = _build_drawtext(text_overlay, width, height)
+        # Write raw text to a file so drawtext uses textfile= — bypasses all
+        # escape-layer ambiguity and lets actual newline chars render correctly.
+        text_file_path = None
+        raw_text = text_overlay.get("text", "")
+        if text_overlay.get("enabled") and raw_text.strip():
+            text_file_path = out_file.replace(".mp4", "_overlay_text.txt")
+            with open(text_file_path, "w", encoding="utf-8") as tf:
+                tf.write(raw_text)
+        dt = _build_drawtext(text_overlay, width, height, text_file_path)
         if dt:
             vf += f",{dt}"
 
