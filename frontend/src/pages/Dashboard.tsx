@@ -351,6 +351,10 @@ export default function Dashboard({ session }: Props) {
     try {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of eligible) {
+        const originalBatch = batches.find(b => b.title === batch.batch_title)
+        const effectiveAccent = originalBatch?.accent_folder_override !== undefined
+          ? originalBatch.accent_folder_override
+          : accentFolder
         const res = await generateVideo({
           search_terms: batch.search_terms,
           ...settings,
@@ -358,11 +362,12 @@ export default function Dashboard({ session }: Props) {
           batch_title: batch.batch_title,
           uploaded_image_paths: batch.images.map(img => img.storage_path),
           uploaded_only: true,
-          accent_folder: accentFolder ?? undefined,
+          accent_folder: effectiveAccent ?? undefined,
           philosopher: philosopher ?? undefined,
           grade_philosopher: gradePhilosopher || undefined,
           preset_name: appliedPresetName ?? undefined,
           image_source: resolvedSource,
+          text_overlay: originalBatch?.text_overlay ?? undefined,
         })
         submitted.push({ jobId: res.job_id, title: batch.batch_title })
       }
@@ -373,7 +378,7 @@ export default function Dashboard({ session }: Props) {
     } finally {
       setSubmitting(false)
     }
-  }, [settings, accentFolder, philosopher, gradePhilosopher, appliedPresetName, resolvedSource])
+  }, [settings, batches, accentFolder, philosopher, gradePhilosopher, appliedPresetName, resolvedSource])
 
   // Ctrl/Cmd+Enter to generate
   useEffect(() => {
