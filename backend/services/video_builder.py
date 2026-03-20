@@ -211,8 +211,17 @@ def build_ffmpeg_command(
         raw_text = text_overlay.get("text", "")
         if text_overlay.get("enabled") and raw_text.strip():
             text_file_path = out_file.replace(".mp4", "_overlay_text.txt")
+            # textfile= content goes through drawtext escape processing (not filter graph).
+            # Write \n escape sequences instead of actual newlines so drawtext renders
+            # line breaks without also drawing a □ glyph for the raw 0x0A byte.
+            file_text = (
+                raw_text
+                .replace("\\", "\\\\")
+                .replace("\r\n", "\\n")
+                .replace("\n", "\\n")
+            )
             with open(text_file_path, "w", encoding="utf-8") as tf:
-                tf.write(raw_text)
+                tf.write(file_text)
         dt = _build_drawtext(text_overlay, width, height, text_file_path)
         if dt:
             vf += f",{dt}"
