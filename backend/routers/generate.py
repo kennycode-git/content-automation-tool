@@ -123,6 +123,7 @@ async def generate(
         custom_grade_params=body.custom_grade_params.model_dump() if body.custom_grade_params else None,
         philosopher=body.philosopher or None,
         grade_philosopher=body.grade_philosopher,
+        text_overlay=body.text_overlay.model_dump() if body.text_overlay else None,
     )
     job_id = await create_job(user_id, config, db)
 

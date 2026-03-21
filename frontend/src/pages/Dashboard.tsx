@@ -157,6 +157,21 @@ export default function Dashboard({ session }: Props) {
     try { localStorage.setItem('cogito_minimized_jobs', JSON.stringify([...minimizedJobs])) } catch { /* ignore */ }
   }, [minimizedJobs])
 
+  // Auto-compute max_per_query so at least 75% of the target image count is reachable.
+  // Only updates when the user hasn't manually overridden (tracked via autoMaxPerQuery ref).
+  const autoMaxPerQueryRef = useRef<number>(DEFAULT_SETTINGS.max_per_query)
+  useEffect(() => {
+    const totalTerms = batches.reduce((sum, b) => sum + b.terms.length, 0)
+    if (totalTerms === 0) return
+    const targetImages = Math.ceil(settings.total_seconds / settings.seconds_per_image)
+    const needed = Math.ceil(targetImages * 0.75)
+    const auto = Math.min(30, Math.max(3, Math.ceil(needed / totalTerms)))
+    if (auto !== autoMaxPerQueryRef.current) {
+      autoMaxPerQueryRef.current = auto
+      setSettings(prev => ({ ...prev, max_per_query: auto }))
+    }
+  }, [batches, settings.total_seconds, settings.seconds_per_image])
+
   // Browser notifications
   function requestNotificationPermission() {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -226,6 +241,7 @@ export default function Dashboard({ session }: Props) {
           philosopher: philosopher ?? undefined,
           grade_philosopher: gradePhilosopher || undefined,
           image_source: resolvedSource,
+          text_overlay: batch.text_overlay ?? undefined,
         })
         submitted.push({ jobId: res.job_id, title: batch.title })
       }
@@ -259,12 +275,21 @@ export default function Dashboard({ session }: Props) {
     submittingRef.current = true
     setSubmitting(true)
     const themesToRun = VARIANT_THEMES.filter(t => checkedThemes.has(t.value))
-    const totalJobs = validBatches.length * themesToRun.length
+    // totalJobs varies per batch when a batch has its own theme not already in the checked set
+    const totalJobs = validBatches.reduce((sum, batch) => {
+      const hasExtra = batch.color_theme && !checkedThemes.has(batch.color_theme)
+      return sum + themesToRun.length + (hasExtra ? 1 : 0)
+    }, 0)
     setPendingCount(prev => prev + totalJobs)
     try {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of validBatches) {
         setVariantStatus(batch.title ? `Queuing variants for "${batch.title}"…` : 'Queuing variants…')
+        // Include the batch's own theme override as an extra variant if not already checked
+        const batchExtra = (batch.color_theme && !checkedThemes.has(batch.color_theme))
+          ? (VARIANT_THEMES.find(t => t.value === batch.color_theme) ?? { value: batch.color_theme, label: batch.color_theme })
+          : null
+        const effectiveThemes = batchExtra ? [...themesToRun, batchExtra] : themesToRun
         const res = await generateVariants({
           search_terms: batch.terms,
           resolution: settings.resolution,
@@ -274,10 +299,10 @@ export default function Dashboard({ session }: Props) {
           allow_repeats: settings.allow_repeats,
           max_per_query: settings.max_per_query,
           batch_title: batch.title ?? null,
-          themes: themesToRun.map(t => t.value),
+          themes: effectiveThemes.map(t => t.value),
         })
         res.job_ids.forEach((jobId, i) => {
-          const theme = themesToRun[i]
+          const theme = effectiveThemes[i]
           const title = batch.title ? `${batch.title} · ${theme.label}` : theme.label
           submitted.push({ jobId, title })
         })
@@ -308,12 +333,19 @@ export default function Dashboard({ session }: Props) {
     stagingAbortRef.current = abort
     try {
       const res = await stagePreview({
-        batches: validBatches.map(b => ({
-          search_terms: b.terms,
-          batch_title: b.title,
-          uploaded_image_paths: b.uploaded_image_paths?.length ? b.uploaded_image_paths : undefined,
-          color_theme: b.color_theme ?? settings.color_theme,
-        })),
+        batches: validBatches.map(b => {
+          const effectiveTheme = b.color_theme ?? settings.color_theme
+          const effectiveGradeParams = effectiveTheme === 'custom'
+            ? (b.custom_grade_params ?? settings.custom_grade_params)
+            : undefined
+          return {
+            search_terms: b.terms,
+            batch_title: b.title,
+            uploaded_image_paths: b.uploaded_image_paths?.length ? b.uploaded_image_paths : undefined,
+            color_theme: effectiveTheme,
+            custom_grade_params: effectiveGradeParams as Record<string, number> | undefined,
+          }
+        }),
         resolution: settings.resolution,
         seconds_per_image: settings.seconds_per_image,
         total_seconds: settings.total_seconds,
@@ -343,6 +375,10 @@ export default function Dashboard({ session }: Props) {
     try {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of eligible) {
+        const originalBatch = batches.find(b => b.title === batch.batch_title)
+        const effectiveAccent = originalBatch?.accent_folder_override !== undefined
+          ? originalBatch.accent_folder_override
+          : accentFolder
         const res = await generateVideo({
           search_terms: batch.search_terms,
           ...settings,
@@ -350,11 +386,12 @@ export default function Dashboard({ session }: Props) {
           batch_title: batch.batch_title,
           uploaded_image_paths: batch.images.map(img => img.storage_path),
           uploaded_only: true,
-          accent_folder: accentFolder ?? undefined,
+          accent_folder: effectiveAccent ?? undefined,
           philosopher: philosopher ?? undefined,
           grade_philosopher: gradePhilosopher || undefined,
           preset_name: appliedPresetName ?? undefined,
           image_source: resolvedSource,
+          text_overlay: originalBatch?.text_overlay ?? undefined,
         })
         submitted.push({ jobId: res.job_id, title: batch.batch_title })
       }
@@ -365,7 +402,7 @@ export default function Dashboard({ session }: Props) {
     } finally {
       setSubmitting(false)
     }
-  }, [settings, accentFolder, philosopher, gradePhilosopher, appliedPresetName, resolvedSource])
+  }, [settings, batches, accentFolder, philosopher, gradePhilosopher, appliedPresetName, resolvedSource])
 
   // Ctrl/Cmd+Enter to generate
   useEffect(() => {
@@ -844,6 +881,7 @@ export default function Dashboard({ session }: Props) {
           settings={settings}
           imageSource={imageSource}
           accentFolder={accentFolder}
+          autoMaxPerQuery={autoMaxPerQueryRef.current}
           onSettingsChange={s => { setSettings(s); setAppliedPresetName(null) }}
           onImageSourceChange={v => setImageSource(v)}
           onAccentFolderChange={setAccentFolder}

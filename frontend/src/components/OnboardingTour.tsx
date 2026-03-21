@@ -82,6 +82,20 @@ export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPr
       description: 'Choose a visual style for your video. Hover the eye icon next to each theme to preview it. Dark Tones and Low Exposure work best for white text overlays.',
     },
     {
+      target: 'batch-style-btn',
+      title: 'Per-batch style',
+      description: (
+        <>
+          Each batch card has a <strong className="text-stone-200">Style</strong> button. Override the colour theme or accent images for that video independently, without changing global settings.
+        </>
+      ),
+    },
+    {
+      target: 'batch-style-btn',
+      title: 'Text overlays',
+      description: 'Burn a caption into the footage. Pick the font, colour, size and position. Save your favourite settings as a preset to apply across batches in one click.',
+    },
+    {
       target: 'advanced-btn',
       title: 'Advanced settings',
       description: (

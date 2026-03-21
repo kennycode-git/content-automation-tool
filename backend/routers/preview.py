@@ -52,6 +52,7 @@ def _stage_batch_sync(
     access_key: str,
     pexels_key: str,
     color_theme: str,
+    custom_grade_params: dict | None,
     image_source: str,
     images_dir: str,
     graded_dir: str,
@@ -139,7 +140,7 @@ def _stage_batch_sync(
         download_and_save(items, images_dir, width, height)
 
     # --- Apply colour grading ---
-    render_dir = apply_theme_grading(images_dir, graded_dir, color_theme)
+    render_dir = apply_theme_grading(images_dir, graded_dir, color_theme, custom_params=custom_grade_params)
     return render_dir, pexels_fallback
 
 
@@ -180,6 +181,10 @@ async def preview_stage(
 
             # Run sync pipeline in thread pool
             try:
+                effective_theme = batch.color_theme or body.color_theme
+                effective_grade_params = (
+                    batch.custom_grade_params.model_dump() if batch.custom_grade_params else None
+                ) if effective_theme == "custom" else None
                 render_dir, used_pexels = await asyncio.to_thread(
                     _stage_batch_sync,
                     search_terms=batch.search_terms,
@@ -189,7 +194,8 @@ async def preview_stage(
                     need_total=need_total,
                     access_key=access_key,
                     pexels_key=pexels_key,
-                    color_theme=body.color_theme,
+                    color_theme=effective_theme,
+                    custom_grade_params=effective_grade_params,
                     image_source=body.image_source,
                     images_dir=images_dir,
                     graded_dir=graded_dir,

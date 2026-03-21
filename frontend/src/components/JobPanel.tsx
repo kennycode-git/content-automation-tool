@@ -283,6 +283,16 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
     },
   })
 
+  // Auto-dismiss if job no longer exists (404 / deleted from DB)
+  useEffect(() => {
+    if (error && onDismiss) {
+      const msg = (error as Error).message ?? ''
+      if (msg.includes('404') || msg.includes('not found') || msg.includes('Not found')) {
+        onDismiss()
+      }
+    }
+  }, [error])  // eslint-disable-line react-hooks/exhaustive-deps
+
   const doneFired = useRef(false)
   const jobRef = useRef(job)
   jobRef.current = job
@@ -307,7 +317,14 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   }, [job?.progress_message, job?.status])
 
   if (isLoading) return <div className="text-sm text-stone-500">Loading…</div>
-  if (error) return <div className="text-sm text-red-400">Error loading job status.</div>
+  if (error) return (
+    <div className="flex items-center justify-between gap-3 text-sm text-red-400 px-1">
+      <span>Job not found.</span>
+      {onDismiss && (
+        <button onClick={onDismiss} className="text-xs text-stone-500 hover:text-stone-300 transition">Dismiss</button>
+      )}
+    </div>
+  )
   if (!job) return null
 
   const isTerminal = job.status === 'done' || job.status === 'failed'

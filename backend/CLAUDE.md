@@ -30,7 +30,7 @@ backend/
 │   ├── image_pipeline.py      # Unsplash fetch (extracted from unsplash_extract_plus.py)
 │   ├── image_grader.py        # Colour grading (extracted from color_grade.py)
 │   ├── image_injector.py      # Accent/philosopher image injection
-│   ├── video_builder.py       # ffmpeg slideshow renderer (extracted from slideshow_from_images.py)
+│   ├── video_builder.py       # ffmpeg slideshow renderer; supports drawtext overlay (FONT_MAP, COLOR_MAP, _escape_drawtext, _build_drawtext)
 │   ├── job_manager.py         # Async job lifecycle + pipeline orchestration
 │   └── storage.py             # Supabase Storage upload/signed URL/delete
 ├── models/
@@ -130,7 +130,7 @@ RESEND_FROM_EMAIL         # From address (default: noreply@passiveclip.com)
                                    on_progress callback updates DB after each image: "Downloading X/Y images…"
                                    _make_download_progress_cb() in job_manager.py creates the sync callback
       2.5 apply_theme_grading()  — colour grade images (no-op for theme='none')
-      3. render_slideshow()      — ffmpeg → output.mp4 (uses graded dir if grading applied)
+      3. render_slideshow()      — ffmpeg → output.mp4; optional text_overlay burns drawtext caption via -vf chain
       4. upload_output()         — Supabase Storage outputs/{user_id}/{job_id}.mp4
       5. get_signed_url()        — 48hr download URL
       6. update job row          — status='done', output_url=<url>
@@ -186,6 +186,18 @@ git push railway main
 | low_exp  | Low Exposure  | shadows      | black           | grade_low_exposure| always                     |
 
 All 9 values listed in `ALLOWED_COLOR_THEMES` in `models/schemas.py`.
+
+## Text Overlay (drawtext)
+Configured via `TextOverlayConfig` in `GenerateRequest.text_overlay` (optional, null = no overlay).
+Stored in `jobs.config` JSONB as a dict. Passed to `render_slideshow(text_overlay=...)`.
+
+Key points:
+- `_build_drawtext()` returns None if overlay disabled, text blank, or font file missing (job still completes)
+- Newlines escaped as `\\n` (two backslashes + n) so AVOption layer strips one, leaving `\n` for drawtext
+- Font resolved from `FONT_MAP` (15 keys). Font file basename used as `fontfile=` so ffmpeg resolves it relative to `cwd=_FONTS_DIR` (avoids Windows drive-letter colon in filter string)
+- `alignment` field controls `x` position (left/center/right margins); `position` field controls `y` (top/middle/bottom)
+- `color` can be `white/cream/gold/black` (from `COLOR_MAP`) or `custom` with a hex value
+- Font files live in `backend/fonts/` and must be downloaded manually (not committed)
 
 ## Database Schema
 See `../supabase/schema.sql` for full schema with RLS policies.

@@ -13,6 +13,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { uploadImages } from '../lib/api'
 import type { CustomGradeParams } from './SettingsPanel'
+import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, OverlayAlignment } from '../lib/api'
+
+export type { TextOverlayConfig }
 
 const STORAGE_KEY = 'cogito_classic_text'
 const DEFAULT_CLASSIC_TEXT =
@@ -25,6 +28,7 @@ export interface BatchOutput {
   color_theme?: string                   // undefined = inherit global
   custom_grade_params?: CustomGradeParams
   accent_folder_override?: string | null // undefined = inherit global, null = explicit none
+  text_overlay?: TextOverlayConfig | null
 }
 
 interface VisualBatch {
@@ -33,6 +37,7 @@ interface VisualBatch {
   colorTheme?: string                    // undefined = inherit global
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null           // undefined = inherit global, null = explicit none
+  textOverlay?: TextOverlayConfig | null
 }
 
 interface PendingBundle {
@@ -105,6 +110,184 @@ const CUSTOM_SLIDERS: { key: keyof CustomGradeParams; label: string; min: number
 
 const PHILOSOPHER_NAMES = ['Marcus Aurelius', 'Seneca', 'Nietzsche', 'Socrates', 'Aristotle', 'Epictetus']
 
+const DEFAULT_OVERLAY: TextOverlayConfig = {
+  enabled: true,
+  text: '',
+  font: 'garamond',
+  color: 'white',
+  background_box: false,
+  alignment: 'center',
+  position: 'bottom-center',
+  font_size_pct: 0.045,
+}
+
+const OVERLAY_FONT_GROUPS: { category: string; fonts: { value: OverlayFont; label: string }[] }[] = [
+  {
+    category: 'Serif',
+    fonts: [
+      { value: 'garamond',    label: 'Garamond' },
+      { value: 'cormorant',   label: 'Cormorant' },
+      { value: 'playfair',    label: 'Playfair' },
+      { value: 'crimson',     label: 'Crimson' },
+      { value: 'philosopher', label: 'Philosopher' },
+      { value: 'lora',        label: 'Lora' },
+    ],
+  },
+  {
+    category: 'Sans',
+    fonts: [
+      { value: 'outfit',  label: 'Outfit' },
+      { value: 'raleway', label: 'Raleway' },
+      { value: 'josefin', label: 'Josefin' },
+      { value: 'inter',   label: 'Inter' },
+    ],
+  },
+  {
+    category: 'Display',
+    fonts: [
+      { value: 'cinzel',      label: 'Cinzel' },
+      { value: 'cinzel_deco', label: 'Cinzel Deco' },
+      { value: 'uncial',      label: 'Uncial' },
+    ],
+  },
+  {
+    category: 'Mono',
+    fonts: [
+      { value: 'jetbrains',  label: 'JetBrains' },
+      { value: 'space_mono', label: 'Space Mono' },
+    ],
+  },
+]
+
+const OVERLAY_COLORS: { value: OverlayColor; label: string; dot: string }[] = [
+  { value: 'white', label: 'White', dot: 'bg-white ring-1 ring-stone-500' },
+  { value: 'cream', label: 'Cream', dot: 'bg-amber-50 ring-1 ring-stone-500' },
+  { value: 'gold',  label: 'Yellow', dot: 'bg-yellow-300' },
+  { value: 'black', label: 'Black', dot: 'bg-stone-900 ring-1 ring-stone-500' },
+]
+
+// 3×3 grid: [row][col] → { value, arrow }
+const OVERLAY_POSITIONS: { value: OverlayPosition; arrow: string }[][] = [
+  [
+    { value: 'top-left',    arrow: '↖' },
+    { value: 'top-center',  arrow: '↑' },
+    { value: 'top-right',   arrow: '↗' },
+  ],
+  [
+    { value: 'middle-left',   arrow: '←' },
+    { value: 'middle-center', arrow: '·' },
+    { value: 'middle-right',  arrow: '→' },
+  ],
+  [
+    { value: 'bottom-left',   arrow: '↙' },
+    { value: 'bottom-center', arrow: '↓' },
+    { value: 'bottom-right',  arrow: '↘' },
+  ],
+]
+
+const OVERLAY_ALIGNMENTS: { value: OverlayAlignment; label: string }[] = [
+  { value: 'left',   label: 'Left' },
+  { value: 'center', label: 'Center' },
+  { value: 'right',  label: 'Right' },
+]
+
+const OVERLAY_PRESETS_KEY = 'cogito_overlay_presets'
+
+type OverlayPreset = {
+  id: string
+  name: string
+  settings: Omit<TextOverlayConfig, 'text' | 'enabled'>
+}
+
+// ── Overlay preview helpers ────────────────────────────────────────────────────
+
+const FONT_CSS_FAMILY: Record<OverlayFont, string> = {
+  garamond:    'Georgia, "Times New Roman", serif',
+  cormorant:   '"Palatino Linotype", Georgia, serif',
+  playfair:    '"Palatino Linotype", Georgia, serif',
+  crimson:     'Georgia, serif',
+  philosopher: 'Georgia, serif',
+  lora:        'Georgia, serif',
+  outfit:      'system-ui, -apple-system, sans-serif',
+  raleway:     'system-ui, -apple-system, sans-serif',
+  josefin:     'system-ui, -apple-system, sans-serif',
+  inter:       'system-ui, -apple-system, sans-serif',
+  cinzel:      '"Times New Roman", serif',
+  cinzel_deco: '"Times New Roman", serif',
+  uncial:      'Georgia, serif',
+  jetbrains:   '"Courier New", Courier, monospace',
+  space_mono:  '"Courier New", Courier, monospace',
+}
+
+const POSITION_FLEX: Record<OverlayPosition, { items: string; justify: string; textAlign: string }> = {
+  'top-left':      { items: 'flex-start', justify: 'flex-start',  textAlign: 'left' },
+  'top-center':    { items: 'flex-start', justify: 'center',      textAlign: 'center' },
+  'top-right':     { items: 'flex-start', justify: 'flex-end',    textAlign: 'right' },
+  'middle-left':   { items: 'center',     justify: 'flex-start',  textAlign: 'left' },
+  'middle-center': { items: 'center',     justify: 'center',      textAlign: 'center' },
+  'middle-right':  { items: 'center',     justify: 'flex-end',    textAlign: 'right' },
+  'bottom-left':   { items: 'flex-end',   justify: 'flex-start',  textAlign: 'left' },
+  'bottom-center': { items: 'flex-end',   justify: 'center',      textAlign: 'center' },
+  'bottom-right':  { items: 'flex-end',   justify: 'flex-end',    textAlign: 'right' },
+}
+
+function overlayColorHex(ov: TextOverlayConfig): string {
+  if (ov.color === 'custom') return ov.custom_color ?? '#ffffff'
+  const map: Record<string, string> = { white: '#ffffff', cream: '#f5f0e8', gold: '#f5e317', black: '#000000' }
+  return map[ov.color] ?? '#ffffff'
+}
+
+function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
+  const PREVIEW_H = 200
+  const PREVIEW_W = 113  // ~9:16
+  const pos = POSITION_FLEX[ov.position as OverlayPosition] ?? POSITION_FLEX['bottom-center']
+  const color = overlayColorHex(ov)
+  const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
+  const fontSize = Math.max(3, Math.round(PREVIEW_H * (ov.font_size_pct ?? 0.045)))
+  const margin = Math.round(PREVIEW_H * 0.05)
+  const displayText = ov.text.trim() || 'Preview text'
+
+  return (
+    <div className="flex justify-center my-2">
+      <div
+        style={{
+          width: PREVIEW_W,
+          height: PREVIEW_H,
+          background: '#0e0e0e',
+          borderRadius: 4,
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: pos.items,
+          justifyContent: pos.justify,
+          border: '1px solid #333',
+          flexShrink: 0,
+          padding: margin,
+          boxSizing: 'border-box',
+        }}
+      >
+        <div
+          style={{
+            color,
+            fontFamily,
+            fontSize,
+            lineHeight: 1.25,
+            textAlign: (ov.alignment ?? 'center') as CanvasTextAlign,
+            width: 'fit-content',
+            maxWidth: '100%',
+            wordBreak: 'break-word',
+            whiteSpace: 'pre-wrap',
+            ...(ov.background_box
+              ? { background: 'rgba(0,0,0,0.55)', padding: '1px 3px', borderRadius: 2 }
+              : {}),
+          }}
+        >
+          {displayText}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 function AdjustIcon() {
@@ -119,12 +302,37 @@ function BatchStylePopover({
   batch,
   onChange,
   onClose,
+  onApplyOverlayToAll,
 }: {
   batch: VisualBatch
   onChange: (patch: Partial<VisualBatch>) => void
   onClose: () => void
+  onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
 }) {
   const params = batch.customGradeParams ?? DEFAULT_GRADE
+  const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
+  const [overlayPresets, setOverlayPresets] = useState<OverlayPreset[]>(() => {
+    try { return JSON.parse(localStorage.getItem(OVERLAY_PRESETS_KEY) || '[]') } catch { return [] }
+  })
+  const [savingPreset, setSavingPreset] = useState(false)
+  const [presetName, setPresetName] = useState('')
+
+  function saveOverlayPreset(ov: TextOverlayConfig) {
+    const name = presetName.trim() || 'Preset'
+    const { text: _t, enabled: _e, ...settings } = ov
+    const preset: OverlayPreset = { id: crypto.randomUUID(), name, settings }
+    const updated = [...overlayPresets, preset]
+    setOverlayPresets(updated)
+    try { localStorage.setItem(OVERLAY_PRESETS_KEY, JSON.stringify(updated)) } catch { /* ignore */ }
+    setSavingPreset(false)
+    setPresetName('')
+  }
+
+  function deleteOverlayPreset(id: string) {
+    const updated = overlayPresets.filter(p => p.id !== id)
+    setOverlayPresets(updated)
+    try { localStorage.setItem(OVERLAY_PRESETS_KEY, JSON.stringify(updated)) } catch { /* ignore */ }
+  }
 
   return (
     <>
@@ -133,6 +341,26 @@ function BatchStylePopover({
 
       {/* Popover panel */}
       <div className="absolute top-full left-0 mt-1 z-30 w-72 rounded-xl border border-stone-700 bg-stone-900 shadow-2xl">
+
+        {/* Hover preview — appears to the right of the popover */}
+        {hoveredPreview && (
+          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 w-28 rounded-lg border border-stone-600 bg-stone-900 shadow-xl overflow-hidden z-50 pointer-events-none">
+            <div className="relative w-full bg-stone-950" style={{ aspectRatio: '9/16' }}>
+              <video
+                key={`${hoveredPreview.type}-${hoveredPreview.value}`}
+                src={hoveredPreview.type === 'theme'
+                  ? `/theme-previews/${hoveredPreview.value}.mp4`
+                  : `/accent-previews/${hoveredPreview.value}.mp4`}
+                autoPlay
+                muted
+                loop
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            </div>
+          </div>
+        )}
+
         <div className="p-3 space-y-3">
 
           {/* Theme */}
@@ -141,6 +369,7 @@ function BatchStylePopover({
             <div className="grid grid-cols-2 gap-1">
               {BATCH_THEME_OPTIONS.map(opt => {
                 const isSelected = batch.colorTheme === opt.value
+                const hasPreview = opt.value !== undefined && opt.value !== 'none' && opt.value !== 'custom'
                 return (
                   <button
                     key={opt.value ?? '_global'}
@@ -157,7 +386,20 @@ function BatchStylePopover({
                     }`}
                   >
                     <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
-                    {opt.label}
+                    <span className="flex-1">{opt.label}</span>
+                    {hasPreview && (
+                      <span
+                        className={`shrink-0 transition-colors ${hoveredPreview?.type === 'theme' && hoveredPreview.value === opt.value ? 'text-stone-200' : 'text-stone-600 hover:text-stone-400'}`}
+                        onMouseEnter={e => { e.stopPropagation(); setHoveredPreview({ type: 'theme', value: opt.value! }) }}
+                        onMouseLeave={() => setHoveredPreview(null)}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -209,10 +451,13 @@ function BatchStylePopover({
               {BATCH_ACCENT_OPTIONS.map(opt => {
                 const key = opt.value === undefined ? '_global' : opt.value === null ? '_none' : opt.value
                 const isSelected = batch.accentFolder === opt.value
+                const hasPreview = typeof opt.value === 'string'
                 return (
                   <button
                     key={key}
                     onClick={() => onChange({ accentFolder: opt.value })}
+                    onMouseEnter={hasPreview ? () => setHoveredPreview({ type: 'accent', value: opt.value as string }) : undefined}
+                    onMouseLeave={hasPreview ? () => setHoveredPreview(null) : undefined}
                     className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition ${
                       isSelected
                         ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
@@ -245,6 +490,261 @@ function BatchStylePopover({
                 </div>
               ))}
             </div>
+          </div>
+
+          <hr className="border-stone-800" />
+
+          {/* Text overlay */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Text overlay</p>
+              <button
+                onClick={() => {
+                  const current = batch.textOverlay
+                  if (!current) {
+                    onChange({ textOverlay: { ...DEFAULT_OVERLAY, enabled: true } })
+                  } else {
+                    onChange({ textOverlay: { ...current, enabled: !current.enabled } })
+                  }
+                }}
+                className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+                  batch.textOverlay?.enabled ? 'bg-brand-500' : 'bg-stone-700'
+                }`}
+              >
+                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                  batch.textOverlay?.enabled ? 'translate-x-3.5' : 'translate-x-0.5'
+                }`} />
+              </button>
+            </div>
+
+            {batch.textOverlay?.enabled && (() => {
+              const ov = batch.textOverlay!
+              return (
+                <div className="space-y-2.5">
+
+                  {/* Presets */}
+                  {(overlayPresets.length > 0 || true) && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[9px] font-semibold tracking-widest uppercase text-stone-600">Style presets</p>
+                        {!savingPreset && (
+                          <button
+                            onClick={() => setSavingPreset(true)}
+                            className="text-[9px] text-stone-500 hover:text-stone-300 transition"
+                          >
+                            + Save current
+                          </button>
+                        )}
+                      </div>
+                      {savingPreset && (
+                        <div className="flex gap-1 mb-1">
+                          <input
+                            type="text"
+                            value={presetName}
+                            onChange={e => setPresetName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') saveOverlayPreset(ov)
+                              if (e.key === 'Escape') { setSavingPreset(false); setPresetName('') }
+                            }}
+                            placeholder="Preset name…"
+                            autoFocus
+                            className="flex-1 rounded border border-stone-700 bg-stone-800 px-2 py-0.5 text-[10px] text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
+                          />
+                          <button
+                            onClick={() => saveOverlayPreset(ov)}
+                            className="rounded bg-stone-700 px-2 py-0.5 text-[10px] text-stone-200 hover:bg-stone-600 transition"
+                          >Save</button>
+                          <button
+                            onClick={() => { setSavingPreset(false); setPresetName('') }}
+                            className="rounded bg-stone-800 px-2 py-0.5 text-[10px] text-stone-500 hover:text-stone-300 transition"
+                          >✕</button>
+                        </div>
+                      )}
+                      {overlayPresets.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {overlayPresets.map(preset => (
+                            <div key={preset.id} className="group flex items-center gap-0.5">
+                              <button
+                                onClick={() => onChange({ textOverlay: { ...ov, ...preset.settings } })}
+                                className="rounded bg-stone-800 border border-stone-700 px-2 py-0.5 text-[10px] text-stone-300 hover:text-stone-100 hover:border-stone-500 transition"
+                              >
+                                {preset.name}
+                              </button>
+                              <button
+                                onClick={() => deleteOverlayPreset(preset.id)}
+                                className="hidden group-hover:flex items-center justify-center w-3.5 h-3.5 rounded-full bg-stone-700 text-stone-500 hover:bg-stone-600 hover:text-stone-300 text-[8px] transition"
+                              >✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {overlayPresets.length === 0 && !savingPreset && (
+                        <p className="text-[9px] text-stone-700 italic">No presets saved yet</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Text input */}
+                  <textarea
+                    rows={2}
+                    value={ov.text}
+                    onChange={e => onChange({ textOverlay: { ...ov, text: e.target.value } })}
+                    placeholder="Type overlay text…"
+                    maxLength={200}
+                    className="w-full rounded-lg border border-stone-700 bg-stone-800 px-2.5 py-1.5 text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none resize-none"
+                  />
+
+                  {/* Live preview */}
+                  <OverlayPreview ov={ov} />
+
+                  {/* Font */}
+                  <div>
+                    <p className="mb-1.5 text-[9px] font-semibold tracking-widest uppercase text-stone-600">Font</p>
+                    <div className="space-y-1.5">
+                      {OVERLAY_FONT_GROUPS.map(group => (
+                        <div key={group.category}>
+                          <p className="mb-0.5 text-[8px] tracking-widest uppercase text-stone-700">{group.category}</p>
+                          <div className="flex flex-wrap gap-1">
+                            {group.fonts.map(f => (
+                              <button
+                                key={f.value}
+                                onClick={() => onChange({ textOverlay: { ...ov, font: f.value } })}
+                                className={`rounded px-2 py-0.5 text-[10px] transition ${
+                                  ov.font === f.value
+                                    ? 'bg-stone-600 text-stone-100'
+                                    : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                                }`}
+                              >
+                                {f.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Colour */}
+                  <div>
+                    <p className="mb-1 text-[9px] font-semibold tracking-widest uppercase text-stone-600">Colour</p>
+                    <div className="flex flex-wrap gap-1">
+                      {OVERLAY_COLORS.map(c => (
+                        <button
+                          key={c.value}
+                          onClick={() => onChange({ textOverlay: { ...ov, color: c.value } })}
+                          className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] transition ${
+                            ov.color === c.value
+                              ? 'bg-stone-600 text-stone-100'
+                              : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${c.dot}`} />
+                          {c.label}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => onChange({ textOverlay: { ...ov, color: 'custom' } })}
+                        className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] transition ${
+                          ov.color === 'custom'
+                            ? 'bg-stone-600 text-stone-100'
+                            : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                        }`}
+                      >
+                        🎨
+                      </button>
+                    </div>
+                    {ov.color === 'custom' && (
+                      <input
+                        type="color"
+                        value={ov.custom_color ?? '#ffffff'}
+                        onChange={e => onChange({ textOverlay: { ...ov, custom_color: e.target.value } })}
+                        className="mt-1.5 h-7 w-full rounded cursor-pointer bg-stone-800 border border-stone-700"
+                      />
+                    )}
+                  </div>
+
+                  {/* Background box */}
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={ov.background_box}
+                      onChange={e => onChange({ textOverlay: { ...ov, background_box: e.target.checked } })}
+                      className="rounded border-stone-600 bg-stone-800 accent-brand-500"
+                    />
+                    <span className="text-[10px] text-stone-400">Background box</span>
+                  </label>
+
+                  {/* Position grid */}
+                  <div>
+                    <p className="mb-1 text-[9px] font-semibold tracking-widest uppercase text-stone-600">Position</p>
+                    <div className="grid grid-cols-3 gap-0.5">
+                      {OVERLAY_POSITIONS.flat().map(pos => (
+                        <button
+                          key={pos.value}
+                          onClick={() => onChange({ textOverlay: { ...ov, position: pos.value } })}
+                          className={`flex items-center justify-center rounded py-1.5 text-xs transition ${
+                            ov.position === pos.value
+                              ? 'bg-stone-600 text-stone-100'
+                              : 'bg-stone-800 text-stone-500 hover:text-stone-200'
+                          }`}
+                        >
+                          {pos.arrow}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Alignment */}
+                  <div>
+                    <p className="mb-1 text-[9px] font-semibold tracking-widest uppercase text-stone-600">Alignment</p>
+                    <div className="flex gap-1">
+                      {OVERLAY_ALIGNMENTS.map(a => (
+                        <button
+                          key={a.value}
+                          onClick={() => onChange({ textOverlay: { ...ov, alignment: a.value } })}
+                          className={`flex-1 rounded px-1.5 py-1 text-[10px] transition ${
+                            ov.alignment === a.value
+                              ? 'bg-stone-600 text-stone-100'
+                              : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                          }`}
+                        >
+                          {a.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Font size */}
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <p className="text-[9px] font-semibold tracking-widest uppercase text-stone-600">Size</p>
+                      <span className="text-[10px] font-mono text-stone-300">
+                        {Math.round((ov.font_size_pct ?? 0.045) * 1000) / 10}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.01}
+                      max={0.12}
+                      step={0.002}
+                      value={ov.font_size_pct ?? 0.045}
+                      onChange={e => onChange({ textOverlay: { ...ov, font_size_pct: parseFloat(e.target.value) } })}
+                      className="w-full accent-brand-500"
+                    />
+                  </div>
+
+                  {/* Apply overlay to all batches */}
+                  {onApplyOverlayToAll && (
+                    <button
+                      onClick={() => onApplyOverlayToAll(ov)}
+                      className="w-full rounded-lg border border-stone-700 px-2 py-1.5 text-[10px] text-stone-400 hover:border-stone-500 hover:text-stone-200 transition"
+                    >
+                      Apply overlay to all batches
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
         </div>
@@ -306,6 +806,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
       color_theme: b.colorTheme,
       custom_grade_params: b.customGradeParams,
       accent_folder_override: b.accentFolder,
+      text_overlay: b.textOverlay,
     }))
   }
 
@@ -392,6 +893,12 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
 
   function handleBatchOverride(idx: number, patch: Partial<VisualBatch>) {
     const updated = batches.map((b, i) => (i === idx ? { ...b, ...patch } : b))
+    setBatches(updated)
+    onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
+  }
+
+  function handleApplyOverlayToAll(overlay: TextOverlayConfig) {
+    const updated = batches.map(b => ({ ...b, textOverlay: overlay }))
     setBatches(updated)
     onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
   }
@@ -521,7 +1028,8 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
             const themeOpt = BATCH_THEME_OPTIONS.find(o => o.value === batch.colorTheme)
             const hasThemeOverride = batch.colorTheme !== undefined
             const hasAccentOverride = batch.accentFolder !== undefined
-            const hasOverride = hasThemeOverride || hasAccentOverride
+            const hasTextOverlay = !!(batch.textOverlay?.enabled && batch.textOverlay.text.trim())
+            const hasOverride = hasThemeOverride || hasAccentOverride || hasTextOverlay
 
             return (
               <div
@@ -565,6 +1073,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                   {/* Per-batch style trigger */}
                   <div className="relative">
                     <button
+                      data-tour={idx === 0 ? 'batch-style-btn' : undefined}
                       onClick={() => setOpenPopover(p => p === idx ? null : idx)}
                       className={`flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs transition ${
                         hasOverride
@@ -586,6 +1095,9 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                             · {BATCH_ACCENT_OPTIONS.find(o => o.value === batch.accentFolder)?.label ?? 'accent'}
                           </span>
                         )}
+                        {hasTextOverlay && (
+                          <span className="text-stone-500 ml-1">· Text</span>
+                        )}
                       </span>
                     </button>
 
@@ -594,6 +1106,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                         batch={batch}
                         onChange={patch => handleBatchOverride(idx, patch)}
                         onClose={() => setOpenPopover(null)}
+                        onApplyOverlayToAll={batches.length > 1 ? handleApplyOverlayToAll : undefined}
                       />
                     )}
                   </div>

@@ -13,6 +13,7 @@ Security considerations:
   never construct its own download URLs.
 """
 
+import re
 from datetime import datetime
 from typing import List, Literal, Optional
 
@@ -24,6 +25,67 @@ ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "se
 ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold"}
 ALLOWED_IMAGE_SOURCES = {"unsplash", "pexels", "both"}
 ALLOWED_PHILOSOPHERS = {"marcus_aurelius", "seneca", "epictetus", "nietzsche", "socrates", "aristotle"}
+ALLOWED_OVERLAY_FONTS = {
+    "garamond", "cormorant", "playfair", "crimson", "philosopher", "lora",
+    "outfit", "raleway", "josefin", "inter",
+    "cinzel", "cinzel_deco", "uncial",
+    "jetbrains", "space_mono",
+}
+ALLOWED_OVERLAY_COLORS = {"white", "cream", "gold", "black", "custom"}
+ALLOWED_OVERLAY_POSITIONS = {
+    "top-left", "top-center", "top-right",
+    "middle-left", "middle-center", "middle-right",
+    "bottom-left", "bottom-center", "bottom-right",
+}
+ALLOWED_OVERLAY_ALIGNMENTS = {"left", "center", "right"}
+
+
+class TextOverlayConfig(BaseModel):
+    """Text caption burned into the video via ffmpeg drawtext filter."""
+    enabled: bool = True
+    text: str = Field(..., max_length=200)
+    font: str = Field(default="serif")
+    color: str = Field(default="white")
+    custom_color: Optional[str] = None
+    background_box: bool = False
+    position: str = Field(default="bottom-center")
+    alignment: str = Field(default="center")
+    font_size_pct: float = Field(default=0.045, ge=0.01, le=0.2)
+
+    @field_validator("font")
+    @classmethod
+    def validate_font(cls, v: str) -> str:
+        if v not in ALLOWED_OVERLAY_FONTS:
+            raise ValueError(f"font must be one of: {', '.join(sorted(ALLOWED_OVERLAY_FONTS))}")
+        return v
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, v: str) -> str:
+        if v not in ALLOWED_OVERLAY_COLORS:
+            raise ValueError(f"color must be one of: {', '.join(sorted(ALLOWED_OVERLAY_COLORS))}")
+        return v
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, v: str) -> str:
+        if v not in ALLOWED_OVERLAY_POSITIONS:
+            raise ValueError(f"position must be one of: {', '.join(sorted(ALLOWED_OVERLAY_POSITIONS))}")
+        return v
+
+    @field_validator("alignment")
+    @classmethod
+    def validate_alignment(cls, v: str) -> str:
+        if v not in ALLOWED_OVERLAY_ALIGNMENTS:
+            raise ValueError(f"alignment must be one of: {', '.join(sorted(ALLOWED_OVERLAY_ALIGNMENTS))}")
+        return v
+
+    @field_validator("custom_color")
+    @classmethod
+    def validate_custom_color(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not re.match(r"^#[0-9a-fA-F]{6}$", v):
+            raise ValueError("custom_color must be a 6-digit hex color like #ff0000")
+        return v
 
 
 class CustomGradeParams(BaseModel):
@@ -60,6 +122,7 @@ class GenerateRequest(BaseModel):
     custom_grade_params: Optional[CustomGradeParams] = None
     philosopher: Optional[str] = Field(default=None)
     grade_philosopher: bool = False
+    text_overlay: Optional[TextOverlayConfig] = None
 
     @field_validator("search_terms")
     @classmethod
@@ -163,6 +226,8 @@ class PreviewBatchRequest(BaseModel):
     search_terms: List[str] = Field(..., min_length=1, max_length=20)
     batch_title: Optional[str] = Field(default=None, max_length=120)
     uploaded_image_paths: Optional[List[str]] = None
+    color_theme: Optional[str] = None
+    custom_grade_params: Optional[CustomGradeParams] = None
 
     @field_validator("search_terms")
     @classmethod
@@ -220,3 +285,28 @@ class PreviewBatchResult(BaseModel):
 class PreviewStageResponse(BaseModel):
     batches: List[PreviewBatchResult]
     pexels_fallback: bool = False
+
+
+ALLOWED_PRIVACY_LEVELS = {
+    "PUBLIC_TO_EVERYONE",
+    "MUTUAL_FOLLOW_FRIENDS",
+    "FOLLOWER_OF_CREATOR",
+    "SELF_ONLY",
+}
+
+
+class SchedulePostRequest(BaseModel):
+    job_id: str
+    tiktok_account_id: str
+    caption: str = Field(default="", max_length=2200)
+    hashtags: List[str] = Field(default=[])
+    privacy_level: str = Field(default="PUBLIC_TO_EVERYONE")
+    scheduled_at: datetime
+    draft_mode: bool = False
+
+    @field_validator("privacy_level")
+    @classmethod
+    def validate_privacy_level(cls, v: str) -> str:
+        if v not in ALLOWED_PRIVACY_LEVELS:
+            raise ValueError(f"privacy_level must be one of: {', '.join(sorted(ALLOWED_PRIVACY_LEVELS))}")
+        return v

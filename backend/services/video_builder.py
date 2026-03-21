@@ -13,9 +13,135 @@ import random
 import subprocess
 from itertools import cycle
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ── Text overlay (drawtext filter) ────────────────────────────────────────────
+
+_FONTS_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "fonts"))
+
+FONT_MAP: Dict[str, str] = {
+    # Serif
+    "garamond":    os.path.join(_FONTS_DIR, "EBGaramond-Regular.ttf"),
+    "cormorant":   os.path.join(_FONTS_DIR, "Cormorant-Regular.ttf"),
+    "playfair":    os.path.join(_FONTS_DIR, "PlayfairDisplay-Regular.ttf"),
+    "crimson":     os.path.join(_FONTS_DIR, "CrimsonText-Regular.ttf"),
+    "philosopher": os.path.join(_FONTS_DIR, "Philosopher-Regular.ttf"),
+    "lora":        os.path.join(_FONTS_DIR, "Lora-Regular.ttf"),
+    # Sans
+    "outfit":      os.path.join(_FONTS_DIR, "Outfit-Regular.ttf"),
+    "raleway":     os.path.join(_FONTS_DIR, "Raleway-Regular.ttf"),
+    "josefin":     os.path.join(_FONTS_DIR, "JosefinSans-Regular.ttf"),
+    "inter":       os.path.join(_FONTS_DIR, "Inter_18pt-Regular.ttf"),
+    # Display
+    "cinzel":      os.path.join(_FONTS_DIR, "Cinzel-Regular.ttf"),
+    "cinzel_deco": os.path.join(_FONTS_DIR, "CinzelDecorative-Regular.ttf"),
+    "uncial":      os.path.join(_FONTS_DIR, "UncialAntiqua-Regular.ttf"),
+    # Mono
+    "jetbrains":   os.path.join(_FONTS_DIR, "JetBrainsMono-Regular.ttf"),
+    "space_mono":  os.path.join(_FONTS_DIR, "SpaceMono-Regular.ttf"),
+}
+
+COLOR_MAP: Dict[str, str] = {
+    "white": "ffffff",
+    "cream": "f5f0e8",
+    "gold":  "f5e317",
+    "black": "000000",
+}
+
+
+def _escape_drawtext(text: str) -> str:
+    """
+    Escape a single line of text for the ffmpeg drawtext text= option.
+
+    ' (apostrophe) is replaced with the Unicode RIGHT SINGLE QUOTATION MARK (U+2019)
+    which is visually identical but not treated as a quoting delimiter by ffmpeg's
+    filter option parser — avoiding the bug where ' triggers single-quote mode and
+    silently swallows the rest of the filter options.
+    Double-quote wrapping is NOT used: ffmpeg does not treat "..." as a quoting
+    mechanism in filter option values, so the quotes would appear literally in the video.
+    """
+    return (
+        text
+        .replace("\\", "\\\\")
+        .replace("'", "\u2019")   # ' → ' (RIGHT SINGLE QUOTATION MARK, visually identical)
+        .replace(":", "\\:")
+        .replace("%", "%%")
+    )
+
+
+def _drawtext_xy(position: str, width: int, height: int) -> tuple[str, str]:
+    mx, my = int(width * 0.05), int(height * 0.05)
+    vert, horiz = position.split("-", 1)  # e.g. "bottom-center" → ("bottom", "center")
+    x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}[horiz]
+    y = {"top": str(my), "middle": "(h-th)/2", "bottom": f"h-th-{my}"}[vert]
+    return x, y
+
+
+def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
+    """
+    Build drawtext filter(s) for a text overlay.
+
+    Multi-line text is handled by creating one drawtext filter per line with
+    explicit Y positions — no newline characters ever enter a filter string,
+    so all escaping/rendering issues are avoided entirely.
+
+    Returns a comma-joined filter string (e.g. "drawtext=...,drawtext=..."),
+    or None if overlay is disabled, text is blank, or font file is missing.
+    """
+    if not overlay.get("enabled") or not overlay.get("text", "").strip():
+        return None
+
+    font_path = FONT_MAP.get(overlay.get("font", "garamond"), FONT_MAP["garamond"])
+    if not os.path.exists(font_path):
+        logger.warning("Font not found: %s — skipping drawtext overlay", font_path)
+        return None
+
+    color_key = overlay.get("color", "white")
+    if color_key == "custom":
+        hex_color = (overlay.get("custom_color") or "#ffffff").lstrip("#")
+    else:
+        hex_color = COLOR_MAP.get(color_key, "ffffff")
+
+    fontsize = max(8, int(height * overlay.get("font_size_pct", 0.045)))
+    mx, my = int(width * 0.05), int(height * 0.05)
+    position = overlay.get("position", "bottom-center")
+    vert, horiz = position.split("-", 1)
+    x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(horiz, "(w-tw)/2")
+    font_path_filter = os.path.basename(font_path)
+
+    # Split into individual lines — one drawtext filter per line
+    raw = overlay.get("text", "").rstrip("\r\n")
+    lines = raw.replace("\r\n", "\n").split("\n")
+    line_height = max(1, int(fontsize * 1.25))
+    n = len(lines)
+
+    filters = []
+    for i, line in enumerate(lines):
+        if not line:
+            continue  # blank line acts as spacer, no filter needed
+        if vert == "top":
+            y = str(my + i * line_height)
+        elif vert == "middle":
+            y = str((height - n * line_height) // 2 + i * line_height)
+        else:  # bottom
+            y = str(height - my - (n - i) * line_height)
+
+        parts = [
+            f"fontfile={font_path_filter}",
+            f"text={_escape_drawtext(line)}",
+            f"fontcolor={hex_color}ff",
+            f"fontsize={fontsize}",
+            f"x={x}",
+            f"y={y}",
+        ]
+        if overlay.get("background_box"):
+            parts += ["box=1", "boxcolor=000000@0.55", "boxborderw=18"]
+        filters.append("drawtext=" + ":".join(parts))
+
+    return ",".join(filters) if filters else None
 
 
 def list_images(folder: str) -> List[str]:
@@ -78,10 +204,12 @@ def build_ffmpeg_command(
     height: int,
     seconds_per_image: float,
     fps: int,
+    text_overlay: Optional[dict] = None,
 ) -> List[str]:
     """
     Build an ffmpeg command using the concat demuxer with explicit duration entries.
     Processes images sequentially — O(1) memory regardless of image count.
+    Appends a drawtext filter when text_overlay is provided and valid.
     """
     if not images:
         raise RuntimeError("No images provided to ffmpeg.")
@@ -89,15 +217,21 @@ def build_ffmpeg_command(
     concat_path = out_file.replace(".mp4", "_concat.txt")
     write_concat_file(images, concat_path, seconds_per_image)
 
+    vf = (
+        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},setsar=1"
+    )
+    if text_overlay:
+        dt = _build_drawtext(text_overlay, width, height)
+        if dt:
+            vf += f",{dt}"
+
     return [
         "ffmpeg", "-y",
         "-f", "concat",
         "-safe", "0",
         "-i", concat_path,
-        "-vf", (
-            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},setsar=1"
-        ),
+        "-vf", vf,
         "-r", str(fps),
         "-pix_fmt", "yuv420p",
         "-threads", "2",
@@ -147,6 +281,7 @@ def render_slideshow(
     total_seconds: float = 11.0,
     allow_repeats: bool = True,
     shuffle: bool = True,
+    text_overlay: Optional[dict] = None,
 ) -> Dict:
     """
     Full pipeline: pick images → build ffmpeg command → run ffmpeg.
@@ -178,11 +313,20 @@ def render_slideshow(
         height=height,
         seconds_per_image=seconds_per_image,
         fps=fps,
+        text_overlay=text_overlay,
     )
 
     log_lines: List[str] = []
     log_lines.append("[ffmpeg] " + " ".join(cmd))
     logger.info("Running ffmpeg (%d images)...", len(images))
+
+    # Set cwd to the fonts directory when drawtext is active so ffmpeg can resolve
+    # the relative fontfile basename without a Windows drive-letter colon in the path.
+    use_fonts_cwd = (
+        bool(text_overlay and text_overlay.get("enabled") and text_overlay.get("text", "").strip())
+        and os.path.isdir(_FONTS_DIR)
+    )
+    popen_cwd = _FONTS_DIR if use_fonts_cwd else None
 
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     proc = subprocess.Popen(
@@ -193,6 +337,7 @@ def render_slideshow(
         encoding="utf-8",
         errors="replace",
         env=env,
+        cwd=popen_cwd,
         shell=False,
     )
     try:
