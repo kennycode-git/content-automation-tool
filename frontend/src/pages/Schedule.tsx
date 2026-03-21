@@ -305,34 +305,43 @@ export default function Schedule({ session }: Props) {
               </div>
             </div>
 
-            {/* Post at */}
-            <div>
-              <label className="block text-xs text-stone-400 mb-1">Post at</label>
-              <input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={e => setScheduledAt(e.target.value)}
-                min={minDatetime}
-                className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-stone-500 [color-scheme:dark]"
-              />
+            {/* Post at — coming soon */}
+            <div className="group/cs relative cursor-not-allowed select-none">
+              <div className="pointer-events-none opacity-40">
+                <label className="block text-xs text-stone-400 mb-1">Post at</label>
+                <input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  readOnly
+                  className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 [color-scheme:dark]"
+                />
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cs:opacity-100 transition-opacity">
+                <span className="text-xs text-stone-400 bg-stone-900/90 border border-stone-700 rounded px-2 py-1">Coming soon</span>
+              </div>
             </div>
 
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => handleSchedule(false)}
-                disabled={scheduleMutation.isPending || !selectedJobId || !selectedAccountId || !scheduledAt}
-                className="flex-1 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-medium text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {scheduleMutation.isPending ? 'Scheduling…' : 'Schedule Post'}
-              </button>
+              {/* Schedule Post — coming soon */}
+              <div className="group/cs2 relative flex-1 cursor-not-allowed select-none">
+                <button
+                  type="button"
+                  disabled
+                  className="w-full py-2.5 rounded-lg bg-brand-600 text-sm font-medium text-white opacity-40 cursor-not-allowed"
+                >
+                  Schedule Post
+                </button>
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cs2:opacity-100 transition-opacity">
+                  <span className="text-xs text-stone-400 bg-stone-900/90 border border-stone-700 rounded px-2 py-1">Coming soon</span>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => handleSchedule(true)}
-                disabled={scheduleMutation.isPending || !selectedJobId || !selectedAccountId || !scheduledAt}
+                disabled={scheduleMutation.isPending || !selectedJobId || !selectedAccountId}
                 className="flex-1 py-2.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-sm font-medium text-stone-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {scheduleMutation.isPending ? 'Saving…' : 'Save to Drafts'}
+                {scheduleMutation.isPending ? 'Saving…' : 'Send to Inbox'}
               </button>
             </div>
           </form>
