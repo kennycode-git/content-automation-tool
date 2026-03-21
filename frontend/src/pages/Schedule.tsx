@@ -441,8 +441,7 @@ export default function Schedule({ session }: Props) {
 
             <h3 className="text-sm font-semibold text-stone-100 mb-1">Where will my post appear?</h3>
             <p className="text-xs text-stone-400 leading-relaxed mb-4">
-              When you send a video to inbox, TikTok delivers it as a notification to your account.
-              Open TikTok, tap the <span className="text-stone-200 font-medium">Inbox</span> icon, and look for a message from <span className="text-stone-200 font-medium">PassiveClip</span> — your video will be ready to review and publish directly from there.
+              Open TikTok, tap the <span className="text-stone-200 font-medium">Inbox</span> icon, and look for a message from PassiveClip in <span className="text-stone-200 font-medium">System Notifications</span>.
             </p>
 
             {/* Placeholder for screenshot */}
