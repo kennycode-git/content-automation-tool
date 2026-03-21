@@ -149,7 +149,8 @@ export default function Schedule({ session }: Props) {
     p => p.status === 'posted' || p.status === 'failed' || p.status === 'cancelled'
   )
 
-  const minDatetime = new Date(Date.now() + 2 * 60 * 1000).toISOString().slice(0, 16)
+  // minDatetime reserved for when scheduling is re-enabled
+  // const minDatetime = new Date(Date.now() + 2 * 60 * 1000).toISOString().slice(0, 16)
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-200">
