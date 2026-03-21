@@ -442,6 +442,8 @@ export default function Schedule({ session }: Props) {
             <h3 className="text-sm font-semibold text-stone-100 mb-1">Where will my post appear?</h3>
             <p className="text-xs text-stone-400 leading-relaxed mb-4">
               Open TikTok, tap the <span className="text-stone-200 font-medium">Inbox</span> icon, and look for a message from PassiveClip in <span className="text-stone-200 font-medium">System Notifications</span>.
+              <br /><br />
+              Simply click that notification to load up the video:
             </p>
 
             <img
