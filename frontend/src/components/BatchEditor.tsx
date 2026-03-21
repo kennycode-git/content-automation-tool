@@ -308,6 +308,7 @@ function BatchStylePopover({
   onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
 }) {
   const params = batch.customGradeParams ?? DEFAULT_GRADE
+  const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
   const [overlayPresets, setOverlayPresets] = useState<OverlayPreset[]>(() => {
     try { return JSON.parse(localStorage.getItem(OVERLAY_PRESETS_KEY) || '[]') } catch { return [] }
   })
@@ -338,6 +339,26 @@ function BatchStylePopover({
 
       {/* Popover panel */}
       <div className="absolute top-full left-0 mt-1 z-30 w-72 rounded-xl border border-stone-700 bg-stone-900 shadow-2xl">
+
+        {/* Hover preview — appears to the right of the popover */}
+        {hoveredPreview && (
+          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 w-28 rounded-lg border border-stone-600 bg-stone-900 shadow-xl overflow-hidden z-50 pointer-events-none">
+            <div className="relative w-full bg-stone-950" style={{ aspectRatio: '9/16' }}>
+              <video
+                key={`${hoveredPreview.type}-${hoveredPreview.value}`}
+                src={hoveredPreview.type === 'theme'
+                  ? `/theme-previews/${hoveredPreview.value}.mp4`
+                  : `/accent-previews/${hoveredPreview.value}.mp4`}
+                autoPlay
+                muted
+                loop
+                playsInline
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            </div>
+          </div>
+        )}
+
         <div className="p-3 space-y-3">
 
           {/* Theme */}
@@ -346,6 +367,7 @@ function BatchStylePopover({
             <div className="grid grid-cols-2 gap-1">
               {BATCH_THEME_OPTIONS.map(opt => {
                 const isSelected = batch.colorTheme === opt.value
+                const hasPreview = opt.value !== undefined && opt.value !== 'none' && opt.value !== 'custom'
                 return (
                   <button
                     key={opt.value ?? '_global'}
@@ -362,7 +384,20 @@ function BatchStylePopover({
                     }`}
                   >
                     <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
-                    {opt.label}
+                    <span className="flex-1">{opt.label}</span>
+                    {hasPreview && (
+                      <span
+                        className={`shrink-0 transition-colors ${hoveredPreview?.type === 'theme' && hoveredPreview.value === opt.value ? 'text-stone-200' : 'text-stone-600 hover:text-stone-400'}`}
+                        onMouseEnter={e => { e.stopPropagation(); setHoveredPreview({ type: 'theme', value: opt.value! }) }}
+                        onMouseLeave={() => setHoveredPreview(null)}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -414,10 +449,13 @@ function BatchStylePopover({
               {BATCH_ACCENT_OPTIONS.map(opt => {
                 const key = opt.value === undefined ? '_global' : opt.value === null ? '_none' : opt.value
                 const isSelected = batch.accentFolder === opt.value
+                const hasPreview = typeof opt.value === 'string'
                 return (
                   <button
                     key={key}
                     onClick={() => onChange({ accentFolder: opt.value })}
+                    onMouseEnter={hasPreview ? () => setHoveredPreview({ type: 'accent', value: opt.value as string }) : undefined}
+                    onMouseLeave={hasPreview ? () => setHoveredPreview(null) : undefined}
                     className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition ${
                       isSelected
                         ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
