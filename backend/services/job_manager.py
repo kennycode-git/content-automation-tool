@@ -23,6 +23,8 @@ from typing import Dict, List, Optional
 
 # Limit concurrent pipelines to avoid OOM on Railway's 512MB instance.
 # Each pipeline peaks at ~150-200MB (downloads + grading + ffmpeg).
+# At 512MB, base Python/FastAPI uses ~100-150MB leaving ~350MB headroom —
+# only 1 pipeline fits safely. Raise to 2 if upgraded to a 1GB+ instance.
 # Initialized lazily on first use so it binds to the running event loop.
 _pipeline_semaphore: asyncio.Semaphore | None = None
 
@@ -30,7 +32,7 @@ _pipeline_semaphore: asyncio.Semaphore | None = None
 def _get_semaphore() -> asyncio.Semaphore:
     global _pipeline_semaphore
     if _pipeline_semaphore is None:
-        _pipeline_semaphore = asyncio.Semaphore(2)
+        _pipeline_semaphore = asyncio.Semaphore(1)
     return _pipeline_semaphore
 
 import queue as _q_mod
