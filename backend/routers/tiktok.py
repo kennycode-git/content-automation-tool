@@ -113,7 +113,7 @@ async def disconnect_account(account_id: str, user_id: str = Depends(get_current
 
 @router.post("/tiktok/schedule", status_code=201)
 async def schedule_post(req: SchedulePostRequest, user_id: str = Depends(get_current_user_id)):
-    if req.scheduled_at <= datetime.now(timezone.utc):
+    if not req.draft_mode and req.scheduled_at <= datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="scheduled_at must be in the future.")
 
     supabase = get_client()

@@ -129,7 +129,8 @@ export default function Schedule({ session }: Props) {
   }
 
   function handleSchedule(draftMode: boolean) {
-    if (!selectedJobId || !selectedAccountId || !scheduledAt) return
+    if (!selectedJobId || !selectedAccountId) return
+    if (!draftMode && !scheduledAt) return
     const pendingTag = hashtagInput.trim().replace(/^#/, '')
     const allHashtags = pendingTag && !hashtags.includes(pendingTag)
       ? [...hashtags, pendingTag]
@@ -140,7 +141,7 @@ export default function Schedule({ session }: Props) {
       caption,
       hashtags: allHashtags,
       privacy_level: privacyLevel,
-      scheduled_at: new Date(scheduledAt).toISOString(),
+      scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : new Date().toISOString(),
       draft_mode: draftMode,
     })
   }
