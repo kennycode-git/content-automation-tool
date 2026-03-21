@@ -29,6 +29,7 @@ interface Props {
   settings: VideoSettings
   imageSource: 'auto' | 'unsplash' | 'pexels' | 'both'
   accentFolder: string | null
+  autoMaxPerQuery: number
   onSettingsChange: (s: VideoSettings) => void
   onImageSourceChange: (v: 'auto' | 'unsplash' | 'pexels' | 'both') => void
   onAccentFolderChange: (v: string | null) => void
@@ -40,6 +41,7 @@ export default function AdvancedModal({
   settings,
   imageSource,
   accentFolder,
+  autoMaxPerQuery,
   onSettingsChange,
   onImageSourceChange,
   onAccentFolderChange,
@@ -145,7 +147,20 @@ export default function AdvancedModal({
         <div>
           <div className="mb-1 flex items-center justify-between">
             <span className="text-xs text-stone-400">Max images per query</span>
-            <span className="text-xs font-mono text-stone-300">{settings.max_per_query}</span>
+            <div className="flex items-center gap-2">
+              {settings.max_per_query === autoMaxPerQuery ? (
+                <span className="text-[10px] text-amber-500/80 bg-amber-500/10 px-1.5 py-0.5 rounded">Auto</span>
+              ) : (
+                <button
+                  onClick={() => update({ max_per_query: autoMaxPerQuery })}
+                  className="text-[10px] text-stone-500 hover:text-amber-400 transition"
+                  title={`Reset to auto (${autoMaxPerQuery})`}
+                >
+                  Reset to auto ({autoMaxPerQuery})
+                </button>
+              )}
+              <span className="text-xs font-mono text-stone-300">{settings.max_per_query}</span>
+            </div>
           </div>
           <input
             type="range"

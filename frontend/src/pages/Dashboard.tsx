@@ -157,6 +157,21 @@ export default function Dashboard({ session }: Props) {
     try { localStorage.setItem('cogito_minimized_jobs', JSON.stringify([...minimizedJobs])) } catch { /* ignore */ }
   }, [minimizedJobs])
 
+  // Auto-compute max_per_query so at least 75% of the target image count is reachable.
+  // Only updates when the user hasn't manually overridden (tracked via autoMaxPerQuery ref).
+  const autoMaxPerQueryRef = useRef<number>(DEFAULT_SETTINGS.max_per_query)
+  useEffect(() => {
+    const totalTerms = batches.reduce((sum, b) => sum + b.terms.length, 0)
+    if (totalTerms === 0) return
+    const targetImages = Math.ceil(settings.total_seconds / settings.seconds_per_image)
+    const needed = Math.ceil(targetImages * 0.75)
+    const auto = Math.min(30, Math.max(3, Math.ceil(needed / totalTerms)))
+    if (auto !== autoMaxPerQueryRef.current) {
+      autoMaxPerQueryRef.current = auto
+      setSettings(prev => ({ ...prev, max_per_query: auto }))
+    }
+  }, [batches, settings.total_seconds, settings.seconds_per_image])
+
   // Browser notifications
   function requestNotificationPermission() {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -857,6 +872,7 @@ export default function Dashboard({ session }: Props) {
           settings={settings}
           imageSource={imageSource}
           accentFolder={accentFolder}
+          autoMaxPerQuery={autoMaxPerQueryRef.current}
           onSettingsChange={s => { setSettings(s); setAppliedPresetName(null) }}
           onImageSourceChange={v => setImageSource(v)}
           onAccentFolderChange={setAccentFolder}
