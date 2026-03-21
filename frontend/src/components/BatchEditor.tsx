@@ -261,6 +261,8 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           justifyContent: pos.justify,
           border: '1px solid #333',
           flexShrink: 0,
+          padding: margin,
+          boxSizing: 'border-box',
         }}
       >
         <div
@@ -270,8 +272,8 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
             fontSize,
             lineHeight: 1.25,
             textAlign: (ov.alignment ?? 'center') as CanvasTextAlign,
-            margin,
-            maxWidth: PREVIEW_W - margin * 2,
+            width: 'fit-content',
+            maxWidth: '100%',
             wordBreak: 'break-word',
             whiteSpace: 'pre-wrap',
             ...(ov.background_box
