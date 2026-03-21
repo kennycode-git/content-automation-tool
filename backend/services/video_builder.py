@@ -54,20 +54,22 @@ COLOR_MAP: Dict[str, str] = {
 
 def _escape_drawtext(text: str) -> str:
     """
-    Return a double-quoted FFmpeg filter option value for the drawtext text= option.
+    Escape a single line of text for the ffmpeg drawtext text= option.
 
-    Double-quoting means ' and : are safe without escaping.
-    Only \\ (backslash), \" (double-quote), and %% (drawtext format specifier) need escaping.
-    This avoids the bug where \\' is misinterpreted by FFmpeg's option parser as starting
-    a single-quoted section, causing the rest of the filter options to be silently swallowed.
+    ' (apostrophe) is replaced with the Unicode RIGHT SINGLE QUOTATION MARK (U+2019)
+    which is visually identical but not treated as a quoting delimiter by ffmpeg's
+    filter option parser — avoiding the bug where ' triggers single-quote mode and
+    silently swallows the rest of the filter options.
+    Double-quote wrapping is NOT used: ffmpeg does not treat "..." as a quoting
+    mechanism in filter option values, so the quotes would appear literally in the video.
     """
-    escaped = (
+    return (
         text
         .replace("\\", "\\\\")
-        .replace('"', '\\"')
+        .replace("'", "\u2019")   # ' → ' (RIGHT SINGLE QUOTATION MARK, visually identical)
+        .replace(":", "\\:")
         .replace("%", "%%")
     )
-    return f'"{escaped}"'
 
 
 def _drawtext_xy(position: str, width: int, height: int) -> tuple[str, str]:
