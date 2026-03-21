@@ -444,10 +444,11 @@ export default function Schedule({ session }: Props) {
               Open TikTok, tap the <span className="text-stone-200 font-medium">Inbox</span> icon, and look for a message from PassiveClip in <span className="text-stone-200 font-medium">System Notifications</span>.
             </p>
 
-            {/* Placeholder for screenshot */}
-            <div className="w-full rounded-xl bg-stone-800 border border-stone-700 flex items-center justify-center text-stone-600 text-xs py-16">
-              Screenshot coming soon
-            </div>
+            <img
+              src="/inbox_passiveclip.jpeg"
+              alt="TikTok System Notifications showing PassiveClip video ready"
+              className="w-full rounded-xl border border-stone-700"
+            />
           </div>
         </div>
       )}
