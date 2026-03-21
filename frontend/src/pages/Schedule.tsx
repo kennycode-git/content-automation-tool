@@ -44,6 +44,7 @@ export default function Schedule({ session }: Props) {
   const [privacyLevel, setPrivacyLevel] = useState('PUBLIC_TO_EVERYONE')
   const [scheduledAt, setScheduledAt] = useState('')
   const [scheduleTab, setScheduleTab] = useState<'upcoming' | 'history'>('upcoming')
+  const [showInboxInfo, setShowInboxInfo] = useState(false)
 
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
     if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -345,6 +346,14 @@ export default function Schedule({ session }: Props) {
                 {scheduleMutation.isPending ? 'Saving…' : 'Send to Inbox'}
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowInboxInfo(true)}
+              className="w-full text-center text-xs text-stone-500 hover:text-stone-300 transition mt-1"
+            >
+              Where will I see my post? →
+            </button>
           </form>
         </section>
 
@@ -406,6 +415,40 @@ export default function Schedule({ session }: Props) {
           }`}
         >
           {toast.msg}
+        </div>
+      )}
+
+      {/* Inbox info modal */}
+      {showInboxInfo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowInboxInfo(false)}
+        >
+          <div
+            className="relative bg-stone-900 border border-stone-700 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowInboxInfo(false)}
+              className="absolute top-4 right-4 text-stone-500 hover:text-stone-300 transition"
+              aria-label="Close"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <h3 className="text-sm font-semibold text-stone-100 mb-1">Where will my post appear?</h3>
+            <p className="text-xs text-stone-400 leading-relaxed mb-4">
+              When you send a video to inbox, TikTok delivers it as a notification to your account.
+              Open TikTok, tap the <span className="text-stone-200 font-medium">Inbox</span> icon, and look for a message from <span className="text-stone-200 font-medium">PassiveClip</span> — your video will be ready to review and publish directly from there.
+            </p>
+
+            {/* Placeholder for screenshot */}
+            <div className="w-full rounded-xl bg-stone-800 border border-stone-700 flex items-center justify-center text-stone-600 text-xs py-16">
+              Screenshot coming soon
+            </div>
+          </div>
         </div>
       )}
     </div>
