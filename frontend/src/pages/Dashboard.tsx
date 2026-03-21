@@ -275,12 +275,21 @@ export default function Dashboard({ session }: Props) {
     submittingRef.current = true
     setSubmitting(true)
     const themesToRun = VARIANT_THEMES.filter(t => checkedThemes.has(t.value))
-    const totalJobs = validBatches.length * themesToRun.length
+    // totalJobs varies per batch when a batch has its own theme not already in the checked set
+    const totalJobs = validBatches.reduce((sum, batch) => {
+      const hasExtra = batch.color_theme && !checkedThemes.has(batch.color_theme)
+      return sum + themesToRun.length + (hasExtra ? 1 : 0)
+    }, 0)
     setPendingCount(prev => prev + totalJobs)
     try {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of validBatches) {
         setVariantStatus(batch.title ? `Queuing variants for "${batch.title}"…` : 'Queuing variants…')
+        // Include the batch's own theme override as an extra variant if not already checked
+        const batchExtra = (batch.color_theme && !checkedThemes.has(batch.color_theme))
+          ? (VARIANT_THEMES.find(t => t.value === batch.color_theme) ?? { value: batch.color_theme, label: batch.color_theme })
+          : null
+        const effectiveThemes = batchExtra ? [...themesToRun, batchExtra] : themesToRun
         const res = await generateVariants({
           search_terms: batch.terms,
           resolution: settings.resolution,
@@ -290,10 +299,10 @@ export default function Dashboard({ session }: Props) {
           allow_repeats: settings.allow_repeats,
           max_per_query: settings.max_per_query,
           batch_title: batch.title ?? null,
-          themes: themesToRun.map(t => t.value),
+          themes: effectiveThemes.map(t => t.value),
         })
         res.job_ids.forEach((jobId, i) => {
-          const theme = themesToRun[i]
+          const theme = effectiveThemes[i]
           const title = batch.title ? `${batch.title} · ${theme.label}` : theme.label
           submitted.push({ jobId, title })
         })
