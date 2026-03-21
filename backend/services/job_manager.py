@@ -32,7 +32,9 @@ _pipeline_semaphore: asyncio.Semaphore | None = None
 def _get_semaphore() -> asyncio.Semaphore:
     global _pipeline_semaphore
     if _pipeline_semaphore is None:
-        _pipeline_semaphore = asyncio.Semaphore(1)
+        concurrency = int(os.environ.get("PIPELINE_CONCURRENCY", "1"))
+        _pipeline_semaphore = asyncio.Semaphore(concurrency)
+        logger.info("Pipeline semaphore initialised: max_concurrency=%d", concurrency)
     return _pipeline_semaphore
 
 import queue as _q_mod
