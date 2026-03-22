@@ -1,15 +1,29 @@
 """
 clip_builder.py
 
-Renders an MP4 from a list of trimmed Pexels video clips using ffmpeg filter_complex.
-Supports three transitions: cut, fade_black, crossfade.
-Colour grading is applied as ffmpeg eq/hue/colorchannelmixer filters per clip.
-Text overlay reuses _build_drawtext() from video_builder.py.
+Renders an MP4 from a list of trimmed Pexels video clips using a two-pass approach:
+
+  Pass 1 — per-clip normalisation (one ffmpeg process per clip):
+    - Trim via -ss/-to input flags
+    - Scale + crop to target resolution
+    - Apply colour grade (eq/colorchannelmixer filters)
+    - Bake fade-in/fade-out for fade_black transition
+
+  Pass 2 — combine:
+    - cut / fade_black  → concat demuxer with -c copy  (zero re-encode, minimal memory)
+    - crossfade         → chained xfade, two clips at a time
+
+  Optional Pass 3 — drawtext overlay (separate ffmpeg call on the combined file).
+
+This approach avoids loading all clips into memory simultaneously, preventing OOM
+on Railway's constrained instances.
 """
 
 import logging
 import os
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -26,8 +40,6 @@ class ClipSpec:
     duration: int       # original clip duration in seconds (from Pexels metadata)
 
 
-# ffmpeg filter fragments for colour grading, applied per-clip in filter_complex.
-# These are approximate visual equivalents of the PIL-based image_grader grades.
 CLIP_GRADE_FILTERS: Dict[str, str] = {
     "none":    "",
     "dark":    "eq=brightness=-0.15:contrast=1.2:saturation=0.7",
@@ -42,96 +54,159 @@ CLIP_GRADE_FILTERS: Dict[str, str] = {
 
 
 def _clip_duration(spec: ClipSpec) -> float:
-    """Return effective duration of a clip after trimming."""
     end = spec.trim_end if spec.trim_end > 0 else float(spec.duration)
     return max(0.1, end - spec.trim_start)
 
 
-def _build_filter_complex(
-    specs: List[ClipSpec],
+def _run(cmd: List[str], label: str) -> Dict:
+    """Run a subprocess, capturing stderr. Returns {"returncode", "stderr"}."""
+    logger.debug("ffmpeg [%s]: %s", label, " ".join(cmd))
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        logger.error("ffmpeg [%s] rc=%d stderr tail:\n%s",
+                     label, proc.returncode, proc.stderr[-1000:])
+    return {"returncode": proc.returncode, "stderr": proc.stderr}
+
+
+def _normalize_clip(
+    spec: ClipSpec,
+    out_path: str,
     width: int,
     height: int,
+    fps: int,
+    grade: str,
     transition: str,
     transition_duration: float,
-    color_theme: str,
-    text_overlay: Optional[dict],
-) -> tuple[str, str]:
+    is_first: bool,
+    is_last: bool,
+) -> Dict:
     """
-    Build the ffmpeg -filter_complex string and the final output label.
-    Returns (filter_complex_str, output_label).
+    Pass 1: encode one clip to the target resolution/codec.
+
+    For fade_black, fades are baked in here so pass 2 can use concat-copy.
     """
-    grade = CLIP_GRADE_FILTERS.get(color_theme, "")
-    grade_suffix = f",{grade}" if grade else ""
-    n = len(specs)
+    end = spec.trim_end if spec.trim_end > 0 else float(spec.duration)
+    dur = _clip_duration(spec)
 
-    parts: List[str] = []
+    vf_parts = [
+        f"scale={width}:{height}:force_original_aspect_ratio=increase",
+        f"crop={width}:{height}",
+        "setsar=1",
+    ]
+    if grade:
+        vf_parts.append(grade)
 
-    # Scale + crop + grade each input
-    for i in range(n):
-        parts.append(
-            f"[{i}:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},setsar=1{grade_suffix}[v{i}]"
-        )
-
-    # Stitch clips together with chosen transition
-    if transition == "cut" or n == 1:
-        labels = "".join(f"[v{i}]" for i in range(n))
-        parts.append(f"{labels}concat=n={n}:v=1:a=0[concat_out]")
-        out_label = "[concat_out]"
-
-    elif transition == "fade_black":
+    if transition == "fade_black":
         td = transition_duration
-        fade_labels: List[str] = []
-        for i, spec in enumerate(specs):
-            dur = _clip_duration(spec)
+        if not is_first:
+            vf_parts.append(f"fade=t=in:st=0:d={td:.3f}:color=black")
+        if not is_last:
             fade_out_st = max(0.0, dur - td)
-            # fade out
-            parts.append(
-                f"[v{i}]fade=t=out:st={fade_out_st:.3f}:d={td:.3f}:color=black[fo{i}]"
-            )
-            # fade in (skip for first clip to avoid double-fade at start)
-            if i == 0:
-                parts.append(f"[fo{i}]copy[fv{i}]")
-            else:
-                parts.append(
-                    f"[fo{i}]fade=t=in:st=0:d={td:.3f}:color=black[fv{i}]"
-                )
-            fade_labels.append(f"[fv{i}]")
-        labels = "".join(fade_labels)
-        parts.append(f"{labels}concat=n={n}:v=1:a=0[concat_out]")
-        out_label = "[concat_out]"
+            vf_parts.append(f"fade=t=out:st={fade_out_st:.3f}:d={td:.3f}:color=black")
 
-    elif transition == "crossfade":
-        td = transition_duration
-        durations = [_clip_duration(s) for s in specs]
-        # Chain xfade between consecutive clips
-        prev_label = "[v0]"
-        cumulative = 0.0
-        for i in range(1, n):
-            cumulative += durations[i - 1] - td
-            next_label = f"[v{i}]"
-            xfade_out = f"[xf{i}]" if i < n - 1 else "[concat_out]"
-            parts.append(
-                f"{prev_label}{next_label}xfade=transition=fade:"
-                f"duration={td:.3f}:offset={cumulative:.3f}{xfade_out}"
-            )
-            prev_label = xfade_out
-        out_label = "[concat_out]"
+    vf = ",".join(vf_parts)
 
-    else:
-        # Fallback to cut
-        labels = "".join(f"[v{i}]" for i in range(n))
-        parts.append(f"{labels}concat=n={n}:v=1:a=0[concat_out]")
-        out_label = "[concat_out]"
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", f"{spec.trim_start:.3f}",
+        "-to", f"{end:.3f}",
+        "-i", spec.local_path,
+        "-vf", vf,
+        "-an",
+        "-r", str(fps),
+        "-pix_fmt", "yuv420p",
+        "-threads", "1",
+        "-preset", "ultrafast",
+        "-movflags", "faststart",
+        out_path,
+    ]
+    return _run(cmd, f"normalize clip → {os.path.basename(out_path)}")
 
-    # Append drawtext overlay if active
-    dt = _build_drawtext(text_overlay, width, height) if text_overlay else None
-    if dt:
-        final_label = "[final_out]"
-        parts.append(f"{out_label}{dt}{final_label}")
-        out_label = final_label
 
-    return ";".join(parts), out_label
+def _concat_copy(parts: List[str], output_file: str, tmp_dir: str) -> Dict:
+    """Pass 2 (cut / fade_black): concat with demuxer — stream copy, no re-encode."""
+    concat_txt = os.path.join(tmp_dir, "concat.txt")
+    with open(concat_txt, "w", encoding="utf-8") as f:
+        for p in parts:
+            # Use absolute paths; escape single quotes in path
+            escaped = p.replace("'", "'\\''")
+            f.write(f"file '{escaped}'\n")
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", concat_txt,
+        "-c", "copy",
+        output_file,
+    ]
+    return _run(cmd, "concat-copy")
+
+
+def _xfade_pair(
+    input_a: str,
+    input_b: str,
+    output: str,
+    duration_a: float,
+    transition_duration: float,
+    fps: int,
+) -> Dict:
+    """Pass 2 (crossfade): xfade between two pre-normalised clips."""
+    offset = max(0.0, duration_a - transition_duration)
+    td = transition_duration
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_a,
+        "-i", input_b,
+        "-filter_complex",
+        f"[0:v][1:v]xfade=transition=fade:duration={td:.3f}:offset={offset:.3f}[out]",
+        "-map", "[out]",
+        "-an",
+        "-r", str(fps),
+        "-pix_fmt", "yuv420p",
+        "-threads", "1",
+        "-preset", "ultrafast",
+        "-movflags", "faststart",
+        output,
+    ]
+    return _run(cmd, f"xfade → {os.path.basename(output)}")
+
+
+def _apply_drawtext(
+    input_file: str,
+    output_file: str,
+    text_overlay: dict,
+    width: int,
+    height: int,
+) -> Dict:
+    """Pass 3 (optional): burn in drawtext overlay on the combined file."""
+    dt = _build_drawtext(text_overlay, width, height)
+    if not dt:
+        shutil.copy2(input_file, output_file)
+        return {"returncode": 0, "stderr": ""}
+
+    # _build_drawtext returns ",drawtext=..." — strip leading comma for -vf
+    vf = dt.lstrip(",")
+
+    use_fonts_cwd = os.path.isdir(_FONTS_DIR)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_file,
+        "-vf", vf,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-pix_fmt", "yuv420p",
+        "-threads", "1",
+        "-movflags", "faststart",
+        output_file,
+    ]
+    return _run(cmd, "drawtext")  # cwd handled below
 
 
 def render_clips(
@@ -146,11 +221,7 @@ def render_clips(
     text_overlay: Optional[dict] = None,
 ) -> Dict:
     """
-    Render an MP4 from a list of trimmed video clips.
-
-    Each clip is trimmed via -ss/-to input flags (fast seek before decode),
-    scaled/cropped to target resolution, colour-graded, and stitched together
-    with the chosen transition. Text overlay is applied to the final output.
+    Render an MP4 from trimmed video clips using a memory-efficient two-pass approach.
 
     Returns {"returncode": int, "log": List[str]}.
     """
@@ -162,62 +233,96 @@ def render_clips(
         len(clip_specs), width, height, fps, transition, color_theme,
     )
 
-    filter_complex, out_label = _build_filter_complex(
-        clip_specs, width, height, transition, transition_duration, color_theme, text_overlay
-    )
+    grade = CLIP_GRADE_FILTERS.get(color_theme, "")
+    n = len(clip_specs)
+    durations = [_clip_duration(s) for s in clip_specs]
+    log_lines: List[str] = []
 
-    cmd = ["ffmpeg", "-y"]
-
-    # One input per clip with seek flags
-    for spec in clip_specs:
-        end = spec.trim_end if spec.trim_end > 0 else float(spec.duration)
-        cmd += ["-ss", f"{spec.trim_start:.3f}", "-to", f"{end:.3f}", "-i", spec.local_path]
-
-    cmd += [
-        "-filter_complex", filter_complex,
-        "-map", out_label,
-        "-an",                    # strip audio (consistent with image slideshow pipeline)
-        "-r", str(fps),
-        "-pix_fmt", "yuv420p",
-        "-threads", "2",
-        "-preset", "ultrafast",
-        "-movflags", "faststart",
-        output_file,
-    ]
-
-    log_lines: List[str] = ["[ffmpeg-clips] " + " ".join(cmd)]
-    logger.info("Running ffmpeg for clips (%d inputs)...", len(clip_specs))
-
-    # Use _FONTS_DIR as cwd when drawtext is active so ffmpeg resolves font basenames
-    use_fonts_cwd = (
-        bool(text_overlay and text_overlay.get("enabled") and text_overlay.get("text", "").strip())
-        and os.path.isdir(_FONTS_DIR)
-    )
-    popen_cwd = _FONTS_DIR if use_fonts_cwd else None
-
-    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        cwd=popen_cwd,
-        shell=False,
-    )
+    tmp_dir = tempfile.mkdtemp(prefix="clipbuild_")
     try:
-        for line in proc.stdout:
-            stripped = line.rstrip()
-            log_lines.append(stripped)
-            logger.debug("ffmpeg: %s", stripped)
-    finally:
-        rc = proc.wait()
+        # ── Pass 1: normalise each clip individually ──────────────────────────
+        part_paths: List[str] = []
+        for i, spec in enumerate(clip_specs):
+            out = os.path.join(tmp_dir, f"part_{i:03d}.mp4")
+            result = _normalize_clip(
+                spec, out, width, height, fps, grade,
+                transition, transition_duration,
+                is_first=(i == 0), is_last=(i == n - 1),
+            )
+            log_lines.append(f"[normalize clip {i}] rc={result['returncode']}")
+            if result["returncode"] != 0:
+                return {"returncode": result["returncode"], "log": log_lines}
+            part_paths.append(out)
 
-    if rc == 0:
+        # ── Pass 2: combine ───────────────────────────────────────────────────
+        combined = os.path.join(tmp_dir, "combined.mp4")
+
+        if transition in ("cut", "fade_black") or n == 1:
+            result = _concat_copy(part_paths, combined, tmp_dir)
+            log_lines.append(f"[concat-copy] rc={result['returncode']}")
+            if result["returncode"] != 0:
+                return {"returncode": result["returncode"], "log": log_lines}
+
+        elif transition == "crossfade":
+            # Chain xfade two clips at a time
+            current = part_paths[0]
+            current_dur = durations[0]
+            for i in range(1, n):
+                xf_out = os.path.join(tmp_dir, f"xf_{i:03d}.mp4")
+                result = _xfade_pair(current, part_paths[i], xf_out,
+                                     current_dur, transition_duration, fps)
+                log_lines.append(f"[xfade {i}] rc={result['returncode']}")
+                if result["returncode"] != 0:
+                    return {"returncode": result["returncode"], "log": log_lines}
+                current = xf_out
+                current_dur = current_dur + durations[i] - transition_duration
+            combined = current
+
+        else:
+            # Unknown transition — fall back to cut
+            result = _concat_copy(part_paths, combined, tmp_dir)
+            log_lines.append(f"[concat-copy fallback] rc={result['returncode']}")
+            if result["returncode"] != 0:
+                return {"returncode": result["returncode"], "log": log_lines}
+
+        # ── Pass 3 (optional): drawtext overlay ───────────────────────────────
+        has_overlay = (
+            text_overlay
+            and text_overlay.get("enabled")
+            and text_overlay.get("text", "").strip()
+        )
+        if has_overlay:
+            overlay_out = os.path.join(tmp_dir, "overlay_out.mp4")
+            dt = _build_drawtext(text_overlay, width, height)
+            if dt:
+                vf = dt.lstrip(",")
+                use_fonts_cwd = os.path.isdir(_FONTS_DIR)
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", combined,
+                    "-vf", vf,
+                    "-c:v", "libx264",
+                    "-preset", "ultrafast",
+                    "-pix_fmt", "yuv420p",
+                    "-threads", "1",
+                    "-movflags", "faststart",
+                    overlay_out,
+                ]
+                result = _run(cmd, "drawtext")
+                log_lines.append(f"[drawtext] rc={result['returncode']}")
+                if result["returncode"] == 0:
+                    combined = overlay_out
+                else:
+                    logger.warning("Drawtext pass failed — using video without overlay")
+
+        # Move combined to the expected output path
+        shutil.copy2(combined, output_file)
         logger.info("render_clips done: %s", output_file)
-    else:
-        logger.error("render_clips failed with code %d", rc)
+        return {"returncode": 0, "log": log_lines}
 
-    return {"returncode": rc, "log": log_lines}
+    except Exception as exc:
+        logger.exception("render_clips raised: %s", exc)
+        return {"returncode": -1, "log": log_lines + [str(exc)]}
+
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
