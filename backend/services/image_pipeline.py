@@ -270,6 +270,7 @@ def _download_one(fid: str, url: str, dest_dir: Path, tw: int, th: int) -> bool:
         img = Image.open(BytesIO(r.content)).convert("RGB")
         img = resize_cover(img, tw, th)
         img.save(out, "JPEG", quality=92, optimize=True)
+        img.close()
         return True
     except Exception as e:
         logger.error("skip %s: %s", fid, e)

@@ -31,6 +31,35 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def _recover_stuck_jobs() -> None:
+    """
+    On startup, mark any jobs still in 'running' or 'queued' state as failed.
+    These are jobs that were in-flight when the process was killed (OOM, deploy, crash).
+    Called once during lifespan startup — safe because no background tasks are running yet.
+    """
+    try:
+        from db.supabase_client import get_client
+        from datetime import datetime, timezone
+        client = get_client()
+        now = datetime.now(timezone.utc).isoformat()
+        for stuck_status in ("running", "queued"):
+            result = (
+                client.table("jobs")
+                .update({
+                    "status": "failed",
+                    "error_message": "Server restarted mid-job — please try again.",
+                    "completed_at": now,
+                })
+                .eq("status", stuck_status)
+                .execute()
+            )
+            count = len(result.data) if result.data else 0
+            if count:
+                logger.warning("Recovered %d '%s' job(s) interrupted by previous crash/restart", count, stuck_status)
+    except Exception as exc:
+        logger.warning("Startup job recovery failed (non-fatal): %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Validate critical env vars at startup — fail fast rather than at request time.
@@ -43,6 +72,7 @@ async def lifespan(app: FastAPI):
         else:
             raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
     logger.info("Cogito SaaS backend starting up")
+    await _recover_stuck_jobs()
     yield
     logger.info("Cogito SaaS backend shutting down")
 

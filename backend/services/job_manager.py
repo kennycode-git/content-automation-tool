@@ -21,10 +21,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-# Limit concurrent pipelines to avoid OOM on Railway's 512MB instance.
-# Each pipeline peaks at ~150-200MB (downloads + grading + ffmpeg).
-# At 512MB, base Python/FastAPI uses ~100-150MB leaving ~350MB headroom —
-# only 1 pipeline fits safely. Raise to 2 if upgraded to a 1GB+ instance.
+# Limit concurrent pipelines to avoid OOM.
+# Each pipeline peaks at ~200-250MB (downloads + grading + ffmpeg).
+# Base Python/FastAPI uses ~150MB. With these changes (4 download workers,
+# sequential grading), a single pipeline fits in ~400MB headroom.
+# Set PIPELINE_CONCURRENCY=2 on Railway Pro (1GB+ plan) to allow two parallel jobs.
 # Initialized lazily on first use so it binds to the running event loop.
 _pipeline_semaphore: asyncio.Semaphore | None = None
 
@@ -205,6 +206,7 @@ def _copy_uploaded_images(paths: List[str], dest_dir: str, width: int, height: i
             img = img.crop((left, top, left + width, top + height))
             out_path = os.path.join(dest_dir, f"upload_{i:04d}.jpg")
             img.save(out_path, "JPEG", quality=90)
+            img.close()
             return True
         except Exception as e:
             logger.warning("Failed to copy uploaded image %s: %s", path, e)
@@ -258,6 +260,7 @@ def _download_accent_images(folder: str, dest_dir: str, width: int, height: int,
             img = img.crop((left, top, left + width, top + height))
             out_path = os.path.join(dest_dir, f"{file_prefix}_{i:04d}.jpg")
             img.save(out_path, "JPEG", quality=90)
+            img.close()
             saved += 1
         except Exception as e:
             logger.warning("Failed to download accent image %s: %s", path, e)
@@ -352,7 +355,7 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
                         unsplash_items, _ = await asyncio.gather(
                             asyncio.to_thread(_do_unsplash_fetch),
                             asyncio.to_thread(download_from_queue, q, images_dir, width, height,
-                                              total_found, 8, progress_cb),
+                                              total_found, 4, progress_cb),
                         )
                         items.extend(unsplash_items)
                         all_preview_thumbs.extend(preview_thumbs)
@@ -412,7 +415,7 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
                             pexels_items, _ = await asyncio.gather(
                                 asyncio.to_thread(_do_pexels_fetch),
                                 asyncio.to_thread(download_from_queue, q2, images_dir, width, height,
-                                                  total_found2, 8, progress_cb2),
+                                                  total_found2, 4, progress_cb2),
                             )
                             items.extend(pexels_items)
                             all_preview_thumbs.extend(preview_thumbs2)
@@ -619,7 +622,7 @@ async def _run_variants_pipeline_inner(
             try:
                 items, _ = await asyncio.gather(
                     asyncio.to_thread(_do_fetch),
-                    asyncio.to_thread(download_from_queue, q, shared_images_dir, width, height, total_found, 8),
+                    asyncio.to_thread(download_from_queue, q, shared_images_dir, width, height, total_found, 4),
                 )
                 break
             except RateLimitError as e:
@@ -636,13 +639,11 @@ async def _run_variants_pipeline_inner(
         if not items:
             raise RuntimeError("No images returned for the given search terms.")
 
-        # --- Phase A: Grade all themes in parallel ---
-        for jid in job_ids:
-            await update_job_status(jid, user_id, "running", db, progress_message="Applying colour grade…")
-
+        # --- Phase A: Grade all themes sequentially (parallel would spike N×peak RAM) ---
         variant_info = []
-        grade_coros = []
+        grade_results = []
         for job_id, theme in zip(job_ids, themes):
+            await update_job_status(job_id, user_id, "running", db, progress_message="Applying colour grade…")
             variant_tmp = os.path.join(tmp_root, f"v_{job_id[:8]}")
             os.makedirs(variant_tmp, exist_ok=True)
             graded_dir = os.path.join(variant_tmp, "graded")
@@ -657,10 +658,12 @@ async def _run_variants_pipeline_inner(
                 max_per_query=config.max_per_query,
                 batch_title=config.batch_title,
             )
-            grade_coros.append(asyncio.to_thread(apply_theme_grading, shared_images_dir, graded_dir, theme))
+            try:
+                result = await asyncio.to_thread(apply_theme_grading, shared_images_dir, graded_dir, theme)
+            except Exception as e:
+                result = e
+            grade_results.append(result)
             variant_info.append((job_id, theme, variant_config, variant_tmp))
-
-        grade_results = await asyncio.gather(*grade_coros, return_exceptions=True)
 
         # --- Phase B: Render + upload (sequential to cap ffmpeg memory) ---
         for i, (job_id, theme, variant_config, variant_tmp) in enumerate(variant_info):

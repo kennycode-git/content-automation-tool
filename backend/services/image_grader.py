@@ -299,6 +299,9 @@ def apply_theme_grading(images_dir: str, output_dir: str, theme: str, custom_par
                 out = img
 
             out.save(Path(output_dir) / p.name, "JPEG", quality=92, optimize=True)
+            if out is not img:
+                out.close()
+            img.close()
             logger.debug("Graded %s (theme=%s)", p.name, theme)
         except Exception as e:
             logger.warning("skip %s: %s", p.name, e)
