@@ -222,7 +222,7 @@ export default function OnboardingTour({ active, isFirstVisit, onClose, onOpenPr
             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-brand-500 shrink-0">
               <svg className="w-2.5 h-2.5 ml-0.5" viewBox="0 0 10 12" fill="white"><path d="M0 0l10 6-10 6z"/></svg>
             </span>
-            Watch tutorial (2 min)
+            Watch tutorial (5 min)
           </a>
 
           <div className="flex gap-3">
