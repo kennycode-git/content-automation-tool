@@ -53,7 +53,7 @@ class AdjustRendersBody(BaseModel):
 async def add_invite(body: InviteBody, request: Request):
     """Insert an email into trial_invites. Idempotent."""
     _check_key(request)
-    email = body.email.lower()
+    email = body.email.strip().lower()
     sb = get_client()
 
     existing = (
@@ -75,7 +75,7 @@ async def add_invite(body: InviteBody, request: Request):
 async def delete_invite(body: InviteBody, request: Request):
     """Remove an email from trial_invites."""
     _check_key(request)
-    email = body.email.lower()
+    email = body.email.strip().lower()
     sb = get_client()
     sb.table("trial_invites").delete().eq("email", email).execute()
     logger.info("Admin removed trial invite: %s", email)
