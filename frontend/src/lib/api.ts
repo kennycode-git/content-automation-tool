@@ -426,3 +426,71 @@ export async function cancelScheduledPost(id: string): Promise<void> {
     throw new Error(body.detail ?? `HTTP ${res.status}`)
   }
 }
+
+// ─── Video Clips ──────────────────────────────────────────────────────────────
+
+export interface ClipSearchResult {
+  id: string
+  duration: number
+  thumbnail: string
+  preview_url: string
+  download_url: string
+  width: number
+  height: number
+}
+
+export interface SelectedClip {
+  id: string
+  download_url: string
+  preview_url: string
+  thumbnail: string
+  duration: number
+  trim_start: number
+  trim_end: number   // 0 = use full clip duration
+}
+
+export interface ClipGenerateRequest {
+  clips: Array<{
+    id: string
+    download_url: string
+    trim_start: number
+    trim_end: number
+    duration: number
+  }>
+  resolution?: string
+  fps?: number
+  color_theme?: string
+  transition?: 'cut' | 'fade_black' | 'crossfade'
+  transition_duration?: number
+  batch_title?: string | null
+  text_overlay?: TextOverlayConfig | null
+}
+
+export async function fetchVideoClips(
+  terms: string[],
+  perTerm: number,
+  colorTheme: string,
+  signal?: AbortSignal,
+): Promise<{ clips: ClipSearchResult[] }> {
+  if (DEV_BYPASS) return { clips: [] }
+  const params = new URLSearchParams({
+    terms: terms.join(','),
+    per_term: String(perTerm),
+    color_theme: colorTheme,
+  })
+  const res = await fetch(`${API_URL}/api/clips/search?${params}`, {
+    headers: await authHeaders(),
+    signal,
+  })
+  return handleResponse<{ clips: ClipSearchResult[] }>(res)
+}
+
+export async function generateFromClips(req: ClipGenerateRequest): Promise<GenerateResponse> {
+  if (DEV_BYPASS) return { job_id: crypto.randomUUID(), status: 'queued' }
+  const res = await fetch(`${API_URL}/api/clips/generate`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<GenerateResponse>(res)
+}

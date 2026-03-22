@@ -11,12 +11,16 @@ import { useQuery } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 
 const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS === 'true'
-import { generateVideo, generateVariants, stagePreview, deleteJob, getUsage } from '../lib/api'
-import type { JobStatus, PreviewBatchResult, UsageInfo } from '../lib/api'
+import { generateVideo, generateVariants, stagePreview, deleteJob, getUsage, fetchVideoClips, generateFromClips } from '../lib/api'
+import type { JobStatus, PreviewBatchResult, UsageInfo, ClipSearchResult, SelectedClip } from '../lib/api'
 import BatchEditor from '../components/BatchEditor'
 import type { BatchOutput } from '../components/BatchEditor'
 import SettingsPanel from '../components/SettingsPanel'
 import type { VideoSettings, CustomGradeParams } from '../components/SettingsPanel'
+import ClipsSettingsPanel, { DEFAULT_CLIPS_SETTINGS } from '../components/ClipsSettingsPanel'
+import type { ClipsSettings } from '../components/ClipsSettingsPanel'
+import VideoClipSearch from '../components/VideoClipSearch'
+import ClipPreviewGrid from '../components/ClipPreviewGrid'
 import JobPanel from '../components/JobPanel'
 import RecentJobs from '../components/RecentJobs'
 import TermBundles from '../components/TermBundles'
@@ -29,6 +33,8 @@ import OnboardingTour, { TOUR_STORAGE_KEY } from '../components/OnboardingTour'
 import PromptModal from '../components/PromptModal'
 import AppNavbar from '../components/AppNavbar'
 import InspirationCarousel from '../components/InspirationCarousel'
+
+type ContentMode = 'images' | 'clips'
 
 interface Props {
   session: Session
@@ -83,6 +89,14 @@ export default function Dashboard({ session }: Props) {
   const [accentFolder, setAccentFolder] = useState<string | null>(null)
   const [philosopher] = useState<string | null>(null)
   const [gradePhilosopher] = useState(false)
+  const [contentMode, setContentMode] = useState<ContentMode>('images')
+  const [clipTerms, setClipTerms] = useState<string[]>([''])
+  const [clipsSettings, setClipsSettings] = useState<ClipsSettings>(DEFAULT_CLIPS_SETTINGS)
+  const [fetchedClips, setFetchedClips] = useState<ClipSearchResult[] | null>(null)
+  const [selectedClips, setSelectedClips] = useState<SelectedClip[]>([])
+  const [clipsSearching, setClipsSearching] = useState(false)
+  const [clipsGenerating, setClipsGenerating] = useState(false)
+  const [clipsError, setClipsError] = useState<string | null>(null)
   const [staging, setStaging] = useState(false)
   const [stagingError, setStagingError] = useState<string | null>(null)
   const [stagingUsedPexels, setStagingUsedPexels] = useState(false)
@@ -521,6 +535,91 @@ export default function Dashboard({ session }: Props) {
     }
   }, [settings, trialExpired, resolvedSource])
 
+  async function handleSearchClips() {
+    const terms = clipTerms.filter(t => t.trim())
+    if (terms.length === 0) { setClipsError('Enter at least one search term.'); return }
+    setClipsError(null)
+    setClipsSearching(true)
+    setFetchedClips(null)
+    setSelectedClips([])
+    try {
+      const res = await fetchVideoClips(terms, 5, clipsSettings.color_theme)
+      setFetchedClips(res.clips)
+      setSelectedClips(res.clips.map(c => ({
+        id: c.id,
+        download_url: c.download_url,
+        preview_url: c.preview_url,
+        thumbnail: c.thumbnail,
+        duration: c.duration,
+        trim_start: 0,
+        trim_end: 0,
+      })))
+    } catch (e: unknown) {
+      setClipsError(e instanceof Error ? e.message : 'Clip search failed')
+    } finally {
+      setClipsSearching(false)
+    }
+  }
+
+  async function handleGenerateClips(clips: SelectedClip[]) {
+    if (clips.length === 0) { setClipsError('Select at least one clip.'); return }
+    if (trialExpired) { setClipsError('Your trial has ended. Upgrade to continue generating.'); return }
+    setClipsError(null)
+    setClipsGenerating(true)
+    setPendingCount(prev => prev + 1)
+    try {
+      const batchTitle = clipTerms.filter(t => t.trim()).join(', ') || 'Video Clips'
+      const res = await generateFromClips({
+        clips: clips.map(c => ({
+          id: c.id,
+          download_url: c.download_url,
+          trim_start: c.trim_start,
+          trim_end: c.trim_end,
+          duration: c.duration,
+        })),
+        resolution: clipsSettings.resolution,
+        fps: clipsSettings.fps,
+        color_theme: clipsSettings.color_theme,
+        transition: clipsSettings.transition,
+        transition_duration: clipsSettings.transition_duration,
+        batch_title: batchTitle,
+      })
+      setActiveJobs(prev => [{ jobId: res.job_id, title: batchTitle }, ...prev])
+      setFetchedClips(null)
+      setSelectedClips([])
+    } catch (e: unknown) {
+      setClipsError(e instanceof Error ? e.message : 'Unknown error')
+      setPendingCount(prev => Math.max(0, prev - 1))
+    } finally {
+      setClipsGenerating(false)
+    }
+  }
+
+  async function handleAutoGenerateClips() {
+    const terms = clipTerms.filter(t => t.trim())
+    if (terms.length === 0) { setClipsError('Enter at least one search term.'); return }
+    if (trialExpired) { setClipsError('Your trial has ended. Upgrade to continue generating.'); return }
+    setClipsError(null)
+    setClipsSearching(true)
+    try {
+      const res = await fetchVideoClips(terms, 5, clipsSettings.color_theme)
+      const clips: SelectedClip[] = res.clips.map(c => ({
+        id: c.id,
+        download_url: c.download_url,
+        preview_url: c.preview_url,
+        thumbnail: c.thumbnail,
+        duration: c.duration,
+        trim_start: 0,
+        trim_end: 0,
+      }))
+      setClipsSearching(false)
+      await handleGenerateClips(clips)
+    } catch (e: unknown) {
+      setClipsError(e instanceof Error ? e.message : 'Clip search failed')
+      setClipsSearching(false)
+    }
+  }
+
   function toggleTheme(value: string) {
     setCheckedThemes(prev => {
       const next = new Set(prev)
@@ -589,23 +688,70 @@ export default function Dashboard({ session }: Props) {
           {/* Left column: batch editor + settings + generate */}
           <div className="lg:col-span-2">
 
+            {/* Mode tabs */}
+            <div className="flex gap-1 mb-5 border-b border-stone-800">
+              <button
+                onClick={() => setContentMode('images')}
+                className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-px ${
+                  contentMode === 'images'
+                    ? 'border-brand-500 text-brand-400'
+                    : 'border-transparent text-stone-500 hover:text-stone-300'}`}
+              >
+                Images
+              </button>
+              <button
+                onClick={() => setContentMode('clips')}
+                className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-px ${
+                  contentMode === 'clips'
+                    ? 'border-brand-500 text-brand-400'
+                    : 'border-transparent text-stone-500 hover:text-stone-300'}`}
+              >
+                Video Clips
+              </button>
+            </div>
+
             {/* Step 1 */}
             <div className="flex items-center gap-2 mb-2">
               <span className="rounded bg-brand-500/20 px-2 py-0.5 text-[10px] font-bold text-brand-400 tracking-wider">STEP 1</span>
               <span className="text-xs text-stone-500">Search terms</span>
             </div>
-            <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="batch-editor">
-              <TermBundles onLoad={bundles => setPendingBundles(bundles)} />
-              <hr className="border-stone-800 my-4" />
-              <BatchEditor
-                onBatchesChange={setBatches}
-                pendingReuse={pendingReuse}
-                onReuseHandled={() => setPendingReuse(null)}
-                pendingBundles={pendingBundles}
-                onBundlesHandled={() => setPendingBundles(null)}
-                onOpenPrompt={() => setShowPromptModal(true)}
-              />
-            </div>
+
+            {contentMode === 'images' ? (
+              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="batch-editor">
+                <TermBundles onLoad={bundles => setPendingBundles(bundles)} />
+                <hr className="border-stone-800 my-4" />
+                <BatchEditor
+                  onBatchesChange={setBatches}
+                  pendingReuse={pendingReuse}
+                  onReuseHandled={() => setPendingReuse(null)}
+                  pendingBundles={pendingBundles}
+                  onBundlesHandled={() => setPendingBundles(null)}
+                  onOpenPrompt={() => setShowPromptModal(true)}
+                />
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6">
+                <p className="text-xs text-stone-500 mb-3">Enter up to 3 search terms to find Pexels video clips.</p>
+                <VideoClipSearch
+                  terms={clipTerms}
+                  onTermsChange={setClipTerms}
+                  disabled={clipsSearching || clipsGenerating}
+                />
+              </div>
+            )}
+
+            {/* Clip preview grid — shown between Step 1 and Step 2 in clips mode */}
+            {contentMode === 'clips' && fetchedClips && (
+              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-4 mt-4">
+                <ClipPreviewGrid
+                  clips={fetchedClips}
+                  selected={selectedClips}
+                  onSelectionChange={setSelectedClips}
+                  onGenerate={handleGenerateClips}
+                  generating={clipsGenerating}
+                />
+              </div>
+            )}
 
             {/* Step 2 */}
             <div className="flex items-center gap-2 mb-2 mt-6">
@@ -613,12 +759,19 @@ export default function Dashboard({ session }: Props) {
               <span className="text-xs text-stone-500">Video settings</span>
             </div>
             <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="theme-selector">
-              <SettingsPanel
-                settings={settings}
-                onChange={s => { setSettings(s); setAppliedPresetName(null) }}
-                onPresetApplied={setAppliedPresetName}
-                themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
-              />
+              {contentMode === 'images' ? (
+                <SettingsPanel
+                  settings={settings}
+                  onChange={s => { setSettings(s); setAppliedPresetName(null) }}
+                  onPresetApplied={setAppliedPresetName}
+                  themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
+                />
+              ) : (
+                <ClipsSettingsPanel
+                  settings={clipsSettings}
+                  onChange={setClipsSettings}
+                />
+              )}
             </div>
 
             {/* Step 3 */}
@@ -627,13 +780,13 @@ export default function Dashboard({ session }: Props) {
               <span className="text-xs text-stone-500">Generate</span>
             </div>
 
-            {(error || stagingError) && (
+            {(contentMode === 'images' ? (error || stagingError) : clipsError) && (
               <div className="rounded-xl bg-red-950 px-4 py-3 text-sm text-red-400 mb-3">
-                {error ?? stagingError}
+                {contentMode === 'images' ? (error ?? stagingError) : clipsError}
               </div>
             )}
 
-            {stagingUsedPexels && !stagingError && (
+            {contentMode === 'images' && stagingUsedPexels && !stagingError && (
               <div className="rounded-xl bg-amber-950/60 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3 flex items-center gap-2">
                 <span>⚡</span>
                 <span>Unsplash rate limit hit. Switched to Pexels for this preview.</span>
@@ -641,6 +794,24 @@ export default function Dashboard({ session }: Props) {
             )}
 
             {/* Action row */}
+            {contentMode === 'clips' ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAutoGenerateClips}
+                  disabled={clipsSearching || clipsGenerating || trialExpired}
+                  className="flex-1 rounded-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
+                >
+                  {clipsSearching ? 'Searching…' : clipsGenerating ? 'Generating…' : 'Generate directly'}
+                </button>
+                <button
+                  onClick={handleSearchClips}
+                  disabled={clipsSearching || clipsGenerating}
+                  className="flex-1 rounded-xl border border-stone-700 py-3 text-sm font-medium text-stone-300 hover:border-stone-500 hover:text-stone-100 disabled:opacity-50 transition"
+                >
+                  {clipsSearching ? 'Searching…' : 'Preview & select clips →'}
+                </button>
+              </div>
+            ) : (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowAdvanced(true)}
@@ -697,10 +868,11 @@ export default function Dashboard({ session }: Props) {
                 )}
               </div>
             </div>
-            <p className="text-center text-xs text-stone-600 mt-2">or press Ctrl+Enter</p>
+            )}
+            {contentMode === 'images' && <p className="text-center text-xs text-stone-600 mt-2">or press Ctrl+Enter</p>}
 
-            {/* Variants inline panel */}
-            {showVariants && (
+            {/* Variants inline panel — images mode only */}
+            {contentMode === 'images' && showVariants && (
               <div className="rounded-xl border border-stone-800 bg-stone-900/80 p-4 space-y-3 mt-3">
                 <p className="text-xs text-stone-500">Select themes (one video per theme per batch):</p>
                 <div className="grid grid-cols-3 gap-2">

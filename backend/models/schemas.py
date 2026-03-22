@@ -287,6 +287,73 @@ class PreviewStageResponse(BaseModel):
     pexels_fallback: bool = False
 
 
+ALLOWED_TRANSITIONS = {"cut", "fade_black", "crossfade"}
+
+
+class ClipTrim(BaseModel):
+    """A single Pexels video clip with optional trim points."""
+    id: str = Field(..., pattern=r'^pv_\d+$')
+    download_url: str
+    trim_start: float = Field(default=0.0, ge=0.0, le=600.0)
+    trim_end: float = Field(default=0.0, ge=0.0, le=600.0)   # 0 = use full clip duration
+    duration: int = Field(..., ge=1, le=600)
+
+    @field_validator("download_url")
+    @classmethod
+    def validate_download_url(cls, v: str) -> str:
+        if not v.startswith("https://videos.pexels.com/"):
+            raise ValueError("download_url must be a Pexels video URL")
+        return v
+
+
+class ClipGenerateRequest(BaseModel):
+    clips: List[ClipTrim] = Field(..., min_length=1, max_length=20)
+    resolution: str = Field(default="1080x1920")
+    fps: int = Field(default=30, ge=15, le=60)
+    color_theme: str = Field(default="none")
+    transition: str = Field(default="cut")
+    transition_duration: float = Field(default=0.5, ge=0.2, le=2.0)
+    batch_title: Optional[str] = Field(default=None, max_length=120)
+    text_overlay: Optional[TextOverlayConfig] = None
+
+    @field_validator("resolution")
+    @classmethod
+    def validate_resolution(cls, v: str) -> str:
+        if v not in ALLOWED_RESOLUTIONS:
+            raise ValueError(f"resolution must be one of: {', '.join(sorted(ALLOWED_RESOLUTIONS))}")
+        return v
+
+    @field_validator("color_theme")
+    @classmethod
+    def validate_color_theme(cls, v: str) -> str:
+        # clips mode doesn't support 'custom' grade (PIL-based, not applicable to video)
+        allowed = ALLOWED_COLOR_THEMES - {"custom"}
+        if v not in allowed:
+            raise ValueError(f"color_theme must be one of: {', '.join(sorted(allowed))}")
+        return v
+
+    @field_validator("transition")
+    @classmethod
+    def validate_transition(cls, v: str) -> str:
+        if v not in ALLOWED_TRANSITIONS:
+            raise ValueError(f"transition must be one of: {', '.join(sorted(ALLOWED_TRANSITIONS))}")
+        return v
+
+
+class ClipSearchResult(BaseModel):
+    id: str
+    duration: int
+    thumbnail: str
+    preview_url: str
+    download_url: str
+    width: int
+    height: int
+
+
+class ClipSearchResponse(BaseModel):
+    clips: List[ClipSearchResult]
+
+
 ALLOWED_PRIVACY_LEVELS = {
     "PUBLIC_TO_EVERYONE",
     "MUTUAL_FOLLOW_FRIENDS",
