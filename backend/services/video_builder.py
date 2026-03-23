@@ -11,6 +11,7 @@ import math
 import os
 import random
 import subprocess
+import textwrap
 from itertools import cycle
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -113,9 +114,21 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
     x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(horiz, "(w-tw)/2")
     font_path_filter = os.path.basename(font_path)
 
-    # Split into individual lines — one drawtext filter per line
+    # Word-wrap text to fit the frame width, then split into individual lines.
+    # Each line becomes its own drawtext filter so ffmpeg renders them at the
+    # correct vertical positions — matching the preview's natural CSS word-wrap.
+    # Approximate character width = 0.52 * fontsize (proportional serif/sans average).
+    usable_width = width * 0.88  # 6% margin each side
+    chars_per_line = max(10, int(usable_width / (fontsize * 0.52)))
+
     raw = overlay.get("text", "").rstrip("\r\n")
-    lines = raw.replace("\r\n", "\n").split("\n")
+    segments = raw.replace("\r\n", "\n").split("\n")
+    lines: list[str] = []
+    for seg in segments:
+        if seg.strip():
+            lines.extend(textwrap.wrap(seg, width=chars_per_line) or [seg])
+        else:
+            lines.append("")  # preserve intentional blank lines as spacers
     line_height = max(1, int(fontsize * 1.25))
     n = len(lines)
 
