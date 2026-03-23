@@ -51,6 +51,7 @@ class ClipJobConfig:
     color_theme: str = "none"
     transition: str = "cut"
     transition_duration: float = 0.5
+    max_clip_duration: int = 10
     batch_title: Optional[str] = None
     text_overlay: Optional[Dict] = None
 
@@ -172,6 +173,7 @@ async def _run_clips_pipeline_inner(job_id: str, user_id: str, config: ClipJobCo
             transition_duration=config.transition_duration,
             color_theme=config.color_theme,
             text_overlay=config.text_overlay,
+            max_clip_duration=config.max_clip_duration,
         )
         if result["returncode"] != 0:
             logger.error("ffmpeg failed (rc=%d). Last 20 lines:\n%s",

@@ -142,6 +142,7 @@ async def generate_from_clips(
         color_theme=body.color_theme,
         transition=body.transition,
         transition_duration=body.transition_duration,
+        max_clip_duration=body.max_clip_duration,
         batch_title=body.batch_title,
         text_overlay=body.text_overlay.model_dump() if body.text_overlay else None,
     )

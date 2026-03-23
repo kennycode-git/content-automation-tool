@@ -14,6 +14,7 @@ export interface ClipsSettings {
   color_theme: string
   transition: 'cut' | 'fade_black' | 'crossfade'
   transition_duration: number
+  max_clip_duration: number
 }
 
 export const DEFAULT_CLIPS_SETTINGS: ClipsSettings = {
@@ -22,6 +23,7 @@ export const DEFAULT_CLIPS_SETTINGS: ClipsSettings = {
   color_theme: 'none',
   transition: 'cut',
   transition_duration: 0.5,
+  max_clip_duration: 10,
 }
 
 const RESOLUTIONS = [
@@ -142,6 +144,30 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         <ThemeDropdown value={settings.color_theme} onChange={v => set('color_theme', v)} />
         <p className="text-xs text-stone-500 mt-1.5">
           Applied to all clips via video filters during render.
+        </p>
+      </div>
+
+      {/* Max clip duration */}
+      <div>
+        <div className="flex items-center justify-between text-xs mb-1.5">
+          <span className="font-medium text-stone-400 uppercase tracking-wide">Max clip duration</span>
+          <span className="text-stone-200 font-medium">{settings.max_clip_duration}s</span>
+        </div>
+        <input
+          type="range"
+          min="3"
+          max="15"
+          step="1"
+          value={settings.max_clip_duration}
+          onChange={e => set('max_clip_duration', parseInt(e.target.value))}
+          className="w-full accent-brand-500"
+        />
+        <div className="flex justify-between text-[10px] text-stone-600 mt-0.5">
+          <span>3s</span>
+          <span>15s</span>
+        </div>
+        <p className="text-xs text-stone-500 mt-1">
+          Each clip is capped at this length. Shorter = smaller file size.
         </p>
       </div>
 

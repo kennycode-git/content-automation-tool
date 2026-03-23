@@ -53,8 +53,9 @@ CLIP_GRADE_FILTERS: Dict[str, str] = {
 }
 
 
-def _clip_duration(spec: ClipSpec) -> float:
+def _clip_duration(spec: ClipSpec, max_clip_duration: float = 15.0) -> float:
     end = spec.trim_end if spec.trim_end > 0 else float(spec.duration)
+    end = min(end, spec.trim_start + max_clip_duration)
     return max(0.1, end - spec.trim_start)
 
 
@@ -86,14 +87,16 @@ def _normalize_clip(
     transition_duration: float,
     is_first: bool,
     is_last: bool,
+    max_clip_duration: float = 15.0,
 ) -> Dict:
     """
     Pass 1: encode one clip to the target resolution/codec.
 
     For fade_black, fades are baked in here so pass 2 can use concat-copy.
     """
-    end = spec.trim_end if spec.trim_end > 0 else float(spec.duration)
-    dur = _clip_duration(spec)
+    raw_end = spec.trim_end if spec.trim_end > 0 else float(spec.duration)
+    end = min(raw_end, spec.trim_start + max_clip_duration)
+    dur = _clip_duration(spec, max_clip_duration)
 
     vf_parts = [
         f"scale={width}:{height}:force_original_aspect_ratio=increase",
@@ -219,6 +222,7 @@ def render_clips(
     transition_duration: float,
     color_theme: str,
     text_overlay: Optional[dict] = None,
+    max_clip_duration: int = 10,
 ) -> Dict:
     """
     Render an MP4 from trimmed video clips using a memory-efficient two-pass approach.
@@ -235,7 +239,8 @@ def render_clips(
 
     grade = CLIP_GRADE_FILTERS.get(color_theme, "")
     n = len(clip_specs)
-    durations = [_clip_duration(s) for s in clip_specs]
+    mcd = float(max_clip_duration)
+    durations = [_clip_duration(s, mcd) for s in clip_specs]
     log_lines: List[str] = []
 
     tmp_dir = tempfile.mkdtemp(prefix="clipbuild_")
@@ -248,6 +253,7 @@ def render_clips(
                 spec, out, width, height, fps, grade,
                 transition, transition_duration,
                 is_first=(i == 0), is_last=(i == n - 1),
+                max_clip_duration=mcd,
             )
             log_lines.append(f"[normalize clip {i}] rc={result['returncode']}")
             if result["returncode"] != 0:

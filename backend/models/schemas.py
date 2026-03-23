@@ -313,6 +313,7 @@ class ClipGenerateRequest(BaseModel):
     color_theme: str = Field(default="none")
     transition: str = Field(default="cut")
     transition_duration: float = Field(default=0.5, ge=0.2, le=2.0)
+    max_clip_duration: int = Field(default=10, ge=3, le=15)
     batch_title: Optional[str] = Field(default=None, max_length=120)
     text_overlay: Optional[TextOverlayConfig] = None
 

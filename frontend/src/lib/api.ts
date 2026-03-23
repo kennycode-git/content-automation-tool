@@ -462,6 +462,7 @@ export interface ClipGenerateRequest {
   color_theme?: string
   transition?: 'cut' | 'fade_black' | 'crossfade'
   transition_duration?: number
+  max_clip_duration?: number
   batch_title?: string | null
   text_overlay?: TextOverlayConfig | null
 }
