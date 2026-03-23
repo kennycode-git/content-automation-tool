@@ -239,6 +239,8 @@ function overlayColorHex(ov: TextOverlayConfig): string {
 
 function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   const [enlarged, setEnlarged] = useState(false)
+  const [previewH, setPreviewH] = useState(200)
+  const dragStartRef = useRef<{ y: number; h: number } | null>(null)
 
   const pos = POSITION_FLEX[ov.position as OverlayPosition] ?? POSITION_FLEX['bottom-center']
   const color = overlayColorHex(ov)
@@ -284,14 +286,31 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
     )
   }
 
+  function onDragHandlePointerDown(e: React.PointerEvent) {
+    e.preventDefault()
+    dragStartRef.current = { y: e.clientY, h: previewH }
+    const onMove = (me: PointerEvent) => {
+      if (!dragStartRef.current) return
+      const delta = me.clientY - dragStartRef.current.y
+      setPreviewH(Math.min(520, Math.max(120, dragStartRef.current.h + delta)))
+    }
+    const onUp = () => {
+      dragStartRef.current = null
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
   return (
     <div className="flex justify-center my-2">
       <div className="relative group">
-        <PreviewBox h={200} w={113} />
+        <PreviewBox h={previewH} w={113} />
         {/* Magnify button */}
         <button
           onClick={() => setEnlarged(true)}
-          className="absolute bottom-1.5 right-1.5 w-6 h-6 rounded bg-black/60 flex items-center justify-center
+          className="absolute bottom-6 right-1.5 w-6 h-6 rounded bg-black/60 flex items-center justify-center
                      opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
           title="Expand preview"
         >
@@ -301,6 +320,14 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
             <path d="M5 6.5h3M6.5 5v3" strokeLinecap="round" />
           </svg>
         </button>
+        {/* Drag handle */}
+        <div
+          onPointerDown={onDragHandlePointerDown}
+          className="absolute bottom-0 left-0 right-0 h-5 flex items-center justify-center cursor-ns-resize select-none"
+          title="Drag to resize"
+        >
+          <div className="w-8 h-1 rounded-full bg-stone-600 group-hover:bg-stone-400 transition-colors" />
+        </div>
       </div>
 
       {/* Enlarged overlay */}
