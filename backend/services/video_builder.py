@@ -55,20 +55,25 @@ COLOR_MAP: Dict[str, str] = {
 
 def _escape_drawtext(text: str) -> str:
     """
-    Escape a single line of text for the ffmpeg drawtext text= option.
+    Escape a single line of text for use inside a single-quoted drawtext text= value,
+    i.e. the value is rendered as: text='<escaped text>'
 
-    ' (apostrophe) is replaced with the Unicode RIGHT SINGLE QUOTATION MARK (U+2019)
-    which is visually identical but not treated as a quoting delimiter by ffmpeg's
-    filter option parser — avoiding the bug where ' triggers single-quote mode and
-    silently swallows the rest of the filter options.
-    Double-quote wrapping is NOT used: ffmpeg does not treat "..." as a quoting
-    mechanism in filter option values, so the quotes would appear literally in the video.
+    Inside single quotes, ffmpeg's AVOption parser treats ':' as a literal character,
+    so we do NOT need to escape colons — this is the key fix for "hello: world" text.
+
+    Characters that DO still need escaping even inside single quotes:
+    - ' (apostrophe) → replaced with U+2019 RIGHT SINGLE QUOTATION MARK (visually identical)
+      because a real apostrophe would end the single-quoted region.
+    - \\ (backslash) → doubled, as it is always an escape character.
+    - , and ; → escaped at the -vf filter-chain level (these separators are parsed BEFORE
+      per-option quoting, so single quotes do not protect them).
+    - % → doubled (drawtext uses % for time/frame expansion tokens).
     """
     return (
         text
         .replace("\\", "\\\\")
         .replace("'", "\u2019")   # ' → ' (RIGHT SINGLE QUOTATION MARK, visually identical)
-        .replace(":", "\\:")
+        # NOTE: ':' does NOT need escaping — protected by the surrounding single quotes
         .replace(",", "\\,")      # commas separate filters in -vf chain; must be escaped
         .replace(";", "\\;")      # semicolons separate filter chains; must be escaped
         .replace("%", "%%")
@@ -146,7 +151,7 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
 
         parts = [
             f"fontfile={font_path_filter}",
-            f"text={_escape_drawtext(line)}",
+            f"text='{_escape_drawtext(line)}'",
             f"fontcolor={hex_color}ff",
             f"fontsize={fontsize}",
             f"x={x}",
