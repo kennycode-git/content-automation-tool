@@ -68,6 +68,7 @@ def _escape_drawtext(text: str) -> str:
         .replace("\\", "\\\\")
         .replace("'", "\u2019")   # ' → ' (RIGHT SINGLE QUOTATION MARK, visually identical)
         .replace(":", "\\:")
+        .replace(",", "\\,")      # commas separate filters in -vf chain; must be escaped
         .replace("%", "%%")
     )
 
@@ -344,13 +345,15 @@ def render_slideshow(
         for line in proc.stdout:
             stripped = line.rstrip()
             log_lines.append(stripped)
-            logger.debug("ffmpeg: %s", stripped)
     finally:
         rc = proc.wait()
 
     if rc == 0:
         logger.info("render_slideshow done: %s", output_file)
     else:
-        logger.error("ffmpeg failed with code %d", rc)
+        logger.error(
+            "ffmpeg failed with code %d. Last 40 lines:\n%s",
+            rc, "\n".join(log_lines[-40:]),
+        )
 
     return {"returncode": rc, "log": log_lines}
