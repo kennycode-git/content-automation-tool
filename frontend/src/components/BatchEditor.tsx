@@ -238,21 +238,20 @@ function overlayColorHex(ov: TextOverlayConfig): string {
 }
 
 function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
-  const PREVIEW_H = 200
-  const PREVIEW_W = 113  // ~9:16
+  const [enlarged, setEnlarged] = useState(false)
+
   const pos = POSITION_FLEX[ov.position as OverlayPosition] ?? POSITION_FLEX['bottom-center']
   const color = overlayColorHex(ov)
   const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
-  const fontSize = Math.max(3, Math.round(PREVIEW_H * (ov.font_size_pct ?? 0.045)))
-  const margin = Math.round(PREVIEW_H * 0.05)
   const displayText = ov.text.trim() || 'Preview text'
 
-  return (
-    <div className="flex justify-center my-2">
+  function PreviewBox({ h, w }: { h: number; w: number }) {
+    const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.045)))
+    const margin = Math.round(h * 0.05)
+    return (
       <div
         style={{
-          width: PREVIEW_W,
-          height: PREVIEW_H,
+          width: w, height: h,
           background: '#0e0e0e',
           borderRadius: 4,
           overflow: 'hidden',
@@ -267,9 +266,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
       >
         <div
           style={{
-            color,
-            fontFamily,
-            fontSize,
+            color, fontFamily, fontSize,
             lineHeight: 1.25,
             textAlign: (ov.alignment ?? 'center') as CanvasTextAlign,
             width: 'fit-content',
@@ -284,6 +281,49 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           {displayText}
         </div>
       </div>
+    )
+  }
+
+  return (
+    <div className="flex justify-center my-2">
+      <div className="relative group">
+        <PreviewBox h={200} w={113} />
+        {/* Magnify button */}
+        <button
+          onClick={() => setEnlarged(true)}
+          className="absolute bottom-1.5 right-1.5 w-6 h-6 rounded bg-black/60 flex items-center justify-center
+                     opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
+          title="Expand preview"
+        >
+          <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <circle cx="6.5" cy="6.5" r="4" />
+            <path d="M11 11l3 3" strokeLinecap="round" />
+            <path d="M5 6.5h3M6.5 5v3" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Enlarged overlay */}
+      {enlarged && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75"
+          onClick={() => setEnlarged(false)}
+        >
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <PreviewBox h={540} w={304} />
+            <button
+              onClick={() => setEnlarged(false)}
+              className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center
+                         text-white hover:bg-black/90 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+              </svg>
+            </button>
+            <p className="text-center text-[10px] text-stone-600 mt-2">Click outside to close</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
