@@ -55,28 +55,40 @@ COLOR_MAP: Dict[str, str] = {
 
 def _escape_drawtext(text: str) -> str:
     """
-    Escape a single line of text for use inside a single-quoted drawtext text= value,
-    i.e. the value is rendered as: text='<escaped text>'
+    Escape a single line of text for the ffmpeg drawtext text= option.
 
-    Inside single quotes, ffmpeg's AVOption parser treats ':' as a literal character,
-    so we do NOT need to escape colons — this is the key fix for "hello: world" text.
+    ffmpeg's -vf string goes through TWO parsing passes before the text value is used:
+      1. Filter-graph (lavfi) parser  — splits on ',' and ';'; treats '\\' as escape char.
+      2. AVOptions parser             — splits on ':'; treats '\\' as escape char.
 
-    Characters that DO still need escaping even inside single quotes:
-    - ' (apostrophe) → replaced with U+2019 RIGHT SINGLE QUOTATION MARK (visually identical)
-      because a real apostrophe would end the single-quoted region.
-    - \\ (backslash) → doubled, as it is always an escape character.
-    - , and ; → escaped at the -vf filter-chain level (these separators are parsed BEFORE
-      per-option quoting, so single quotes do not protect them).
-    - % → doubled (drawtext uses % for time/frame expansion tokens).
+    A bare '\\:' at the filter-graph level gets its backslash CONSUMED (the filter-graph
+    parser treats '\\' as "escape the next char"), leaving just ':' for AVOptions which
+    then treats it as an option separator → parse error.  Single-quote wrapping has the
+    same problem: the filter-graph parser strips the quotes before AVOptions sees the value,
+    again exposing the bare ':'.
+
+    The correct approach for a literal ':' is to send '\\\\:' (two backslashes + colon)
+    so that:
+      • Filter-graph pass: '\\\\' → literal '\\', ':' is not special → passes '\\:' to AVOptions
+      • AVOptions pass: '\\:' → escaped colon → literal ':' ✓
+
+    Character map (applied in order):
+      '\\' → '\\\\\\\\' — double first so later replacements don't double-count
+      '\\'  (apostrophe) → U+2019  — visually identical; real apostrophe would trigger
+                                      AVOptions single-quote mode and swallow the rest
+      ':'  → '\\\\:'    — two backslashes + colon (see explanation above)
+      ','  → '\\,'      — filter-graph separator; one backslash is enough here
+      ';'  → '\\;'      — filter-graph separator; one backslash is enough here
+      '%'  → '%%'       — drawtext expansion token prefix
     """
     return (
         text
-        .replace("\\", "\\\\")
-        .replace("'", "\u2019")   # ' → ' (RIGHT SINGLE QUOTATION MARK, visually identical)
-        # NOTE: ':' does NOT need escaping — protected by the surrounding single quotes
-        .replace(",", "\\,")      # commas separate filters in -vf chain; must be escaped
-        .replace(";", "\\;")      # semicolons separate filter chains; must be escaped
-        .replace("%", "%%")
+        .replace("\\", "\\\\")          # must be first: double existing backslashes
+        .replace("'", "\u2019")         # ' → ' (RIGHT SINGLE QUOTATION MARK)
+        .replace(":", "\\\\:")          # two backslashes survive filter-graph pass → \: for AVOptions
+        .replace(",", "\\,")            # filter-graph separator
+        .replace(";", "\\;")            # filter-graph separator
+        .replace("%", "%%")             # drawtext expansion token
     )
 
 
@@ -151,7 +163,7 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
 
         parts = [
             f"fontfile={font_path_filter}",
-            f"text='{_escape_drawtext(line)}'",
+            f"text={_escape_drawtext(line)}",
             f"fontcolor={hex_color}ff",
             f"fontsize={fontsize}",
             f"x={x}",
