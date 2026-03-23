@@ -70,6 +70,7 @@ def _escape_drawtext(text: str) -> str:
         .replace("'", "\u2019")   # ' → ' (RIGHT SINGLE QUOTATION MARK, visually identical)
         .replace(":", "\\:")
         .replace(",", "\\,")      # commas separate filters in -vf chain; must be escaped
+        .replace(";", "\\;")      # semicolons separate filter chains; must be escaped
         .replace("%", "%%")
     )
 
