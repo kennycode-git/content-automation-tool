@@ -636,16 +636,15 @@ async def _run_variants_pipeline_inner(
         if not items:
             raise RuntimeError("No images returned for the given search terms.")
 
-        # --- Phase A: Grade all themes in parallel ---
-        for jid in job_ids:
-            await update_job_status(jid, user_id, "running", db, progress_message="Applying colour grade…")
-
-        variant_info = []
-        grade_coros = []
+        # --- Phase A+B: Grade → render → upload → cleanup, one variant at a time ---
+        # Previously grading ran in parallel (asyncio.gather) which duplicated all images
+        # N times simultaneously and caused OOM. Now fully sequential: only one variant's
+        # graded images exist on disk at any point.
         for job_id, theme in zip(job_ids, themes):
             variant_tmp = os.path.join(tmp_root, f"v_{job_id[:8]}")
             os.makedirs(variant_tmp, exist_ok=True)
             graded_dir = os.path.join(variant_tmp, "graded")
+            output_file = os.path.join(variant_tmp, "output.mp4")
             variant_config = JobConfig(
                 search_terms=config.search_terms,
                 resolution=config.resolution,
@@ -657,27 +656,11 @@ async def _run_variants_pipeline_inner(
                 max_per_query=config.max_per_query,
                 batch_title=config.batch_title,
             )
-            grade_coros.append(asyncio.to_thread(apply_theme_grading, shared_images_dir, graded_dir, theme))
-            variant_info.append((job_id, theme, variant_config, variant_tmp))
-
-        grade_results = await asyncio.gather(*grade_coros, return_exceptions=True)
-
-        # --- Phase B: Render + upload (sequential to cap ffmpeg memory) ---
-        for i, (job_id, theme, variant_config, variant_tmp) in enumerate(variant_info):
-            grade_result = grade_results[i]
-            if isinstance(grade_result, Exception):
-                logger.exception("Grading failed for job %s (theme=%s): %s", job_id, theme, grade_result)
-                await update_job_status(
-                    job_id, user_id, "failed", db,
-                    error_message=str(grade_result),
-                    completed_at=datetime.now(timezone.utc).isoformat(),
-                )
-                continue
-
-            render_input = grade_result  # path returned by apply_theme_grading
-            output_file = os.path.join(variant_tmp, "output.mp4")
 
             try:
+                await update_job_status(job_id, user_id, "running", db, progress_message="Applying colour grade…")
+                render_input = await asyncio.to_thread(apply_theme_grading, shared_images_dir, graded_dir, theme)
+
                 await update_job_status(job_id, user_id, "running", db, progress_message="Rendering video…")
                 result = await asyncio.to_thread(
                     render_slideshow,
@@ -728,6 +711,11 @@ async def _run_variants_pipeline_inner(
                     error_message=str(exc),
                     completed_at=datetime.now(timezone.utc).isoformat(),
                 )
+
+            finally:
+                # Clean up this variant's temp files immediately to free memory/disk
+                # before the next variant starts grading.
+                shutil.rmtree(variant_tmp, ignore_errors=True)
 
     except Exception as exc:
         logger.exception("Variants pipeline setup failed: %s", exc)
