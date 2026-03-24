@@ -317,7 +317,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
               <label className="text-[10px] text-stone-500 uppercase tracking-wide block mb-1">Font</label>
               <select
                 value={settings.text_overlay.font}
-                onChange={e => set('text_overlay', { ...settings.text_overlay, font: e.target.value })}
+                onChange={e => set('text_overlay', { ...settings.text_overlay, font: e.target.value as import('../lib/api').OverlayFont })}
                 className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1.5 text-xs text-stone-100
                            focus:outline-none focus:border-brand-500"
               >
@@ -334,7 +334,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
                 {OVERLAY_COLORS.map(c => (
                   <button
                     key={c.value}
-                    onClick={() => set('text_overlay', { ...settings.text_overlay, color: c.value })}
+                    onClick={() => set('text_overlay', { ...settings.text_overlay, color: c.value as import('../lib/api').OverlayColor })}
                     title={c.label}
                     className={`flex-1 py-1.5 rounded text-[10px] font-medium border transition
                       ${settings.text_overlay.color === c.value ? 'border-brand-500' : 'border-stone-700'}`}
@@ -353,7 +353,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
                 {OVERLAY_POSITIONS.map(pos => (
                   <button
                     key={pos}
-                    onClick={() => set('text_overlay', { ...settings.text_overlay, position: pos })}
+                    onClick={() => set('text_overlay', { ...settings.text_overlay, position: pos as import('../lib/api').OverlayPosition })}
                     className={`h-5 rounded transition ${settings.text_overlay.position === pos ? 'bg-brand-500' : 'bg-stone-800 hover:bg-stone-700'}`}
                     title={pos.replace('-', ' ')}
                   />
@@ -379,11 +379,11 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
                   min="1"
                   max="12"
                   step="0.2"
-                  value={Math.round(settings.text_overlay.font_size_pct * 1000) / 10}
+                  value={Math.round((settings.text_overlay.font_size_pct ?? 0.045) * 1000) / 10}
                   onChange={e => set('text_overlay', { ...settings.text_overlay, font_size_pct: parseFloat(e.target.value) / 100 })}
                   className="w-20 accent-brand-500"
                 />
-                <span className="text-stone-200 w-8 text-right">{(settings.text_overlay.font_size_pct * 100).toFixed(1)}%</span>
+                <span className="text-stone-200 w-8 text-right">{((settings.text_overlay.font_size_pct ?? 0.045) * 100).toFixed(1)}%</span>
               </div>
             </div>
           </div>
