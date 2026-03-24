@@ -871,6 +871,9 @@ export default function Dashboard({ session }: Props) {
             <div>
               <h2 className="mb-3 text-sm font-semibold text-stone-300">Recent jobs</h2>
               <RecentJobs onReuse={handleReuse} onEditImages={handleEditImages} onColourGrade={handleColourGrade} />
+              <p className="mt-3 text-xs text-stone-600">
+                Videos are removed after 48 hours to save space — download any you want to keep.
+              </p>
             </div>
           </div>
         </div>
