@@ -1037,7 +1037,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-y-1.5">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-stone-300">Search terms</h2>
           {onOpenPrompt && (
@@ -1046,10 +1046,10 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
               className="flex items-center gap-1 text-xs text-stone-500 hover:text-brand-400 transition ml-2"
               title="Get search terms using AI"
             >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.347.347a3.75 3.75 0 01-5.304 0l-.356-.356a5 5 0 010-7.072z" />
               </svg>
-              <span className="hidden sm:inline">Get terms with AI</span>
+              <span>Get terms with AI</span>
             </button>
           )}
         </div>
