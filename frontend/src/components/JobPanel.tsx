@@ -21,6 +21,12 @@ const PIPELINE_STEPS = [
   { key: 'upload',   emoji: '✨', label: 'Almost there',          sub: 'Uploading and generating your download link'},
 ]
 
+const CLIPS_PIPELINE_STEPS = [
+  { key: 'download', emoji: '📥', label: 'Downloading clips',     sub: null                                         },
+  { key: 'render',   emoji: '🎬', label: 'Rendering video',       sub: 'Applying colour grade and stitching clips'  },
+  { key: 'upload',   emoji: '✨', label: 'Almost there',          sub: 'Uploading and generating your download link'},
+]
+
 const QUOTES = [
   { text: 'The impediment to action advances action. What stands in the way becomes the way.', author: 'Marcus Aurelius' },
   { text: 'Begin at once to live, and count each separate day as a separate life.', author: 'Seneca' },
@@ -42,20 +48,30 @@ function activeStepIdx(msg: string | null): number {
   return -1
 }
 
-function ProgressOverlay({ status, message, imageCount, persistedSource, searchTerms, maxPerQuery, onMouseEnter, onMouseLeave }: {
+function activeClipsStepIdx(msg: string | null): number {
+  if (!msg || msg === 'Queued') return -1
+  if (msg.startsWith('Downloading')) return 0
+  if (msg.startsWith('Rendering')) return 1
+  if (msg.startsWith('Uploading')) return 2
+  return -1
+}
+
+function ProgressOverlay({ status, message, imageCount, persistedSource, searchTerms, maxPerQuery, isClips, onMouseEnter, onMouseLeave }: {
   status: string
   message: string | null
   imageCount: { done: number; total: number } | null
   persistedSource: string | null
   searchTerms?: string[] | null
   maxPerQuery?: number | null
+  isClips?: boolean
   onMouseEnter?: () => void
   onMouseLeave?: () => void
 }) {
   const [hoveredStep, setHoveredStep] = useState<string | null>(null)
   const msg = message ?? ''
   const isQueued = !msg || msg === 'Queued'
-  const idx = status === 'done' ? PIPELINE_STEPS.length : activeStepIdx(msg)
+  const steps = isClips ? CLIPS_PIPELINE_STEPS : PIPELINE_STEPS
+  const idx = status === 'done' ? steps.length : (isClips ? activeClipsStepIdx(msg) : activeStepIdx(msg))
 
   const termCount = searchTerms?.length ?? 0
   const targetImages = termCount && maxPerQuery ? termCount * maxPerQuery : null
@@ -99,15 +115,15 @@ function ProgressOverlay({ status, message, imageCount, persistedSource, searchT
             <p className="text-xs text-stone-400">Your job is in the queue and will start shortly</p>
           </div>
         ) : (
-          PIPELINE_STEPS.map((step, i) => {
+          steps.map((step, i) => {
             const isDone   = i < idx
             const isActive = i === idx
-            const subText  = step.key === 'download' && imageCount != null
+            const subText  = step.key === 'download' && imageCount != null && !isClips
               ? (isDone
                   ? `${imageCount.done} photos collected`
                   : `${imageCount.done}/${imageCount.total} photos downloaded`)
               : step.sub
-            const hasDetail = (step.key === 'fetch' || step.key === 'download') && (isActive || isDone)
+            const hasDetail = !isClips && (step.key === 'fetch' || step.key === 'download') && (isActive || isDone)
 
             return (
               <div
@@ -362,6 +378,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
           persistedSource={sourceRef.current}
           searchTerms={job.search_terms}
           maxPerQuery={job.max_per_query}
+          isClips={!job.search_terms?.length}
           onMouseEnter={openOverlay}
           onMouseLeave={closeOverlayDelayed}
         />

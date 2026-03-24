@@ -93,6 +93,7 @@ function ClipCard({
           playsInline
           className={`absolute inset-0 w-full h-full object-cover transition-opacity ${playing ? 'opacity-100' : 'opacity-0'}`}
           onEnded={() => setPlaying(false)}
+          onError={() => setPlaying(false)}
         />
 
         {/* Play indicator */}

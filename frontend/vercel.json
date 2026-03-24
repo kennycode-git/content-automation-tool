@@ -11,7 +11,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.unsplash.com https://*.supabase.co https://images.pexels.com; media-src 'self' https://*.supabase.co; connect-src 'self' https://*.supabase.co https://*.up.railway.app wss://*.supabase.co; font-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com"
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://images.unsplash.com https://*.supabase.co https://*.pexels.com; media-src 'self' https://*.supabase.co https://videos.pexels.com; connect-src 'self' https://*.supabase.co https://*.up.railway.app wss://*.supabase.co; font-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com"
         },
         {
           "key": "X-Frame-Options",
