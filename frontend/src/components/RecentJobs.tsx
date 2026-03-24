@@ -22,6 +22,10 @@ const COLOR_THEMES = [
   { value: 'blue',    label: 'Cobalt' },
   { value: 'red',     label: 'Crimson' },
   { value: 'bw',      label: 'Monochrome' },
+  { value: 'mocha',   label: 'Mocha' },
+  { value: 'noir',    label: 'Noir' },
+  { value: 'abyss',   label: 'Abyss' },
+  { value: 'dusk',    label: 'Dusk' },
 ]
 
 const STATUS_ICON: Record<string, string> = {
@@ -35,6 +39,7 @@ const STATUS_ICON: Record<string, string> = {
 const THEME_LABEL: Record<string, string> = {
   none: 'Natural', warm: 'Amber', dark: 'Dark Tones', grey: 'Silver',
   blue: 'Cobalt', red: 'Crimson', bw: 'Mono', sepia: 'Sepia', low_exp: 'Low Exposure',
+  mocha: 'Mocha', noir: 'Noir', abyss: 'Abyss', dusk: 'Dusk',
   custom: 'Custom',
 }
 
@@ -48,6 +53,10 @@ const THEME_DOT: Record<string, string> = {
   bw:      'bg-white ring-1 ring-stone-500',
   sepia:   'bg-amber-800',
   low_exp: 'bg-stone-950 ring-1 ring-stone-700',
+  mocha:   'bg-amber-950',
+  noir:    'bg-stone-900 ring-1 ring-amber-900',
+  abyss:   'bg-blue-950 ring-1 ring-cyan-900',
+  dusk:    'bg-purple-900 ring-1 ring-purple-700',
   custom:  'bg-fuchsia-500',
 }
 
