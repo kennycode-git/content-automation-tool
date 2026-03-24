@@ -11,9 +11,11 @@ Security considerations:
 - The /health endpoint requires no auth so load balancers can probe it safely.
 """
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -39,7 +41,6 @@ async def _recover_stuck_jobs() -> None:
     """
     try:
         from db.supabase_client import get_client
-        from datetime import datetime, timezone
         client = get_client()
         now = datetime.now(timezone.utc).isoformat()
         for stuck_status in ("running", "queued"):
@@ -60,6 +61,100 @@ async def _recover_stuck_jobs() -> None:
         logger.warning("Startup job recovery failed (non-fatal): %s", exc)
 
 
+def _run_cleanup_sync() -> dict:
+    """
+    Synchronous cleanup — runs in a thread via asyncio.to_thread.
+
+    1. Delete Storage MP4 + thumbnail for jobs completed >48h ago.
+       Nulls output_url/thumbnail_url in DB after deletion.
+    2. Hard-delete job rows older than 30 days with status 'failed' or 'deleted'.
+    3. Delete user-uploads preview files older than 24h.
+    """
+    from db.supabase_client import get_client
+    client = get_client()
+    now = datetime.now(timezone.utc)
+    results = {"outputs_cleaned": 0, "rows_pruned": 0, "uploads_cleaned": 0, "errors": 0}
+
+    # ── 1. Expired output files (completed >48h ago, still have a URL) ─────────
+    cutoff_48h = (now - timedelta(hours=48)).isoformat()
+    try:
+        expired = (
+            client.table("jobs")
+            .select("id, user_id")
+            .lt("completed_at", cutoff_48h)
+            .not_.is_("output_url", "null")
+            .eq("status", "done")
+            .limit(100)
+            .execute()
+        )
+        for job in (expired.data or []):
+            paths = [f"{job['user_id']}/{job['id']}.mp4",
+                     f"{job['user_id']}/{job['id']}_thumb.jpg"]
+            try:
+                client.storage.from_("outputs").remove(paths)
+                client.table("jobs").update({"output_url": None, "thumbnail_url": None}) \
+                    .eq("id", job["id"]).execute()
+                results["outputs_cleaned"] += 1
+            except Exception as e:
+                logger.warning("Cleanup: failed to delete output for job %s: %s", job["id"], e)
+                results["errors"] += 1
+    except Exception as e:
+        logger.warning("Cleanup: expired outputs query failed: %s", e)
+        results["errors"] += 1
+
+    # ── 2. Prune old failed/deleted job rows (>30 days) ───────────────────────
+    cutoff_30d = (now - timedelta(days=30)).isoformat()
+    try:
+        for old_status in ("failed", "deleted"):
+            pruned = (
+                client.table("jobs")
+                .delete()
+                .lt("completed_at", cutoff_30d)
+                .eq("status", old_status)
+                .execute()
+            )
+            results["rows_pruned"] += len(pruned.data or [])
+    except Exception as e:
+        logger.warning("Cleanup: row pruning failed: %s", e)
+        results["errors"] += 1
+
+    # ── 3. User-uploads preview files older than 24h ──────────────────────────
+    cutoff_24h = (now - timedelta(hours=24)).isoformat()
+    try:
+        folders = client.storage.from_("user-uploads").list("") or []
+        for folder in (folders.data if hasattr(folders, "data") else folders):
+            fname = folder.get("name") if isinstance(folder, dict) else getattr(folder, "name", None)
+            if not fname:
+                continue
+            preview_files = client.storage.from_("user-uploads").list(f"{fname}/preview")
+            files = preview_files.data if hasattr(preview_files, "data") else (preview_files or [])
+            stale = [
+                f"{fname}/preview/{f['name'] if isinstance(f, dict) else f.name}"
+                for f in files
+                if (f.get("created_at") if isinstance(f, dict) else getattr(f, "created_at", None) or "") < cutoff_24h
+            ]
+            if stale:
+                client.storage.from_("user-uploads").remove(stale)
+                results["uploads_cleaned"] += len(stale)
+    except Exception as e:
+        logger.warning("Cleanup: user-uploads cleanup failed: %s", e)
+        results["errors"] += 1
+
+    logger.info("Daily cleanup complete: %s", results)
+    return results
+
+
+async def _daily_cleanup_loop() -> None:
+    """Runs cleanup once an hour after startup, then every 24 hours."""
+    await asyncio.sleep(3600)  # wait 1h after boot before first run
+    while True:
+        try:
+            await asyncio.to_thread(_run_cleanup_sync)
+        except Exception as exc:
+            logger.warning("Daily cleanup task error: %s", exc)
+        await asyncio.sleep(24 * 60 * 60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Validate critical env vars at startup — fail fast rather than at request time.
@@ -73,6 +168,7 @@ async def lifespan(app: FastAPI):
             raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
     logger.info("Cogito SaaS backend starting up")
     await _recover_stuck_jobs()
+    asyncio.create_task(_daily_cleanup_loop())
     yield
     logger.info("Cogito SaaS backend shutting down")
 
