@@ -60,6 +60,10 @@ const VARIANT_THEMES = [
   { value: 'blue',    label: 'Cobalt',      dot: 'bg-blue-500' },
   { value: 'red',     label: 'Crimson',     dot: 'bg-red-500' },
   { value: 'bw',      label: 'Monochrome',  dot: 'bg-white ring-1 ring-stone-500' },
+  { value: 'mocha',   label: 'Mocha',       dot: 'bg-amber-950' },
+  { value: 'noir',    label: 'Noir',        dot: 'bg-stone-900 ring-1 ring-amber-900' },
+  { value: 'abyss',   label: 'Abyss',       dot: 'bg-blue-950 ring-1 ring-cyan-900' },
+  { value: 'dusk',    label: 'Dusk',        dot: 'bg-purple-900 ring-1 ring-purple-700' },
 ]
 
 export default function Dashboard({ session }: Props) {
@@ -543,7 +547,7 @@ export default function Dashboard({ session }: Props) {
     setFetchedClips(null)
     setSelectedClips([])
     try {
-      const res = await fetchVideoClips(terms, 5, clipsSettings.color_theme)
+      const res = await fetchVideoClips(terms, clipsSettings.clips_per_term, clipsSettings.color_theme)
       setFetchedClips(res.clips)
       setSelectedClips(res.clips.map(c => ({
         id: c.id,
@@ -582,7 +586,11 @@ export default function Dashboard({ session }: Props) {
         color_theme: clipsSettings.color_theme,
         transition: clipsSettings.transition,
         transition_duration: clipsSettings.transition_duration,
+        max_clip_duration: clipsSettings.max_clip_duration,
         batch_title: batchTitle,
+        text_overlay: clipsSettings.text_overlay?.enabled && clipsSettings.text_overlay.text.trim()
+          ? clipsSettings.text_overlay
+          : null,
       })
       setActiveJobs(prev => [{ jobId: res.job_id, title: batchTitle }, ...prev])
       setFetchedClips(null)
@@ -602,7 +610,7 @@ export default function Dashboard({ session }: Props) {
     setClipsError(null)
     setClipsSearching(true)
     try {
-      const res = await fetchVideoClips(terms, 5, clipsSettings.color_theme)
+      const res = await fetchVideoClips(terms, clipsSettings.clips_per_term, clipsSettings.color_theme)
       const clips: SelectedClip[] = res.clips.map(c => ({
         id: c.id,
         download_url: c.download_url,
@@ -749,6 +757,7 @@ export default function Dashboard({ session }: Props) {
                   onSelectionChange={setSelectedClips}
                   onGenerate={handleGenerateClips}
                   generating={clipsGenerating}
+                  maxClipDuration={clipsSettings.max_clip_duration}
                 />
               </div>
             )}

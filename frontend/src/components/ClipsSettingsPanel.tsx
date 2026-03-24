@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react'
+import type { TextOverlayConfig } from '../lib/api'
 
 export interface ClipsSettings {
   resolution: string
@@ -15,6 +16,8 @@ export interface ClipsSettings {
   transition: 'cut' | 'fade_black' | 'crossfade'
   transition_duration: number
   max_clip_duration: number
+  clips_per_term: number
+  text_overlay: TextOverlayConfig
 }
 
 export const DEFAULT_CLIPS_SETTINGS: ClipsSettings = {
@@ -24,6 +27,17 @@ export const DEFAULT_CLIPS_SETTINGS: ClipsSettings = {
   transition: 'cut',
   transition_duration: 0.5,
   max_clip_duration: 10,
+  clips_per_term: 5,
+  text_overlay: {
+    enabled: false,
+    text: '',
+    font: 'garamond',
+    color: 'white',
+    background_box: false,
+    position: 'bottom-center',
+    alignment: 'center',
+    font_size_pct: 0.045,
+  },
 }
 
 const RESOLUTIONS = [
@@ -42,6 +56,10 @@ const COLOR_THEMES = [
   { value: 'blue',    label: 'Cobalt' },
   { value: 'red',     label: 'Crimson' },
   { value: 'bw',      label: 'Monochrome' },
+  { value: 'mocha',   label: 'Mocha' },
+  { value: 'noir',    label: 'Noir' },
+  { value: 'abyss',   label: 'Abyss' },
+  { value: 'dusk',    label: 'Dusk' },
 ]
 
 const THEME_DOT: Record<string, string> = {
@@ -54,7 +72,34 @@ const THEME_DOT: Record<string, string> = {
   blue:    'bg-blue-500',
   red:     'bg-red-500',
   bw:      'bg-white ring-1 ring-stone-500',
+  mocha:   'bg-amber-950',
+  noir:    'bg-stone-900 ring-1 ring-amber-900',
+  abyss:   'bg-blue-950 ring-1 ring-cyan-900',
+  dusk:    'bg-purple-900 ring-1 ring-purple-700',
 }
+
+const OVERLAY_FONTS = [
+  { value: 'garamond',    label: 'Garamond',    group: 'Serif' },
+  { value: 'playfair',    label: 'Playfair',    group: 'Serif' },
+  { value: 'lora',        label: 'Lora',        group: 'Serif' },
+  { value: 'outfit',      label: 'Outfit',      group: 'Sans' },
+  { value: 'raleway',     label: 'Raleway',     group: 'Sans' },
+  { value: 'cinzel',      label: 'Cinzel',      group: 'Display' },
+  { value: 'jetbrains',   label: 'JetBrains',   group: 'Mono' },
+]
+
+const OVERLAY_COLORS = [
+  { value: 'white',  label: 'White',  hex: '#ffffff' },
+  { value: 'cream',  label: 'Cream',  hex: '#f5f0e8' },
+  { value: 'gold',   label: 'Gold',   hex: '#f5e317' },
+  { value: 'black',  label: 'Black',  hex: '#000000' },
+]
+
+const OVERLAY_POSITIONS = [
+  'top-left', 'top-center', 'top-right',
+  'middle-left', 'middle-center', 'middle-right',
+  'bottom-left', 'bottom-center', 'bottom-right',
+]
 
 const TRANSITIONS: { value: ClipsSettings['transition']; label: string; description: string }[] = [
   { value: 'cut',        label: 'Cut',           description: 'Hard cut between clips' },
@@ -147,6 +192,27 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         </p>
       </div>
 
+      {/* Clips per search term */}
+      <div>
+        <div className="flex items-center justify-between text-xs mb-1.5">
+          <span className="font-medium text-stone-400 uppercase tracking-wide">Clips per search</span>
+          <span className="text-stone-200 font-medium">{settings.clips_per_term}</span>
+        </div>
+        <input
+          type="range"
+          min="1"
+          max="10"
+          step="1"
+          value={settings.clips_per_term}
+          onChange={e => set('clips_per_term', parseInt(e.target.value))}
+          className="w-full accent-brand-500"
+        />
+        <div className="flex justify-between text-[10px] text-stone-600 mt-0.5">
+          <span>1</span>
+          <span>10</span>
+        </div>
+      </div>
+
       {/* Max clip duration */}
       <div>
         <div className="flex items-center justify-between text-xs mb-1.5">
@@ -210,6 +276,115 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
             <div className="flex justify-between text-[10px] text-stone-600 mt-0.5">
               <span>0.2s</span>
               <span>2.0s</span>
+            </div>
+            {settings.transition === 'crossfade' && settings.transition_duration >= settings.max_clip_duration / 2 && (
+              <p className="text-[10px] text-amber-500/80 mt-1">
+                Crossfade ({settings.transition_duration}s) is ≥ half the max clip duration ({settings.max_clip_duration}s) — reduce transition or increase clip duration.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Text overlay */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-medium text-stone-400 uppercase tracking-wide">Text overlay</label>
+          <button
+            onClick={() => set('text_overlay', { ...settings.text_overlay, enabled: !settings.text_overlay.enabled })}
+            className={`relative w-8 h-4 rounded-full transition-colors ${settings.text_overlay.enabled ? 'bg-brand-500' : 'bg-stone-700'}`}
+          >
+            <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${settings.text_overlay.enabled ? 'left-4' : 'left-0.5'}`} />
+          </button>
+        </div>
+
+        {settings.text_overlay.enabled && (
+          <div className="space-y-3">
+            <textarea
+              value={settings.text_overlay.text}
+              onChange={e => set('text_overlay', { ...settings.text_overlay, text: e.target.value.slice(0, 200) })}
+              placeholder="Text to burn into the video…"
+              rows={3}
+              className="w-full bg-stone-800 border border-stone-700 rounded px-3 py-2 text-sm text-stone-100
+                         placeholder-stone-500 focus:outline-none focus:border-brand-500 resize-none"
+            />
+            <div className="flex justify-end">
+              <span className="text-[10px] text-stone-600">{settings.text_overlay.text.length}/200</span>
+            </div>
+
+            {/* Font */}
+            <div>
+              <label className="text-[10px] text-stone-500 uppercase tracking-wide block mb-1">Font</label>
+              <select
+                value={settings.text_overlay.font}
+                onChange={e => set('text_overlay', { ...settings.text_overlay, font: e.target.value })}
+                className="w-full bg-stone-800 border border-stone-700 rounded px-2 py-1.5 text-xs text-stone-100
+                           focus:outline-none focus:border-brand-500"
+              >
+                {OVERLAY_FONTS.map(f => (
+                  <option key={f.value} value={f.value}>{f.label} ({f.group})</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Color */}
+            <div>
+              <label className="text-[10px] text-stone-500 uppercase tracking-wide block mb-1">Colour</label>
+              <div className="flex gap-1.5">
+                {OVERLAY_COLORS.map(c => (
+                  <button
+                    key={c.value}
+                    onClick={() => set('text_overlay', { ...settings.text_overlay, color: c.value })}
+                    title={c.label}
+                    className={`flex-1 py-1.5 rounded text-[10px] font-medium border transition
+                      ${settings.text_overlay.color === c.value ? 'border-brand-500' : 'border-stone-700'}`}
+                    style={{ color: c.hex, background: c.value === 'white' || c.value === 'cream' ? '#1c1917' : undefined }}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Position */}
+            <div>
+              <label className="text-[10px] text-stone-500 uppercase tracking-wide block mb-1">Position</label>
+              <div className="grid grid-cols-3 gap-1">
+                {OVERLAY_POSITIONS.map(pos => (
+                  <button
+                    key={pos}
+                    onClick={() => set('text_overlay', { ...settings.text_overlay, position: pos })}
+                    className={`h-5 rounded transition ${settings.text_overlay.position === pos ? 'bg-brand-500' : 'bg-stone-800 hover:bg-stone-700'}`}
+                    title={pos.replace('-', ' ')}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Background box + size */}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs text-stone-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.text_overlay.background_box}
+                  onChange={e => set('text_overlay', { ...settings.text_overlay, background_box: e.target.checked })}
+                  className="accent-brand-500"
+                />
+                Background box
+              </label>
+              <div className="flex items-center gap-2 text-xs text-stone-400">
+                <span>Size</span>
+                <input
+                  type="range"
+                  min="1"
+                  max="12"
+                  step="0.2"
+                  value={Math.round(settings.text_overlay.font_size_pct * 1000) / 10}
+                  onChange={e => set('text_overlay', { ...settings.text_overlay, font_size_pct: parseFloat(e.target.value) / 100 })}
+                  className="w-20 accent-brand-500"
+                />
+                <span className="text-stone-200 w-8 text-right">{(settings.text_overlay.font_size_pct * 100).toFixed(1)}%</span>
+              </div>
             </div>
           </div>
         )}

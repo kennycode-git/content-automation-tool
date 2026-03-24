@@ -15,6 +15,7 @@ interface Props {
   onSelectionChange: (clips: SelectedClip[]) => void
   onGenerate: (clips: SelectedClip[]) => void
   generating?: boolean
+  maxClipDuration?: number
 }
 
 function formatDuration(secs: number) {
@@ -32,6 +33,7 @@ function ClipCard({
   onMoveDown,
   isFirst,
   isLast,
+  maxClipDuration,
 }: {
   clip: ClipSearchResult
   selectedClip: SelectedClip | null
@@ -41,6 +43,7 @@ function ClipCard({
   onMoveDown: () => void
   isFirst: boolean
   isLast: boolean
+  maxClipDuration: number
 }) {
   const [playing, setPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -48,7 +51,9 @@ function ClipCard({
 
   const trimStart = selectedClip?.trim_start ?? 0
   const trimEnd = selectedClip?.trim_end ?? 0
-  const effectiveEnd = trimEnd > 0 ? trimEnd : clip.duration
+  // Cap effective end to max_clip_duration so UI matches what backend will render
+  const rawEnd = trimEnd > 0 ? trimEnd : clip.duration
+  const effectiveEnd = Math.min(rawEnd, trimStart + maxClipDuration)
   const trimmedDuration = effectiveEnd - trimStart
 
   function handleCardClick(e: React.MouseEvent) {
@@ -181,7 +186,7 @@ function ClipCard({
                 min={0}
                 max={clip.duration}
                 step={0.1}
-                value={trimEnd > 0 ? trimEnd : clip.duration}
+                value={rawEnd}
                 onChange={e => {
                   const val = parseFloat(e.target.value)
                   const isFullLength = Math.abs(val - clip.duration) < 0.05
@@ -190,6 +195,11 @@ function ClipCard({
                 className="flex-1 accent-brand-500 h-1"
               />
             </div>
+            {trimmedDuration < (rawEnd - trimStart) - 0.05 && (
+              <p className="text-[9px] text-amber-500/80 text-right">
+                capped at {maxClipDuration}s max
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -197,7 +207,7 @@ function ClipCard({
   )
 }
 
-export default function ClipPreviewGrid({ clips, selected, onSelectionChange, onGenerate, generating }: Props) {
+export default function ClipPreviewGrid({ clips, selected, onSelectionChange, onGenerate, generating, maxClipDuration = 15 }: Props) {
   // Build a map from id → SelectedClip for quick lookup
   const selectedMap = new Map(selected.map(s => [s.id, s]))
 
@@ -293,6 +303,7 @@ export default function ClipPreviewGrid({ clips, selected, onSelectionChange, on
               onMoveDown={() => moveClip(clip.id, 'down')}
               isFirst={selIdx === 0}
               isLast={selIdx === selected.length - 1}
+              maxClipDuration={maxClipDuration}
             />
           )
         })}
@@ -300,11 +311,25 @@ export default function ClipPreviewGrid({ clips, selected, onSelectionChange, on
 
       {/* Generate footer */}
       <div className="pt-2 border-t border-stone-800 flex items-center justify-between gap-3">
-        <p className="text-xs text-stone-500">
-          {selectedCount > 0
-            ? `${selectedCount} clip${selectedCount !== 1 ? 's' : ''} selected`
-            : 'No clips selected'}
-        </p>
+        <div>
+          <p className="text-xs text-stone-500">
+            {selectedCount > 0
+              ? `${selectedCount} clip${selectedCount !== 1 ? 's' : ''} selected`
+              : 'No clips selected'}
+          </p>
+          {selectedCount > 0 && (() => {
+            const totalSecs = selected.reduce((sum, s) => {
+              const rawEnd = s.trim_end > 0 ? s.trim_end : (clips.find(c => c.id === s.id)?.duration ?? 0)
+              const eff = Math.min(rawEnd, s.trim_start + maxClipDuration) - s.trim_start
+              return sum + Math.max(0, eff)
+            }, 0)
+            return (
+              <p className="text-[10px] text-stone-600 mt-0.5">
+                Est. ~{totalSecs.toFixed(0)}s total
+              </p>
+            )
+          })()}
+        </div>
         <button
           onClick={() => onGenerate(selected)}
           disabled={selectedCount === 0 || generating}
