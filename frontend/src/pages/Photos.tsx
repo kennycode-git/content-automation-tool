@@ -38,6 +38,10 @@ const COLOR_THEMES = [
   { value: 'blue',    label: 'Cobalt' },
   { value: 'red',     label: 'Crimson' },
   { value: 'bw',      label: 'Monochrome' },
+  { value: 'mocha',   label: 'Mocha' },
+  { value: 'noir',    label: 'Noir' },
+  { value: 'abyss',   label: 'Abyss' },
+  { value: 'dusk',    label: 'Dusk' },
 ]
 
 const RESOLUTIONS = [
