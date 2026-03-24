@@ -39,15 +39,18 @@ frontend/
         ├── BatchEditor.tsx    # # Title-syntax textarea + visual card editor
         ├── SettingsPanel.tsx  # Resolution, timing, collapsed theme dropdown
         ├── AdvancedModal.tsx  # Centered dialog: presets, image source, accent, advanced opts
-        ├── InspirationCarousel.tsx  # Horizontal style cards with hover-to-play video previews
-        ├── OnboardingTour.tsx # Spotlight-style first-use tour (10 steps + welcome screen)
+        ├── InspirationCarousel.tsx  # Horizontal style cards with hover-to-play video previews (11 presets)
+        ├── OnboardingTour.tsx # Spotlight-style first-use tour (10 steps + welcome screen + tutorial link)
         ├── PromptModal.tsx    # AI batch prompt template with copy button
-        ├── TermBundles.tsx    # Pre-built search term bundles (7 bundles)
+        ├── TermBundles.tsx    # Pre-built search term bundles (11 bundles)
         ├── PresetManager.tsx  # Named settings presets CRUD
         ├── JobPanel.tsx       # Live job status with 3s polling + download button
         ├── RecentJobs.tsx     # Last 10 jobs list with colour grade, delete, duplicate
         ├── Toast.tsx          # Auto-dismiss toast notifications
-        └── PreviewModal.tsx   # Staged image preview before generating (wrapping tabs, dark scrollbar)
+        ├── PreviewModal.tsx   # Staged image preview before generating (wrapping tabs, dark scrollbar)
+        ├── ClipPreviewGrid.tsx    # Video clips picker: search results grid, trim controls, selection
+        ├── ClipsSettingsPanel.tsx # Settings panel for clips mode (duration, transitions, resolution)
+        └── VideoClipSearch.tsx    # Pexels video search input + results for clips mode
 ```
 
 ## Running Locally
@@ -76,6 +79,7 @@ VITE_DEV_BYPASS=true                               ← REMOVE before deploy
 |------|------|-------------|
 | /login | Public | Invite-only trial login (email → set password or sign in) |
 | /pricing | Public | Plan selection → Stripe |
+| /tutorial | Public | Redirect → Loom tutorial video (via vercel.json redirect) |
 | /dashboard | Protected | Main video generation tool |
 | /photos | Protected | Photo extraction tool (Pexels) |
 | /account | Protected | Plan + usage + sign out |
@@ -131,18 +135,18 @@ Each visual card has a **Style** button (`data-tour="batch-style-btn"` on first 
 - **Text overlay**: toggle, textarea (200 char), live `OverlayPreview` (200x113px 9:16 thumbnail), font picker (15 fonts / 4 groups), colour (White / Cream / Yellow / Black / Custom hex), background box, 3x3 position grid, alignment (L/C/R controls `textAlign` only -- position grid controls placement), font size slider (1-12%, step 0.2%), overlay style presets (save/load/delete via `cogito_overlay_presets` in localStorage, stores all settings except text and enabled state)
 
 ### InspirationCarousel
-Horizontal scrollable strip of 7 style presets (Dark Academia, Stoic Philosophy, Eastern Philosophy,
-Existentialism, Psychology, Gothic/Shadow, Nature as Philosophy). Each card:
+Horizontal scrollable strip of **11 style presets**: Buddhism, Dark Academia, Stoic Philosophy, Gothic, The Abyss, Eastern Philosophy, Existentialism, Psychology, Surrealism, Shadow, Nature as Philosophy. Each card:
 - Displays a video preview (`/theme-previews/{preset.id}.mp4`) paused at a random frame
 - Plays on hover; falls back to a gradient overlay if the video fails to load
 - "Use this style →" overlay on hover; click applies theme + term bundle to Dashboard
 - Dismiss button collapses the carousel (replaced by a "Style templates" restore button)
+- Each preset has `bundleLabel` that must exactly match a `label` in `BUNDLES` — mismatch = no terms loaded
 
 ### TermBundles
-Collapsible panel of 7 pre-built search term bundles (exported as `BUNDLES`):
-Stoic Philosophy, Dark Academia, Eastern Philosophy, Gothic / Shadow, Existentialism,
-Psychology, Nature as Philosophy. Multi-select checkboxes → "Load N batches" appends
-to either classic text or visual cards depending on current mode.
+Collapsible panel of **11 pre-built search term bundles** (exported as `BUNDLES`):
+Buddhism, Stoic Philosophy, Dark Academia, Eastern Philosophy, Shadow, Existentialism,
+Psychology, Nature as Philosophy, The Abyss, Gothic, Surrealism.
+Multi-select checkboxes → "Load N batches" appends to either classic text or visual cards depending on current mode.
 
 Also imported by `InspirationCarousel` to resolve bundle terms when a preset is applied.
 
@@ -228,6 +232,7 @@ duplicated in `RecentJobs.tsx` and `InspirationCarousel.tsx` for standalone use.
 - Spotlight uses CSS `box-shadow` spread to dim everything except the target element
 - Tracks target element via `requestAnimationFrame` loop (handles scroll/resize)
 - **Scrolls target into view** (`scrollIntoView({ behavior: 'smooth', block: 'center' })`) on each step
+- Welcome screen (step -1) has "Watch tutorial (5 min)" button linking to `passiveclip.com/tutorial`
 - Steps: batch editor → classic text mode → video settings → colour themes → per-batch style → text overlays → advanced settings → colour variants → preview → generate
 - Keyboard nav: Arrow keys, Enter (next), Escape (close)
 
@@ -235,6 +240,15 @@ duplicated in `RecentJobs.tsx` and `InspirationCarousel.tsx` for standalone use.
 - Displays a copy-paste AI prompt template for generating batch lists
 - Highlights `{PLACEHOLDER}` tokens in brand amber
 - `fromTour` prop: when true and text has been copied, shows "Return to tutorial →" button
+
+### Video Clips Mode
+Dashboard has a mode toggle: **Photos** (default) vs **Clips**. In Clips mode:
+- `<VideoClipSearch>` — Pexels video search input
+- `<ClipPreviewGrid>` — results grid with trim controls (in/out points), clip selection, multi-select
+- `<ClipsSettingsPanel>` — resolution, transition type, clip duration settings
+- Generate calls `POST /api/clips/generate` → `clip_job_manager.py` → `clip_builder.py`
+- Two-pass render to prevent OOM: normalize clips one at a time → concat-copy to combine
+- Clips jobs tracked separately from image jobs; use same JobPanel polling pattern
 
 ## Dashboard Layout (Dashboard.tsx)
 - `<AppNavbar>` — shared navbar
@@ -286,9 +300,13 @@ vercel --prod
 - [x] Invite-only trial login flow (email → check-invite → set password or sign in)
 - [x] Password recovery flow (forgot password → reset email → new-password step)
 - [x] Admin page (/admin) — invite management, user list, render adjustment
-- [x] OnboardingTour: 8 steps, scrolls to target on each step
+- [x] OnboardingTour: 10 steps, welcome screen with tutorial link, scrolls to target on each step
 - [x] PreviewModal batch tabs: dark thin scrollbar, horizontal scroll
 - [x] Pricing page: responsive grid (3-col on sm+, no overflow)
+- [x] Video Clips mode: Pexels video search, trim, transitions, two-pass render
+- [x] InspirationCarousel: 11 presets (added Buddhism, The Abyss, Gothic, Surrealism)
+- [x] TermBundles: 11 bundles (added Buddhism, The Abyss, Gothic, Surrealism)
+- [x] Tutorial video: passiveclip.com/tutorial redirect, thumbnail in invite email, link in onboarding
 - [x] Phase 6: Vercel deployed (auto-deploys on push to main)
   - [x] Env vars set in Vercel dashboard
   - [ ] Update vercel.json CSP connect-src with real Railway URL

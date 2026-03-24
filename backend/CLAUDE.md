@@ -19,19 +19,23 @@ backend/
 ├── .env.example               # Required env vars template
 ├── routers/
 │   ├── auth.py                # JWT validation dependency (get_current_user_id)
-│   ├── generate.py            # POST /api/generate — subscription gate + job dispatch
+│   ├── generate.py            # POST /api/generate — subscription gate + job dispatch; TRIAL_MODE flag
 │   ├── jobs.py                # GET/DELETE /api/jobs, GET /api/jobs/{id}
+│   ├── clips.py               # POST /api/clips/generate — video clips pipeline
 │   ├── presets.py             # CRUD /api/presets — named settings presets
 │   ├── preview.py             # POST /api/preview-stage — image staging without render
 │   ├── stripe_webhook.py      # POST /stripe/webhook — Stripe event handler
 │   ├── trial_auth.py          # POST /api/auth/check-invite + claim-invite (no auth)
 │   └── admin.py               # /api/admin/* — invite management, users, email (X-Admin-Key)
 ├── services/
-│   ├── image_pipeline.py      # Unsplash fetch (extracted from unsplash_extract_plus.py)
-│   ├── image_grader.py        # Colour grading (extracted from color_grade.py)
+│   ├── image_pipeline.py      # Unsplash/Pexels image fetch
+│   ├── image_grader.py        # Colour grading
 │   ├── image_injector.py      # Accent/philosopher image injection
-│   ├── video_builder.py       # ffmpeg slideshow renderer; supports drawtext overlay (FONT_MAP, COLOR_MAP, _escape_drawtext, _build_drawtext)
-│   ├── job_manager.py         # Async job lifecycle + pipeline orchestration
+│   ├── video_builder.py       # ffmpeg slideshow renderer; drawtext overlay (FONT_MAP, COLOR_MAP, _escape_drawtext, _build_drawtext)
+│   ├── job_manager.py         # Async job lifecycle + pipeline orchestration; PIPELINE_CONCURRENCY env var controls semaphore
+│   ├── clip_builder.py        # ffmpeg clips renderer — two-pass (normalize one-at-a-time → concat-copy) to prevent OOM
+│   ├── clip_job_manager.py    # Clips job lifecycle + pipeline orchestration
+│   ├── pexels_video_pipeline.py # Pexels video search + download
 │   └── storage.py             # Supabase Storage upload/signed URL/delete
 ├── models/
 │   └── schemas.py             # Pydantic v2 request/response models
@@ -60,6 +64,7 @@ ENABLE_DOCS=true .venv/Scripts/uvicorn main:app --reload --port 8001
 | GET | /health | None | Health check |
 | POST | /api/generate | JWT | Create + queue single video job |
 | POST | /api/variants | JWT | Create N jobs (one per theme) sharing a single image fetch |
+| POST | /api/clips/generate | JWT | Create a clips job from selected Pexels videos |
 | GET | /api/jobs | JWT | Last 10 jobs for user |
 | GET | /api/jobs/{id} | JWT | Job status + output URL |
 | DELETE | /api/jobs/{id} | JWT | Cancel/delete job + storage file |
@@ -102,8 +107,9 @@ RESEND_FROM_EMAIL         # From address (default: noreply@passiveclip.com)
   access other users' jobs or files.
 - **Storage isolation**: Files stored at `outputs/{user_id}/{job_id}.mp4`.
   Supabase Storage RLS policy: `(storage.foldername(name))[1] = auth.uid()::text`.
+- **TRIAL_MODE**: `generate.py` has `TRIAL_MODE = True` flag. When `True`, **both** the subscription gate and usage/render-count gate are skipped entirely — users get unlimited renders. Set to `False` when Stripe is live and limits should be enforced.
 - **Subscription gate**: `/api/generate` checks `subscriptions.status = 'active'` before
-  creating any job.
+  creating any job (only when `TRIAL_MODE = False`).
 - **Usage rate limit**: Monthly `render_count` checked against plan limits (creator=30, pro=unlimited).
   Incremented via atomic Postgres RPC `increment_render_count`.
 - **Stripe webhook**: `stripe.Webhook.construct_event()` verifies signature on every request.
@@ -249,7 +255,11 @@ python test_local.py
   - [x] email-validator added to requirements.txt for pydantic EmailStr
   - [x] httpx added to requirements.txt for Resend async calls
 - [x] Local dev running (backend :8001 healthy, frontend :5175 live)
+- [x] Video Clips mode: clips.py router, clip_builder.py (two-pass OOM-safe render), clip_job_manager.py, pexels_video_pipeline.py
+- [x] PIPELINE_CONCURRENCY env var controls semaphore limit in job_manager.py
+- [x] Invite email: tutorial video thumbnail block (links to passiveclip.com/tutorial)
 - [x] Phase 6: Railway deployed (auto-deploys on push to main)
   - [x] Set env vars in Railway dashboard
   - [ ] Register Stripe webhook endpoint → copy secret to STRIPE_WEBHOOK_SECRET
   - [ ] Set ADMIN_SECRET_KEY, RESEND_API_KEY, RESEND_FROM_EMAIL in Railway
+  - [ ] Set TRIAL_MODE = False when Stripe is live
