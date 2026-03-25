@@ -388,25 +388,19 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   async function handleDownload(url: string) {
     setDownloading(true)
     const filename = `${displayTitle ?? jobId.slice(0, 8)}.mp4`
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
     try {
-      if (isIOS || isSafari) {
-        const blob = await fetch(url).then(r => r.blob())
-        const file = new File([blob], filename, { type: 'video/mp4' })
-        if (navigator.share && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file] })
-        } else {
-          window.open(url, '_blank')
-          // Show a persistent toast so users know what to do
-          const toastEvent = new CustomEvent('cogito:toast', {
-            detail: { message: 'Hold on the video and tap "Save to Photos" to download', duration: 7000 }
-          })
-          window.dispatchEvent(toastEvent)
-        }
-      } else {
-        const res = await fetch(url)
-        const blob = await res.blob()
+      const blob = await fetch(url).then(r => r.blob())
+      const file = new File([blob], filename, { type: 'video/mp4' })
+
+      // Web Share API with file support — works on iOS and Android (Chrome 86+)
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] })
+        return
+      }
+
+      // Desktop: blob URL anchor download
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+      if (!isMobile) {
         const blobUrl = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = blobUrl
@@ -415,7 +409,14 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
         a.click()
         document.body.removeChild(a)
         URL.revokeObjectURL(blobUrl)
+        return
       }
+
+      // Mobile fallback (no Web Share API) — open in browser + instruct user
+      window.open(url, '_blank')
+      window.dispatchEvent(new CustomEvent('cogito:toast', {
+        detail: { message: 'Hold on the video and tap "Save to Photos" to download', duration: 7000 }
+      }))
     } catch {
       window.open(url, '_blank')
     } finally {
