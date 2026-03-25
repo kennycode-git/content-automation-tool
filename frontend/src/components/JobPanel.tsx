@@ -734,17 +734,15 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                     {loadingReview ? 'Loading images…' : reEditing ? 'Starting…' : 'Re-render'}
                   </button>
 
-                  {job.images_cached && (
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={reviewImages}
-                        onChange={e => setReviewImages(e.target.checked)}
-                        className="accent-brand-500 w-3.5 h-3.5"
-                      />
-                      <span className="text-xs text-stone-400">Review image selection first</span>
-                    </label>
-                  )}
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={reviewImages}
+                      onChange={e => setReviewImages(e.target.checked)}
+                      className="accent-brand-500 w-3.5 h-3.5"
+                    />
+                    <span className="text-xs text-stone-400">Review image selection first</span>
+                  </label>
                 </div>
               )}
             </div>
