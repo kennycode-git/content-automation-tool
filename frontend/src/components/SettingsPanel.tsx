@@ -44,7 +44,7 @@ const COLOR_THEMES = [
   { value: 'bw',      label: 'Monochrome' },
   { value: 'mocha',   label: 'Mocha' },
   { value: 'noir',    label: 'Noir' },
-  { value: 'abyss',   label: 'Abyss' },
+  { value: 'midnight', label: 'Midnight' },
   { value: 'dusk',    label: 'Dusk' },
   { value: 'custom',  label: 'Create Your Own' },
 ]
@@ -61,7 +61,7 @@ const THEME_DOT: Record<string, string> = {
   bw:      'bg-white ring-1 ring-stone-500',
   mocha:   'bg-amber-950',
   noir:    'bg-stone-900 ring-1 ring-amber-900',
-  abyss:   'bg-blue-950 ring-1 ring-cyan-900',
+  midnight: 'bg-blue-950 ring-1 ring-cyan-900',
   dusk:    'bg-purple-900 ring-1 ring-purple-700',
   custom:  'bg-stone-600',
 }

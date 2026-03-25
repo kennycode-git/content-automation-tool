@@ -333,17 +333,35 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
 
   async function handleDownload(url: string) {
     setDownloading(true)
+    const filename = `${displayTitle ?? jobId.slice(0, 8)}.mp4`
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
     try {
-      const res = await fetch(url)
-      const blob = await res.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = `${displayTitle ?? jobId.slice(0, 8)}.mp4`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(blobUrl)
+      if (isIOS || isSafari) {
+        const blob = await fetch(url).then(r => r.blob())
+        const file = new File([blob], filename, { type: 'video/mp4' })
+        if (navigator.share && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] })
+        } else {
+          window.open(url, '_blank')
+          // Show a persistent toast so users know what to do
+          const toastEvent = new CustomEvent('cogito:toast', {
+            detail: { message: 'Hold on the video and tap "Save to Photos" to download', duration: 7000 }
+          })
+          window.dispatchEvent(toastEvent)
+        }
+      } else {
+        const res = await fetch(url)
+        const blob = await res.blob()
+        const blobUrl = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = blobUrl
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(blobUrl)
+      }
     } catch {
       window.open(url, '_blank')
     } finally {

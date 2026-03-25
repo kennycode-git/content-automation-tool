@@ -271,3 +271,50 @@ async def adjust_renders(body: AdjustRendersBody, request: Request):
 
     logger.info("Admin adjusted renders for %s: %d → %d", body.user_id, current, new_count)
     return {"updated": True, "render_count": new_count}
+
+
+# ─── Raw image cache cleanup ───────────────────────────────────────────────────
+
+@router.post("/admin/cleanup-images")
+async def cleanup_old_raw_images(request: Request, ttl_days: int = 30):
+    """
+    Delete cached raw images for jobs completed more than ttl_days ago.
+    This keeps storage lean while preserving images for recent jobs' re-grade feature.
+    Call periodically (e.g. nightly) to enforce the TTL.
+    """
+    import asyncio
+    from datetime import timedelta
+    from services.storage import delete_raw_images
+
+    _check_key(request)
+    sb = get_client()
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=ttl_days)).isoformat()
+
+    # Find completed jobs with cached images that are older than the TTL
+    result = (
+        sb.table("jobs")
+        .select("id, user_id, config")
+        .eq("status", "done")
+        .lt("completed_at", cutoff)
+        .execute()
+    )
+
+    deleted_count = 0
+    skipped_count = 0
+    for job in (result.data or []):
+        cfg = job.get("config") or {}
+        if not cfg.get("images_cached"):
+            skipped_count += 1
+            continue
+        try:
+            await asyncio.to_thread(delete_raw_images, job["user_id"], job["id"])
+            # Clear the images_cached flag in config
+            cfg["images_cached"] = False
+            sb.table("jobs").update({"config": cfg}).eq("id", job["id"]).execute()
+            deleted_count += 1
+        except Exception as exc:
+            logger.warning("Cleanup: failed to delete images for job %s: %s", job["id"], exc)
+
+    logger.info("cleanup-images: deleted=%d skipped=%d ttl_days=%d", deleted_count, skipped_count, ttl_days)
+    return {"deleted_jobs": deleted_count, "skipped": skipped_count, "ttl_days": ttl_days}

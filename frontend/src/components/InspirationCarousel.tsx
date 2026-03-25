@@ -252,7 +252,7 @@ function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) =
 const THEME_LABELS: Record<string, string> = {
   none: 'Natural', dark: 'Dark', sepia: 'Sepia', warm: 'Amber',
   low_exp: 'Low Exp', grey: 'Silver', blue: 'Cobalt', red: 'Crimson', bw: 'Mono',
-  mocha: 'Mocha', noir: 'Noir', abyss: 'Abyss', dusk: 'Dusk',
+  mocha: 'Mocha', noir: 'Noir', midnight: 'Midnight', dusk: 'Dusk',
   custom: 'Custom',
 }
 
@@ -261,7 +261,7 @@ const THEME_DOT: Record<string, string> = {
   warm: 'bg-amber-600', low_exp: 'bg-stone-950 ring-1 ring-stone-700', grey: 'bg-stone-500',
   blue: 'bg-blue-700', red: 'bg-red-800', bw: 'bg-stone-100', custom: 'bg-violet-600',
   mocha: 'bg-amber-950', noir: 'bg-stone-900 ring-1 ring-amber-900',
-  abyss: 'bg-blue-950 ring-1 ring-cyan-900', dusk: 'bg-purple-900 ring-1 ring-purple-700',
+  midnight: 'bg-blue-950 ring-1 ring-cyan-900', dusk: 'bg-purple-900 ring-1 ring-purple-700',
 }
 
 function ThemePill({ theme }: { theme: string }) {

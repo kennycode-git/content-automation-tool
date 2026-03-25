@@ -181,3 +181,119 @@ async def delete_file(storage_path: str) -> None:
     logger.info("Deleting storage file: %s", storage_path)
     client.storage.from_(BUCKET).remove([storage_path])
     logger.info("Deleted: %s", storage_path)
+
+
+# ─── Raw image cache (for post-render re-grading) ────────────────────────────
+# Raw (ungraded) images are stored at outputs/raw/{user_id}/{job_id}/{filename}
+# after pipeline completion, enabling fast re-grading without re-fetching.
+
+def _raw_prefix(user_id: str, job_id: str) -> str:
+    return f"raw/{user_id}/{job_id}"
+
+
+def list_raw_image_paths(user_id: str, job_id: str) -> list:
+    """List all cached raw image paths for a job. Returns full storage paths."""
+    IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
+    prefix = _raw_prefix(user_id, job_id)
+    client = get_client()
+    result = client.storage.from_(BUCKET).list(prefix)
+    return [
+        f"{prefix}/{item['name']}"
+        for item in (result or [])
+        if item.get("name")
+        and not item["name"].startswith(".")
+        and any(item["name"].lower().endswith(ext) for ext in IMAGE_EXTS)
+        and item.get("id") is not None
+    ]
+
+
+def upload_raw_images(images_dir: str, user_id: str, job_id: str) -> int:
+    """
+    Upload all JPEG images from images_dir to the raw cache in Supabase Storage.
+    Uses a thread pool for concurrent uploads. Returns count of uploaded files.
+    Called via asyncio.to_thread from the pipeline.
+    """
+    import concurrent.futures
+
+    IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
+    prefix = _raw_prefix(user_id, job_id)
+    client = get_client()
+
+    files = [
+        f for f in os.listdir(images_dir)
+        if any(f.lower().endswith(ext) for ext in IMAGE_EXTS)
+    ]
+    if not files:
+        logger.warning("upload_raw_images: no image files found in %s", images_dir)
+        return 0
+
+    def _upload_one(fname: str) -> bool:
+        fpath = os.path.join(images_dir, fname)
+        storage_path = f"{prefix}/{fname}"
+        with open(fpath, "rb") as f:
+            data = f.read()
+        client.storage.from_(BUCKET).upload(
+            path=storage_path,
+            file=data,
+            file_options={"content-type": "image/jpeg", "upsert": "true"},
+        )
+        return True
+
+    uploaded = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(_upload_one, fname): fname for fname in files}
+        for fut in concurrent.futures.as_completed(futures):
+            try:
+                fut.result()
+                uploaded += 1
+            except Exception as exc:
+                logger.warning("Failed to upload raw image %s: %s", futures[fut], exc)
+
+    logger.info("Uploaded %d/%d raw images for job %s", uploaded, len(files), job_id)
+    return uploaded
+
+
+def download_raw_images_to_dir(user_id: str, job_id: str, dest_dir: str) -> int:
+    """
+    Download all cached raw images for a job to dest_dir.
+    Uses a thread pool for concurrent downloads. Returns count of downloaded files.
+    Called via asyncio.to_thread from the regrade pipeline.
+    """
+    import concurrent.futures
+
+    os.makedirs(dest_dir, exist_ok=True)
+    paths = list_raw_image_paths(user_id, job_id)
+    if not paths:
+        return 0
+    client = get_client()
+
+    def _download_one(storage_path: str) -> bool:
+        fname = os.path.basename(storage_path)
+        data = client.storage.from_(BUCKET).download(storage_path)
+        with open(os.path.join(dest_dir, fname), "wb") as f:
+            f.write(data)
+        return True
+
+    downloaded = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pool.submit(_download_one, p): p for p in paths}
+        for fut in concurrent.futures.as_completed(futures):
+            try:
+                fut.result()
+                downloaded += 1
+            except Exception as exc:
+                logger.warning("Failed to download raw image %s: %s", futures[fut], exc)
+
+    logger.info("Downloaded %d/%d raw images for job %s", downloaded, len(paths), job_id)
+    return downloaded
+
+
+def delete_raw_images(user_id: str, job_id: str) -> None:
+    """Delete all cached raw images for a job from Supabase Storage."""
+    paths = list_raw_image_paths(user_id, job_id)
+    if not paths:
+        logger.debug("delete_raw_images: no cached images found for job %s", job_id)
+        return
+    client = get_client()
+    client.storage.from_(BUCKET).remove(paths)
+    logger.info("Deleted %d raw images for job %s", len(paths), job_id)

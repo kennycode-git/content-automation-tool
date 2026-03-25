@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 ALLOWED_RESOLUTIONS = {"1080x1920", "1920x1080", "1080x1080"}
-ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp", "custom", "mocha", "noir", "abyss", "dusk"}
+ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp", "custom", "mocha", "noir", "midnight", "dusk"}
 ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold"}
 ALLOWED_IMAGE_SOURCES = {"unsplash", "pexels", "both"}
 ALLOWED_PHILOSOPHERS = {"marcus_aurelius", "seneca", "epictetus", "nietzsche", "socrates", "aristotle"}
@@ -213,8 +213,24 @@ class JobListItem(BaseModel):
     color_theme: Optional[str] = None
     max_per_query: Optional[int] = None
     preset_name: Optional[str] = None
+    images_cached: Optional[bool] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
+
+
+class RegradeRequest(BaseModel):
+    """Request body for POST /api/jobs/{job_id}/regrade."""
+    color_theme: str
+    seconds_per_image: Optional[float] = Field(default=None, ge=0.05, le=5.0)
+
+    @field_validator("color_theme")
+    @classmethod
+    def validate_color_theme(cls, v: str) -> str:
+        # 'custom' not supported for re-grade (requires PIL grade params not cached)
+        allowed = ALLOWED_COLOR_THEMES - {"custom"}
+        if v not in allowed:
+            raise ValueError(f"color_theme must be one of: {', '.join(sorted(allowed))}")
+        return v
 
 
 class GenerateResponse(BaseModel):

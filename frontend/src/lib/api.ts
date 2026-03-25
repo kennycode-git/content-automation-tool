@@ -117,6 +117,7 @@ export interface JobStatus {
   preset_name?: string | null
   preview_images?: string[] | null
   custom_grade_params?: CustomGradeParams | null
+  images_cached?: boolean | null
   created_at: string
   completed_at: string | null
 }
@@ -198,6 +199,31 @@ export async function resignJob(jobId: string): Promise<{ output_url: string }> 
     headers: await authHeaders(),
   })
   return handleResponse<{ output_url: string }>(res)
+}
+
+export interface RegradeRequest {
+  color_theme: string
+  seconds_per_image?: number
+}
+
+export async function regradeJob(jobId: string, req: RegradeRequest): Promise<GenerateResponse> {
+  const res = await fetch(`${API_URL}/api/jobs/${jobId}/regrade`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<GenerateResponse>(res)
+}
+
+export async function deleteJobImages(jobId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/jobs/${jobId}/images`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail ?? `HTTP ${res.status}`)
+  }
 }
 
 // ─── Presets ─────────────────────────────────────────────────────────────────

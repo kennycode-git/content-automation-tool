@@ -7,6 +7,7 @@
 export interface ToastItem {
   id: string
   message: string
+  duration?: number
 }
 
 interface Props {
