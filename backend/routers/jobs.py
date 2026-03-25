@@ -24,7 +24,7 @@ from db.supabase_client import get_client
 from models.schemas import JobListItem, JobStatusResponse, RegradeRequest
 from routers.auth import get_current_user_id
 from services.job_manager import get_job, list_jobs, update_job_status, run_regrade_pipeline, create_job, JobConfig
-from services.storage import delete_file, get_signed_url, delete_raw_images
+from services.storage import delete_file, get_signed_url, delete_raw_images, list_raw_image_paths
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -220,8 +220,40 @@ async def regrade_job(
         total_seconds=total_seconds,
         original_config=original_config,
         db=db,
+        selected_paths=req.selected_paths,
     )
     return {"job_id": new_job_id, "status": "queued"}
+
+
+@router.get("/jobs/{job_id}/raw-images")
+async def get_raw_images(
+    job_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Return signed URLs for a job's cached raw images, for image review before re-edit."""
+    import asyncio
+    db = get_client()
+    job = await get_job(job_id, user_id, db)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    cfg = job.get("config") or {}
+    if not cfg.get("images_cached"):
+        raise HTTPException(status_code=404, detail="No cached images for this job.")
+
+    paths = await asyncio.to_thread(list_raw_image_paths, user_id, job_id)
+    signed = []
+    for path in paths:
+        try:
+            url = await get_signed_url(path, expiry_seconds=3600)
+            signed.append({"storage_path": path, "signed_url": url})
+        except Exception:
+            pass  # skip files that can't be signed
+
+    return {
+        "batch_title": job.get("batch_title"),
+        "search_terms": cfg.get("search_terms", []),
+        "images": signed,
+    }
 
 
 @router.delete("/jobs/{job_id}/images", status_code=204)

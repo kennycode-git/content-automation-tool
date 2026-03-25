@@ -223,6 +223,7 @@ class RegradeRequest(BaseModel):
     color_theme: str
     seconds_per_image: Optional[float] = Field(default=None, ge=0.05, le=5.0)
     total_seconds: Optional[float] = Field(default=None, ge=1.0, le=120.0)
+    selected_paths: Optional[List[str]] = None  # subset of cached image paths; None = use all
 
     @field_validator("color_theme")
     @classmethod
