@@ -8,8 +8,40 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getJobStatus } from '../lib/api'
+import { getJobStatus, regradeJob } from '../lib/api'
 import type { JobStatus } from '../lib/api'
+
+const RE_EDIT_THEMES = [
+  { value: 'none',     label: 'Natural' },
+  { value: 'dark',     label: 'Dark Tones' },
+  { value: 'sepia',    label: 'Sepia' },
+  { value: 'warm',     label: 'Amber' },
+  { value: 'low_exp',  label: 'Low Exposure' },
+  { value: 'grey',     label: 'Silver' },
+  { value: 'blue',     label: 'Cobalt' },
+  { value: 'red',      label: 'Crimson' },
+  { value: 'bw',       label: 'Monochrome' },
+  { value: 'mocha',    label: 'Mocha' },
+  { value: 'noir',     label: 'Noir' },
+  { value: 'midnight', label: 'Midnight' },
+  { value: 'dusk',     label: 'Dusk' },
+]
+
+const RE_EDIT_THEME_DOT: Record<string, string> = {
+  none:     'bg-stone-400',
+  warm:     'bg-amber-500',
+  dark:     'bg-stone-900 ring-1 ring-stone-600',
+  grey:     'bg-slate-400',
+  blue:     'bg-blue-500',
+  red:      'bg-red-500',
+  bw:       'bg-white ring-1 ring-stone-500',
+  sepia:    'bg-amber-800',
+  low_exp:  'bg-stone-950 ring-1 ring-stone-700',
+  mocha:    'bg-amber-950',
+  noir:     'bg-stone-900 ring-1 ring-amber-900',
+  midnight: 'bg-blue-950 ring-1 ring-cyan-900',
+  dusk:     'bg-purple-900 ring-1 ring-purple-700',
+}
 
 // ─── Pipeline progress overlay ───────────────────────────────────────────────
 
@@ -272,12 +304,18 @@ interface Props {
   onCancel?: () => Promise<void>
   onEstimate?: (secs: number) => void
   onRetry?: (job: JobStatus) => void
+  onRegraded?: (newJobId: string, title: string | null) => void
 }
 
-export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel, onEstimate, onRetry }: Props) {
+export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel, onEstimate, onRetry, onRegraded }: Props) {
   const [cancelling, setCancelling] = useState(false)
   const [showOverlay, setShowOverlay] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [reEditOpen, setReEditOpen] = useState(false)
+  const [reEditTheme, setReEditTheme] = useState('none')
+  const [reEditSpi, setReEditSpi] = useState<number | null>(null)
+  const [reEditTotal, setReEditTotal] = useState<number | null>(null)
+  const [reEditing, setReEditing] = useState(false)
   const imageCountRef = useRef<{ done: number; total: number } | null>(null)
   const sourceRef = useRef<string | null>(null)
   const overlayHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -550,6 +588,113 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
               >
                 {downloading ? 'Downloading…' : 'Download video'}
               </button>
+              {job.images_cached && onRegraded && (
+                <button
+                  onClick={() => {
+                    setReEditOpen(o => !o)
+                    if (!reEditOpen) {
+                      setReEditTheme(job.color_theme ?? 'none')
+                      setReEditSpi(job.seconds_per_image ?? null)
+                      setReEditTotal(job.total_seconds ?? null)
+                    }
+                  }}
+                  className={`w-full rounded-lg border py-1.5 text-xs font-medium transition ${
+                    reEditOpen
+                      ? 'border-brand-500 text-brand-400 bg-brand-500/10'
+                      : 'border-stone-700 bg-stone-800 text-stone-400 hover:border-stone-600 hover:text-stone-200'
+                  }`}
+                >
+                  Re-edit video
+                </button>
+              )}
+              {reEditOpen && job.images_cached && onRegraded && (
+                <div className="rounded-lg border border-stone-700 bg-stone-900 p-3 space-y-3">
+                  {/* Theme picker */}
+                  <div>
+                    <p className="text-[10px] text-stone-600 mb-1.5">Colour theme:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {RE_EDIT_THEMES.map(t => (
+                        <button
+                          key={t.value}
+                          onClick={() => setReEditTheme(t.value)}
+                          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${
+                            reEditTheme === t.value
+                              ? 'border-brand-500 text-brand-400 bg-brand-500/10'
+                              : 'border-stone-700 bg-stone-800 text-stone-300 hover:border-stone-500'
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${RE_EDIT_THEME_DOT[t.value] ?? 'bg-stone-500'}`} />
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Seconds per image */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[10px] text-stone-600">Seconds per image</p>
+                      <span className="text-[10px] text-stone-400 font-mono">
+                        {(reEditSpi ?? job.seconds_per_image ?? 0.13).toFixed(2)}s
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.05}
+                      max={2.0}
+                      step={0.01}
+                      value={reEditSpi ?? job.seconds_per_image ?? 0.13}
+                      onChange={e => setReEditSpi(parseFloat(e.target.value))}
+                      className="w-full accent-brand-500"
+                    />
+                  </div>
+
+                  {/* Video length */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[10px] text-stone-600">Video length</p>
+                      <span className="text-[10px] text-stone-400 font-mono">
+                        {(reEditTotal ?? job.total_seconds ?? 11)}s
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={5}
+                      max={60}
+                      step={1}
+                      value={reEditTotal ?? job.total_seconds ?? 11}
+                      onChange={e => setReEditTotal(parseFloat(e.target.value))}
+                      className="w-full accent-brand-500"
+                    />
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      setReEditing(true)
+                      try {
+                        const res = await regradeJob(job.job_id, {
+                          color_theme: reEditTheme,
+                          ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
+                          ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
+                        })
+                        const newTitle = job.batch_title
+                          ? `${job.batch_title} · ${reEditTheme}`
+                          : reEditTheme
+                        onRegraded(res.job_id, newTitle)
+                        setReEditOpen(false)
+                      } catch (e: unknown) {
+                        alert(e instanceof Error ? e.message : 'Re-edit failed')
+                      } finally {
+                        setReEditing(false)
+                      }
+                    }}
+                    disabled={reEditing}
+                    className="w-full rounded-lg bg-brand-500 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
+                  >
+                    {reEditing ? 'Starting…' : 'Re-render'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

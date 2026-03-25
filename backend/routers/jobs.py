@@ -180,10 +180,14 @@ async def regrade_job(
             detail="No cached images available for this job. Re-grade is only available for recently completed jobs.",
         )
 
-    # Derive seconds_per_image: use request value or fall back to original
+    # Derive seconds_per_image / total_seconds: use request value or fall back to original
     seconds_per_image = req.seconds_per_image
     if seconds_per_image is None:
         seconds_per_image = float(original_config.get("seconds_per_image", 0.13))
+
+    total_seconds = req.total_seconds
+    if total_seconds is None:
+        total_seconds = float(original_config.get("total_seconds", 11.0))
 
     # Build a config for the new job row
     source_title = source_job.get("batch_title") or original_config.get("batch_title")
@@ -193,7 +197,7 @@ async def regrade_job(
         search_terms=original_config.get("search_terms", []),
         resolution=original_config.get("resolution", "1080x1920"),
         seconds_per_image=seconds_per_image,
-        total_seconds=float(original_config.get("total_seconds", 11.0)),
+        total_seconds=total_seconds,
         fps=int(original_config.get("fps", 30)),
         allow_repeats=bool(original_config.get("allow_repeats", True)),
         color_theme=req.color_theme,
@@ -212,6 +216,7 @@ async def regrade_job(
         user_id=user_id,
         color_theme=req.color_theme,
         seconds_per_image=seconds_per_image,
+        total_seconds=total_seconds,
         original_config=original_config,
         db=db,
     )

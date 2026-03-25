@@ -204,6 +204,7 @@ export async function resignJob(jobId: string): Promise<{ output_url: string }> 
 export interface RegradeRequest {
   color_theme: string
   seconds_per_image?: number
+  total_seconds?: number
 }
 
 export async function regradeJob(jobId: string, req: RegradeRequest): Promise<GenerateResponse> {

@@ -95,11 +95,11 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
   const [resigning, setResigning] = useState<Record<string, boolean>>({})
   // Track when each job was last re-signed (ms timestamp) so expiry resets correctly
   const [resignedAt, setResignedAt] = useState<Record<string, number>>({})
-  const [gradingJob, setGradingJob] = useState<string | null>(null)
-  const [regradeJob_, setRegradeJob] = useState<string | null>(null)
-  const [regradeTheme, setRegradeTheme] = useState('none')
-  const [regraduSpi, setRegraduSpi] = useState<number | null>(null)
-  const [regrading, setRegrading] = useState<Record<string, boolean>>({})
+  const [reEditJob, setReEditJob] = useState<string | null>(null)
+  const [reEditTheme, setReEditTheme] = useState('none')
+  const [reEditSpi, setReEditSpi] = useState<number | null>(null)
+  const [reEditTotal, setReEditTotal] = useState<number | null>(null)
+  const [reEditing, setReEditing] = useState<Record<string, boolean>>({})
   const [deletingImages, setDeletingImages] = useState<Record<string, boolean>>({})
 
   const { data: jobs = [], refetch } = useQuery({
@@ -130,22 +130,33 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
     }
   }
 
-  async function handleRegrade(jobId: string, secondsPerImage: number | null) {
-    setRegrading(prev => ({ ...prev, [jobId]: true }))
+  async function handleReEditSubmit(job: JobStatus) {
+    const jobId = job.job_id
+    setReEditing(prev => ({ ...prev, [jobId]: true }))
     try {
-      const res = await regradeJob(jobId, {
-        color_theme: regradeTheme,
-        ...(secondsPerImage != null ? { seconds_per_image: secondsPerImage } : {}),
-      })
-      const newTitle = jobs.find(j => j.job_id === jobId)?.batch_title
-        ? `${jobs.find(j => j.job_id === jobId)!.batch_title} · ${regradeTheme}`
-        : regradeTheme
-      onRegrade?.(res.job_id, newTitle ?? null)
-      setRegradeJob(null)
+      if (job.images_cached) {
+        const res = await regradeJob(jobId, {
+          color_theme: reEditTheme,
+          ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
+          ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
+        })
+        const newTitle = job.batch_title
+          ? `${job.batch_title} · ${reEditTheme}`
+          : reEditTheme
+        onRegrade?.(res.job_id, newTitle)
+      } else {
+        const updatedSettings: Partial<import('./SettingsPanel').VideoSettings> = {
+          ...extractSettings(job),
+          ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
+          ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
+        }
+        onColourGrade?.(job.search_terms!, job.batch_title ?? null, updatedSettings, reEditTheme)
+      }
+      setReEditJob(null)
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Re-grade failed')
+      alert(e instanceof Error ? e.message : 'Re-edit failed')
     } finally {
-      setRegrading(prev => ({ ...prev, [jobId]: false }))
+      setReEditing(prev => ({ ...prev, [jobId]: false }))
     }
   }
 
@@ -157,7 +168,7 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
       qc.setQueryData<JobStatus[]>(['jobs'], prev =>
         (prev ?? []).map(j => j.job_id === jobId ? { ...j, images_cached: false } : j)
       )
-      setRegradeJob(null)
+      setReEditJob(null)
     } catch {
       alert('Could not delete cached images.')
     } finally {
@@ -243,30 +254,22 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
                   Edit images
                 </button>
               )}
-              {onColourGrade && job.search_terms && job.search_terms.length > 0 && (
-                <button
-                  onClick={() => setGradingJob(gradingJob === job.job_id ? null : job.job_id)}
-                  className={`text-xs transition ${gradingJob === job.job_id ? 'text-brand-400' : 'text-stone-500 hover:text-stone-300'}`}
-                  title="Re-generate with a different colour grade"
-                >
-                  Colour grade
-                </button>
-              )}
-              {job.status === 'done' && job.images_cached && (
+              {job.status === 'done' && (job.images_cached || (job.search_terms && job.search_terms.length > 0 && onColourGrade)) && (
                 <button
                   onClick={() => {
-                    if (regradeJob_ === job.job_id) {
-                      setRegradeJob(null)
+                    if (reEditJob === job.job_id) {
+                      setReEditJob(null)
                     } else {
-                      setRegradeJob(job.job_id)
-                      setRegradeTheme(job.color_theme ?? 'none')
-                      setRegraduSpi(job.seconds_per_image ?? null)
+                      setReEditJob(job.job_id)
+                      setReEditTheme(job.color_theme ?? 'none')
+                      setReEditSpi(job.seconds_per_image ?? null)
+                      setReEditTotal(job.total_seconds ?? null)
                     }
                   }}
-                  className={`text-xs transition ${regradeJob_ === job.job_id ? 'text-brand-400' : 'text-stone-500 hover:text-stone-300'}`}
-                  title="Re-render using cached images — no re-fetch needed"
+                  className={`text-xs transition ${reEditJob === job.job_id ? 'text-brand-400' : 'text-stone-500 hover:text-stone-300'}`}
+                  title="Change colour theme, pacing, or length and re-render"
                 >
-                  Re-grade
+                  Re-edit video
                 </button>
               )}
               {onReuse && job.search_terms && job.search_terms.length > 0 && (
@@ -286,41 +289,21 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
               </button>
             </div>
 
-            {/* Colour grade theme picker */}
-            {gradingJob === job.job_id && onColourGrade && (
-              <div className="mt-2 pt-2 border-t border-stone-800">
-                <p className="text-[10px] text-stone-600 mb-1.5">Pick a colour grade to regenerate:</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {COLOR_THEMES.map(t => (
-                    <button
-                      key={t.value}
-                      onClick={() => {
-                        onColourGrade(job.search_terms!, job.batch_title ?? null, extractSettings(job), t.value)
-                        setGradingJob(null)
-                      }}
-                      className="flex items-center gap-1 rounded-full border border-stone-700 bg-stone-800 px-2 py-0.5 text-xs text-stone-300 hover:border-brand-500 hover:text-brand-400 transition"
-                    >
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${THEME_DOT[t.value] ?? 'bg-stone-500'}`} />
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Re-grade panel — uses cached images, no re-fetch */}
-            {regradeJob_ === job.job_id && (
+            {/* Re-edit video panel */}
+            {reEditJob === job.job_id && (
               <div className="mt-2 pt-2 border-t border-stone-800 space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-[10px] text-stone-500 font-medium">Re-grade from cached images</p>
-                  <button
-                    onClick={() => handleDeleteCachedImages(job.job_id)}
-                    disabled={deletingImages[job.job_id]}
-                    className="text-[10px] text-stone-700 hover:text-red-500 transition disabled:opacity-40"
-                    title="Delete cached images to free storage"
-                  >
-                    {deletingImages[job.job_id] ? 'Deleting…' : 'Delete cached images'}
-                  </button>
+                  <p className="text-[10px] text-stone-500 font-medium">Re-edit video</p>
+                  {job.images_cached && (
+                    <button
+                      onClick={() => handleDeleteCachedImages(job.job_id)}
+                      disabled={deletingImages[job.job_id]}
+                      className="text-[10px] text-stone-700 hover:text-red-500 transition disabled:opacity-40"
+                      title="Delete cached images to free storage"
+                    >
+                      {deletingImages[job.job_id] ? 'Deleting…' : 'Delete cached images'}
+                    </button>
+                  )}
                 </div>
 
                 {/* Theme picker */}
@@ -330,9 +313,9 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
                     {COLOR_THEMES.map(t => (
                       <button
                         key={t.value}
-                        onClick={() => setRegradeTheme(t.value)}
+                        onClick={() => setReEditTheme(t.value)}
                         className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${
-                          regradeTheme === t.value
+                          reEditTheme === t.value
                             ? 'border-brand-500 text-brand-400 bg-brand-500/10'
                             : 'border-stone-700 bg-stone-800 text-stone-300 hover:border-stone-500'
                         }`}
@@ -344,12 +327,12 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
                   </div>
                 </div>
 
-                {/* Pacing slider */}
+                {/* Seconds per image */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-[10px] text-stone-600">Seconds per image</p>
                     <span className="text-[10px] text-stone-400 font-mono">
-                      {(regraduSpi ?? job.seconds_per_image ?? 0.13).toFixed(2)}s
+                      {(reEditSpi ?? job.seconds_per_image ?? 0.13).toFixed(2)}s
                     </span>
                   </div>
                   <input
@@ -357,18 +340,37 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
                     min={0.05}
                     max={2.0}
                     step={0.01}
-                    value={regraduSpi ?? job.seconds_per_image ?? 0.13}
-                    onChange={e => setRegraduSpi(parseFloat(e.target.value))}
+                    value={reEditSpi ?? job.seconds_per_image ?? 0.13}
+                    onChange={e => setReEditSpi(parseFloat(e.target.value))}
+                    className="w-full accent-brand-500"
+                  />
+                </div>
+
+                {/* Video length */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[10px] text-stone-600">Video length</p>
+                    <span className="text-[10px] text-stone-400 font-mono">
+                      {(reEditTotal ?? job.total_seconds ?? 11)}s
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={5}
+                    max={60}
+                    step={1}
+                    value={reEditTotal ?? job.total_seconds ?? 11}
+                    onChange={e => setReEditTotal(parseFloat(e.target.value))}
                     className="w-full accent-brand-500"
                   />
                 </div>
 
                 <button
-                  onClick={() => handleRegrade(job.job_id, regraduSpi)}
-                  disabled={regrading[job.job_id]}
+                  onClick={() => handleReEditSubmit(job)}
+                  disabled={reEditing[job.job_id]}
                   className="w-full rounded-lg bg-brand-500 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
                 >
-                  {regrading[job.job_id] ? 'Starting…' : 'Re-render'}
+                  {reEditing[job.job_id] ? 'Starting…' : 'Re-render'}
                 </button>
               </div>
             )}
