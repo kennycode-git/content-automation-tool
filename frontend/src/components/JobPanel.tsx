@@ -328,7 +328,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
     overlayHideTimeout.current = setTimeout(() => setShowOverlay(false), 200)
   }
 
-  const { data: job, isLoading, error } = useQuery({
+  const { data: job, isLoading, error, refetch } = useQuery({
     queryKey: ['job', jobId],
     queryFn: () => getJobStatus(jobId),
     refetchInterval: (query) => {
@@ -351,9 +351,13 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   const jobRef = useRef(job)
   jobRef.current = job
   useEffect(() => {
-    if (job?.status === 'done' && onDone && !doneFired.current) {
+    if (job?.status === 'done' && !doneFired.current) {
       doneFired.current = true
-      onDone(jobRef.current!)
+      if (onDone) onDone(jobRef.current!)
+      // images_cached is written after status=done on the backend — do one
+      // delayed refetch to pick it up so the Re-edit button can appear
+      const t = setTimeout(() => refetch(), 4000)
+      return () => clearTimeout(t)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.status])
