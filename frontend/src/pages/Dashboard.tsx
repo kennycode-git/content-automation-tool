@@ -1072,6 +1072,7 @@ export default function Dashboard({ session }: Props) {
                       onEstimate={secs => setJobEstimates(prev => ({ ...prev, [jobId]: secs }))}
                       onRetry={handleRetry}
                       onRegraded={handleRegrade}
+                      onColourGrade={handleColourGrade}
                     />
                   ))}
                 </div>
