@@ -289,9 +289,10 @@ interface Props {
   onEstimate?: (secs: number) => void
   onRetry?: (job: JobStatus) => void
   onRegraded?: (newJobId: string, title: string | null) => void
+  onColourGrade?: (terms: string[], batchTitle: string | null, settings: { color_theme: string; seconds_per_image?: number; total_seconds?: number } | null, theme: string) => void
 }
 
-export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel, onEstimate, onRetry, onRegraded }: Props) {
+export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel, onEstimate, onRetry, onRegraded, onColourGrade }: Props) {
   const [cancelling, setCancelling] = useState(false)
   const [showOverlay, setShowOverlay] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -576,7 +577,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
               >
                 {downloading ? 'Downloading…' : 'Download video'}
               </button>
-              {job.images_cached && onRegraded && (
+              {job.status === 'done' && onRegraded && (
                 <button
                   onClick={() => {
                     setReEditOpen(o => !o)
@@ -659,16 +660,28 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                   <button
                     onClick={async () => {
                       setReEditing(true)
+                      const newTitle = job.batch_title
+                        ? `${job.batch_title} · ${reEditTheme}`
+                        : reEditTheme
                       try {
-                        const res = await regradeJob(job.job_id, {
-                          color_theme: reEditTheme,
-                          ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
-                          ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
-                        })
-                        const newTitle = job.batch_title
-                          ? `${job.batch_title} · ${reEditTheme}`
-                          : reEditTheme
-                        onRegraded(res.job_id, newTitle)
+                        if (job.images_cached) {
+                          const res = await regradeJob(job.job_id, {
+                            color_theme: reEditTheme,
+                            ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
+                            ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
+                          })
+                          onRegraded(res.job_id, newTitle)
+                        } else if (onColourGrade && job.search_terms?.length) {
+                          // Images not cached yet — fall back to full re-render
+                          onColourGrade(job.search_terms, job.batch_title ?? null, {
+                            color_theme: reEditTheme,
+                            ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
+                            ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
+                          }, reEditTheme)
+                        } else {
+                          alert('Images not yet cached — try again in a few seconds.')
+                          return
+                        }
                         setReEditOpen(false)
                       } catch (e: unknown) {
                         alert(e instanceof Error ? e.message : 'Re-edit failed')
