@@ -305,6 +305,36 @@ class PreviewStageResponse(BaseModel):
     pexels_fallback: bool = False
 
 
+class PreviewFindMoreRequest(BaseModel):
+    search_terms: List[str] = Field(..., min_length=1, max_length=20)
+    count: int = Field(..., ge=1, le=50)
+    resolution: str = Field(default="1080x1920")
+    color_theme: str = Field(default="none")
+    image_source: str = Field(default="pexels")
+
+    @field_validator("search_terms")
+    @classmethod
+    def validate_terms(cls, v: List[str]) -> List[str]:
+        for term in v:
+            if len(term) > 200:
+                raise ValueError("Each search term must be ≤ 200 characters.")
+            if not term.strip():
+                raise ValueError("Search terms must not be blank.")
+        return [t.strip() for t in v]
+
+    @field_validator("color_theme")
+    @classmethod
+    def validate_color_theme(cls, v: str) -> str:
+        allowed = ALLOWED_COLOR_THEMES - {"custom"}
+        if v not in allowed:
+            raise ValueError(f"color_theme must be one of: {', '.join(sorted(allowed))}")
+        return v
+
+
+class PreviewFindMoreResponse(BaseModel):
+    images: List[PreviewImageItem]
+
+
 ALLOWED_TRANSITIONS = {"cut", "fade_black", "crossfade"}
 
 

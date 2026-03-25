@@ -32,6 +32,8 @@ from models.schemas import (
     PreviewStageResponse,
     PreviewBatchResult,
     PreviewImageItem,
+    PreviewFindMoreRequest,
+    PreviewFindMoreResponse,
 )
 from routers.auth import get_current_user_id
 from services.image_pipeline import fetch_images, download_and_save, RateLimitError
@@ -238,6 +240,74 @@ async def preview_stage(
             )
 
         return PreviewStageResponse(batches=batch_results, pexels_fallback=any_pexels_fallback)
+
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+@router.post("/preview-find-more", response_model=PreviewFindMoreResponse)
+async def preview_find_more(
+    body: PreviewFindMoreRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Fetch additional images for a batch already open in PreviewModal.
+    No render credit consumed — images are staged in user-uploads like /preview-stage.
+    """
+    access_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+    pexels_key = os.environ.get("PEXELS_ACCESS_KEY", "")
+    w, h = (int(x) for x in body.resolution.lower().split("x"))
+    ts = int(time.time() * 1000)
+
+    tmp_root = tempfile.mkdtemp(prefix="find_more_")
+    client = get_client()
+
+    try:
+        images_dir = os.path.join(tmp_root, "images")
+        graded_dir = os.path.join(tmp_root, "graded")
+
+        try:
+            render_dir, _ = await asyncio.to_thread(
+                _stage_batch_sync,
+                search_terms=body.search_terms,
+                uploaded_image_paths=None,
+                width=w,
+                height=h,
+                need_total=body.count,
+                access_key=access_key,
+                pexels_key=pexels_key,
+                color_theme=body.color_theme,
+                custom_grade_params=None,
+                image_source=body.image_source,
+                images_dir=images_dir,
+                graded_dir=graded_dir,
+            )
+        except Exception as e:
+            logger.exception("Find more failed: %s", e)
+            raise HTTPException(status_code=500, detail=f"Image fetch failed: {e}")
+
+        image_items: list[PreviewImageItem] = []
+        render_path = Path(render_dir)
+        fnames = sorted(f for f in os.listdir(render_dir) if Path(render_dir, f).is_file())
+
+        for fname in fnames:
+            fpath = render_path / fname
+            try:
+                with open(fpath, "rb") as f:
+                    data = f.read()
+                storage_path = f"{user_id}/preview/{ts}_more_{fname}"
+                client.storage.from_("user-uploads").upload(
+                    path=storage_path,
+                    file=data,
+                    file_options={"content-type": "image/jpeg", "upsert": "true"},
+                )
+                signed_url = await get_user_uploads_signed_url(storage_path)
+                image_items.append(PreviewImageItem(storage_path=storage_path, signed_url=signed_url))
+            except Exception as e:
+                logger.warning("Find more: failed to upload/sign %s: %s", fname, e)
+
+        logger.info("Find more: %d images fetched for user %s", len(image_items), user_id)
+        return PreviewFindMoreResponse(images=image_items)
 
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)

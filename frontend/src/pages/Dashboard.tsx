@@ -1109,6 +1109,9 @@ export default function Dashboard({ session }: Props) {
           batches={previewData}
           onConfirm={handlePreviewConfirm}
           onCancel={() => setPreviewData(null)}
+          resolution={settings.resolution}
+          colorTheme={settings.color_theme}
+          imageSource={resolvedSource}
         />
       )}
 
