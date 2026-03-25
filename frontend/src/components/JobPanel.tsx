@@ -596,7 +596,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                   Re-edit video
                 </button>
               )}
-              {reEditOpen && job.images_cached && onRegraded && (
+              {reEditOpen && job.status === 'done' && onRegraded && (
                 <div className="rounded-lg border border-stone-700 bg-stone-900 p-3 space-y-3">
                   {/* Theme picker */}
                   <div>
