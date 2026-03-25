@@ -8,8 +8,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getJobStatus, regradeJob } from '../lib/api'
-import type { JobStatus } from '../lib/api'
+import { getJobStatus, regradeJob, getRawImages } from '../lib/api'
+import type { JobStatus, PreviewBatchResult } from '../lib/api'
+import PreviewModal from './PreviewModal'
+import type { ConfirmedBatch } from './PreviewModal'
 
 const RE_EDIT_THEMES = [
   { value: 'none',     label: 'Natural' },
@@ -317,6 +319,10 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   const [reEditSpi, setReEditSpi] = useState<number | null>(null)
   const [reEditTotal, setReEditTotal] = useState<number | null>(null)
   const [reEditing, setReEditing] = useState(false)
+  const [reviewImages, setReviewImages] = useState(false)
+  const [reviewData, setReviewData] = useState<PreviewBatchResult | null>(null)
+  const [loadingReview, setLoadingReview] = useState(false)
+  const pendingRegrade = useRef<{ theme: string; spi: number | null; total: number | null } | null>(null)
   const imageCountRef = useRef<{ done: number; total: number } | null>(null)
   const sourceRef = useRef<string | null>(null)
   const overlayHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -430,6 +436,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   }
 
   return (
+    <>
     <div className="rounded-xl border border-stone-700 bg-stone-800 p-4 relative">
       {/* Progress overlay (hover) */}
       {!isTerminal && showOverlay && (
@@ -676,10 +683,26 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
 
                   <button
                     onClick={async () => {
-                      setReEditing(true)
                       const newTitle = job.batch_title
                         ? `${job.batch_title} · ${reEditTheme}`
                         : reEditTheme
+
+                      // If review images checked and images are cached, fetch + show PreviewModal
+                      if (reviewImages && job.images_cached) {
+                        setLoadingReview(true)
+                        pendingRegrade.current = { theme: reEditTheme, spi: reEditSpi, total: reEditTotal }
+                        try {
+                          const data = await getRawImages(job.job_id)
+                          setReviewData(data)
+                        } catch {
+                          alert('Could not load cached images.')
+                          setLoadingReview(false)
+                        }
+                        setLoadingReview(false)
+                        return
+                      }
+
+                      setReEditing(true)
                       try {
                         if (job.images_cached) {
                           const res = await regradeJob(job.job_id, {
@@ -689,7 +712,6 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                           })
                           onRegraded(res.job_id, newTitle)
                         } else if (onColourGrade && job.search_terms?.length) {
-                          // Images not cached yet — fall back to full re-render
                           onColourGrade(job.search_terms, job.batch_title ?? null, {
                             color_theme: reEditTheme,
                             ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
@@ -706,11 +728,23 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                         setReEditing(false)
                       }
                     }}
-                    disabled={reEditing}
+                    disabled={reEditing || loadingReview}
                     className="w-full rounded-lg bg-brand-500 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
                   >
-                    {reEditing ? 'Starting…' : 'Re-render'}
+                    {loadingReview ? 'Loading images…' : reEditing ? 'Starting…' : 'Re-render'}
                   </button>
+
+                  {job.images_cached && (
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={reviewImages}
+                        onChange={e => setReviewImages(e.target.checked)}
+                        className="accent-brand-500 w-3.5 h-3.5"
+                      />
+                      <span className="text-xs text-stone-400">Review image selection first</span>
+                    </label>
+                  )}
                 </div>
               )}
             </div>
@@ -736,5 +770,38 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
         </>
       )}
     </div>
+
+    {reviewData && onRegraded && (
+      <PreviewModal
+        batches={[reviewData]}
+        onConfirm={async (confirmed: ConfirmedBatch[]) => {
+          setReviewData(null)
+          const pending = pendingRegrade.current
+          if (!pending) return
+          setReEditing(true)
+          try {
+            const selectedPaths = confirmed[0]?.images.map(i => i.storage_path) ?? []
+            const res = await regradeJob(job!.job_id, {
+              color_theme: pending.theme,
+              ...(pending.spi != null ? { seconds_per_image: pending.spi } : {}),
+              ...(pending.total != null ? { total_seconds: pending.total } : {}),
+              ...(selectedPaths.length ? { selected_paths: selectedPaths } : {}),
+            })
+            const newTitle = job!.batch_title
+              ? `${job!.batch_title} · ${pending.theme}`
+              : pending.theme
+            onRegraded(res.job_id, newTitle)
+            setReEditOpen(false)
+          } catch (e: unknown) {
+            alert(e instanceof Error ? e.message : 'Re-edit failed')
+          } finally {
+            setReEditing(false)
+            pendingRegrade.current = null
+          }
+        }}
+        onCancel={() => { setReviewData(null); pendingRegrade.current = null }}
+      />
+    )}
+    </>
   )
 }

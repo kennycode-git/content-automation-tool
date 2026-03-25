@@ -763,6 +763,7 @@ async def run_regrade_pipeline(
     total_seconds: float,
     original_config: dict,
     db,
+    selected_paths: list | None = None,
 ) -> None:
     """
     Re-grade cached raw images from source_job_id with a new colour theme and/or pacing,
@@ -775,6 +776,7 @@ async def run_regrade_pipeline(
         await _run_regrade_pipeline_inner(
             source_job_id, new_job_id, user_id, color_theme,
             seconds_per_image, total_seconds, original_config, db,
+            selected_paths=selected_paths,
         )
 
 
@@ -787,6 +789,7 @@ async def _run_regrade_pipeline_inner(
     total_seconds: float,
     original_config: dict,
     db,
+    selected_paths: list | None = None,
 ) -> None:
     resolution = original_config.get("resolution", "1080x1920")
     w, h = resolution.lower().split("x")
@@ -811,6 +814,13 @@ async def _run_regrade_pipeline_inner(
         )
         if count == 0:
             raise RuntimeError("No cached images found for this job. Re-grade is unavailable.")
+
+        # If caller specified a subset of images, remove the rest
+        if selected_paths:
+            selected_fnames = {os.path.basename(p) for p in selected_paths}
+            for fname in os.listdir(raw_dir):
+                if fname not in selected_fnames:
+                    os.remove(os.path.join(raw_dir, fname))
 
         # Cache images under the new job's ID so it can itself be re-edited
         try:

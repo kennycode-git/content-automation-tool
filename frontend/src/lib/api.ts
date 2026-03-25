@@ -205,6 +205,7 @@ export interface RegradeRequest {
   color_theme: string
   seconds_per_image?: number
   total_seconds?: number
+  selected_paths?: string[]
 }
 
 export async function regradeJob(jobId: string, req: RegradeRequest): Promise<GenerateResponse> {
@@ -214,6 +215,13 @@ export async function regradeJob(jobId: string, req: RegradeRequest): Promise<Ge
     body: JSON.stringify(req),
   })
   return handleResponse<GenerateResponse>(res)
+}
+
+export async function getRawImages(jobId: string): Promise<PreviewBatchResult> {
+  const res = await fetch(`${API_URL}/api/jobs/${jobId}/raw-images`, {
+    headers: await authHeaders(),
+  })
+  return handleResponse<PreviewBatchResult>(res)
 }
 
 export async function deleteJobImages(jobId: string): Promise<void> {
