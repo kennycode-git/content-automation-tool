@@ -56,6 +56,7 @@ async def get_job_status(
         max_per_query=cfg.get("max_per_query"),
         preset_name=cfg.get("preset_name"),
         preview_images=cfg.get("preview_images"),
+        images_cached=cfg.get("images_cached", False),
         created_at=job["created_at"],
         completed_at=job.get("completed_at"),
     )
