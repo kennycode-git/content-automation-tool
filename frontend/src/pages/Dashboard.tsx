@@ -896,6 +896,7 @@ export default function Dashboard({ session }: Props) {
                       onCancel={() => cancelJob(jobId)}
                       onEstimate={secs => setJobEstimates(prev => ({ ...prev, [jobId]: secs }))}
                       onRetry={handleRetry}
+                      onRegraded={handleRegrade}
                     />
                   ))}
                 </div>

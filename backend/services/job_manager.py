@@ -760,6 +760,7 @@ async def run_regrade_pipeline(
     user_id: str,
     color_theme: str,
     seconds_per_image: float,
+    total_seconds: float,
     original_config: dict,
     db,
 ) -> None:
@@ -773,7 +774,7 @@ async def run_regrade_pipeline(
     async with _get_semaphore():
         await _run_regrade_pipeline_inner(
             source_job_id, new_job_id, user_id, color_theme,
-            seconds_per_image, original_config, db,
+            seconds_per_image, total_seconds, original_config, db,
         )
 
 
@@ -783,13 +784,13 @@ async def _run_regrade_pipeline_inner(
     user_id: str,
     color_theme: str,
     seconds_per_image: float,
+    total_seconds: float,
     original_config: dict,
     db,
 ) -> None:
     resolution = original_config.get("resolution", "1080x1920")
     w, h = resolution.lower().split("x")
     width, height = int(w), int(h)
-    total_seconds = float(original_config.get("total_seconds", 11.0))
     fps = int(original_config.get("fps", 30))
     allow_repeats = bool(original_config.get("allow_repeats", True))
     text_overlay = original_config.get("text_overlay")

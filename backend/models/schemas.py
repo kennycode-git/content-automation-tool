@@ -222,6 +222,7 @@ class RegradeRequest(BaseModel):
     """Request body for POST /api/jobs/{job_id}/regrade."""
     color_theme: str
     seconds_per_image: Optional[float] = Field(default=None, ge=0.05, le=5.0)
+    total_seconds: Optional[float] = Field(default=None, ge=1.0, le=120.0)
 
     @field_validator("color_theme")
     @classmethod
