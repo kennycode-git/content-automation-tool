@@ -682,9 +682,9 @@ export default function Dashboard({ session }: Props) {
                   onClick={handleStagePreview}
                   disabled={submitting || staging || trialExpired}
                   data-tour="gen-dropdown"
-                  className="rounded-xl border border-brand-500 py-3 text-sm font-semibold text-brand-400 hover:bg-brand-500/10 disabled:opacity-50 transition"
+                  className="rounded-xl border border-stone-700 py-3 text-sm font-medium text-stone-300 hover:border-stone-500 hover:text-stone-100 disabled:opacity-50 transition"
                 >
-                  {staging ? 'Fetching images…' : 'Preview images first'}
+                  {staging ? 'Fetching images…' : 'Preview images →'}
                 </button>
                 <button
                   onClick={handleGenerate}
@@ -693,7 +693,7 @@ export default function Dashboard({ session }: Props) {
                   className="rounded-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
                 >
                   {submitting ? 'Submitting…'
-                    : batchCount > 1 ? `Generate ${batchCount} directly` : 'Generate directly'}
+                    : batchCount > 1 ? `Generate ×${batchCount}` : 'Generate'}
                 </button>
               </div>
             </div>
