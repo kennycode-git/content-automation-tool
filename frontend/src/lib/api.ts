@@ -342,6 +342,30 @@ export async function generateVariants(req: VariantsRequest): Promise<{ job_ids:
   return handleResponse<{ job_ids: string[] }>(res)
 }
 
+// ─── Preview find more ────────────────────────────────────────────────────────
+
+export interface FindMoreRequest {
+  search_terms: string[]
+  count: number
+  resolution?: string
+  color_theme?: string
+  image_source?: string
+}
+
+export interface FindMoreResponse {
+  images: PreviewImageItem[]
+}
+
+export async function findMoreImages(req: FindMoreRequest): Promise<FindMoreResponse> {
+  if (DEV_BYPASS) return { images: [] }
+  const res = await fetch(`${API_URL}/api/preview-find-more`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<FindMoreResponse>(res)
+}
+
 // ─── Image upload ─────────────────────────────────────────────────────────────
 
 export async function uploadImages(files: File[]): Promise<{ paths: string[] }> {

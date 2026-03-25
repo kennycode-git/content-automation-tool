@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { PreviewBatchResult } from '../lib/api'
-import { uploadImages } from '../lib/api'
+import { uploadImages, findMoreImages } from '../lib/api'
 
 export interface ConfirmedBatch {
   batch_title: string | null
@@ -36,9 +36,12 @@ interface Props {
   batches: PreviewBatchResult[]
   onConfirm: (batches: ConfirmedBatch[]) => void
   onCancel: () => void
+  resolution?: string
+  colorTheme?: string
+  imageSource?: string
 }
 
-export default function PreviewModal({ batches, onConfirm, onCancel }: Props) {
+export default function PreviewModal({ batches, onConfirm, onCancel, resolution = '1080x1920', colorTheme = 'none', imageSource = 'pexels' }: Props) {
   const [curatedBatches, setCuratedBatches] = useState<CuratedBatch[]>(() =>
     batches.map(b => ({
       batch_title: b.batch_title,
@@ -55,10 +58,31 @@ export default function PreviewModal({ batches, onConfirm, onCancel }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const objectURLsRef = useRef<string[]>([])
 
+  const [findMoreOpen, setFindMoreOpen] = useState(false)
+  const [findMoreCount, setFindMoreCount] = useState(10)
+  const [findMoreLoading, setFindMoreLoading] = useState(false)
+  const [findMoreError, setFindMoreError] = useState<string | null>(null)
+  const findMorePanelRef = useRef<HTMLDivElement>(null)
+
   // Clear selection when switching tabs
   useEffect(() => {
     setSelectedIds(new Set())
+    setFindMoreOpen(false)
+    setFindMoreError(null)
   }, [activeTab])
+
+  // Close find-more panel on outside click
+  useEffect(() => {
+    if (!findMoreOpen) return
+    function handleClick(e: MouseEvent) {
+      if (findMorePanelRef.current && !findMorePanelRef.current.contains(e.target as Node)) {
+        setFindMoreOpen(false)
+        setFindMoreError(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [findMoreOpen])
 
   // Revoke all objectURLs on unmount
   useEffect(() => {
@@ -174,6 +198,37 @@ export default function PreviewModal({ batches, onConfirm, onCancel }: Props) {
 
   const anyUploading = curatedBatches.some(b => b.images.some(img => img.uploading))
 
+  async function handleFindMore() {
+    const batch = curatedBatches[activeTab]
+    if (!batch || findMoreLoading) return
+    setFindMoreLoading(true)
+    setFindMoreError(null)
+    try {
+      const result = await findMoreImages({
+        search_terms: batch.search_terms,
+        count: findMoreCount,
+        resolution,
+        color_theme: colorTheme,
+        image_source: imageSource,
+      })
+      const newImages: CuratedImage[] = result.images.map(img => ({
+        id: crypto.randomUUID(),
+        storage_path: img.storage_path,
+        display_url: img.signed_url,
+      }))
+      setCuratedBatches(prev =>
+        prev.map((b, i) =>
+          i === activeTab ? { ...b, images: [...b.images, ...newImages] } : b
+        )
+      )
+      setFindMoreOpen(false)
+    } catch (err) {
+      setFindMoreError(err instanceof Error ? err.message : 'Failed to fetch images')
+    } finally {
+      setFindMoreLoading(false)
+    }
+  }
+
   function handleConfirm() {
     const clean: ConfirmedBatch[] = curatedBatches
       .map(b => ({
@@ -265,6 +320,55 @@ export default function PreviewModal({ batches, onConfirm, onCancel }: Props) {
               Delete {selectedIds.size} selected
             </button>
           )}
+          {/* Find more images button + popup */}
+          <div className="relative" ref={findMorePanelRef}>
+            <button
+              onClick={() => { setFindMoreOpen(o => !o); setFindMoreError(null) }}
+              className="rounded-lg border border-stone-700 px-3 py-1.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200 transition"
+            >
+              Find more images
+            </button>
+            {findMoreOpen && (
+              <div className="absolute right-0 top-full mt-1.5 z-20 w-64 rounded-xl border border-stone-700 bg-stone-900 p-4 shadow-xl">
+                <p className="mb-3 text-xs font-medium text-stone-300">Find more images</p>
+                <div className="mb-1 flex items-center justify-between text-xs text-stone-400">
+                  <span>How many to find</span>
+                  <span className="font-semibold text-stone-200">{findMoreCount}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={50}
+                  value={findMoreCount}
+                  onChange={e => setFindMoreCount(Number(e.target.value))}
+                  className="mb-3 w-full accent-brand-500"
+                />
+                {findMoreError && (
+                  <p className="mb-2 text-xs text-red-400">{findMoreError}</p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setFindMoreOpen(false); setFindMoreError(null) }}
+                    className="flex-1 rounded-lg border border-stone-700 py-1.5 text-xs text-stone-400 hover:text-stone-200 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleFindMore}
+                    disabled={findMoreLoading}
+                    className="flex-1 rounded-lg bg-brand-500 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition flex items-center justify-center gap-1.5"
+                  >
+                    {findMoreLoading ? (
+                      <>
+                        <span className="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent" />
+                        Fetching…
+                      </>
+                    ) : 'Find'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           <label className="cursor-pointer rounded-lg border border-stone-700 px-3 py-1.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200 transition">
             + Add images
             <input
