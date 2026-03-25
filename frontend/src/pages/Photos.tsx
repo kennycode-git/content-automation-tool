@@ -40,7 +40,7 @@ const COLOR_THEMES = [
   { value: 'bw',      label: 'Monochrome' },
   { value: 'mocha',   label: 'Mocha' },
   { value: 'noir',    label: 'Noir' },
-  { value: 'abyss',   label: 'Abyss' },
+  { value: 'midnight', label: 'Midnight' },
   { value: 'dusk',    label: 'Dusk' },
 ]
 

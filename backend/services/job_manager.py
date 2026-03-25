@@ -44,7 +44,11 @@ from db.supabase_client import get_client
 from services.image_pipeline import fetch_images, download_and_save, download_from_queue, RateLimitError
 from services.image_grader import apply_theme_grading
 from services.video_builder import render_slideshow, extract_thumbnail
-from services.storage import upload_output, upload_thumbnail, get_signed_url, delete_file, list_accent_images, download_accent_image
+from services.storage import (
+    upload_output, upload_thumbnail, get_signed_url, delete_file,
+    list_accent_images, download_accent_image,
+    upload_raw_images, download_raw_images_to_dir,
+)
 import shutil
 
 logger = logging.getLogger(__name__)
@@ -537,6 +541,23 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
 
         # --- Step 7: Increment usage ---
         await _increment_usage(user_id, db)
+
+        # --- Step 8: Cache raw images for post-render re-grading ---
+        # Uploaded after usage increment so a failure here doesn't affect billing.
+        # images_dir contains the ungraded originals (already resized to target resolution).
+        # Skipped for uploaded_only jobs (no Unsplash/Pexels images to cache).
+        if not config.uploaded_only:
+            try:
+                await asyncio.to_thread(upload_raw_images, images_dir, user_id, job_id)
+                # Mark images as cached in job config so the frontend can show Re-grade
+                job_row = db.table("jobs").select("config").eq("id", job_id).eq("user_id", user_id).execute()
+                if job_row.data:
+                    cfg = job_row.data[0].get("config") or {}
+                    cfg["images_cached"] = True
+                    db.table("jobs").update({"config": cfg}).eq("id", job_id).eq("user_id", user_id).execute()
+            except Exception as exc:
+                logger.warning("Raw image cache failed (non-fatal) for job %s: %s", job_id, exc)
+
         logger.info("Pipeline complete for job %s", job_id)
 
     except Exception as exc:
@@ -729,5 +750,142 @@ async def _run_variants_pipeline_inner(
         try:
             shutil.rmtree(tmp_root, ignore_errors=True)
             logger.debug("Cleaned up variants temp dir: %s", tmp_root)
+        except Exception:
+            pass
+
+
+async def run_regrade_pipeline(
+    source_job_id: str,
+    new_job_id: str,
+    user_id: str,
+    color_theme: str,
+    seconds_per_image: float,
+    original_config: dict,
+    db,
+) -> None:
+    """
+    Re-grade cached raw images from source_job_id with a new colour theme and/or pacing,
+    producing a new completed job at new_job_id.
+
+    No Unsplash/Pexels fetch — uses the images stored at outputs/raw/{user_id}/{source_job_id}/.
+    Acquires _pipeline_semaphore to cap concurrent memory usage.
+    """
+    async with _get_semaphore():
+        await _run_regrade_pipeline_inner(
+            source_job_id, new_job_id, user_id, color_theme,
+            seconds_per_image, original_config, db,
+        )
+
+
+async def _run_regrade_pipeline_inner(
+    source_job_id: str,
+    new_job_id: str,
+    user_id: str,
+    color_theme: str,
+    seconds_per_image: float,
+    original_config: dict,
+    db,
+) -> None:
+    resolution = original_config.get("resolution", "1080x1920")
+    w, h = resolution.lower().split("x")
+    width, height = int(w), int(h)
+    total_seconds = float(original_config.get("total_seconds", 11.0))
+    fps = int(original_config.get("fps", 30))
+    allow_repeats = bool(original_config.get("allow_repeats", True))
+    text_overlay = original_config.get("text_overlay")
+    preset_name = original_config.get("preset_name")
+    batch_title = original_config.get("batch_title") or original_config.get("batch_title")
+
+    tmp_root = tempfile.mkdtemp(prefix=f"regrade_{new_job_id[:8]}_")
+    raw_dir = os.path.join(tmp_root, "raw")
+    graded_dir = os.path.join(tmp_root, "graded")
+    output_file = os.path.join(tmp_root, "output.mp4")
+
+    try:
+        # --- Step 1: Download cached raw images ---
+        await update_job_status(new_job_id, user_id, "running", db,
+            progress_message="Loading cached images…")
+        count = await asyncio.to_thread(
+            download_raw_images_to_dir, user_id, source_job_id, raw_dir
+        )
+        if count == 0:
+            raise RuntimeError("No cached images found for this job. Re-grade is unavailable.")
+
+        # --- Step 2: Apply colour grading ---
+        await update_job_status(new_job_id, user_id, "running", db,
+            progress_message="Applying colour grade…")
+        render_input = await asyncio.to_thread(
+            apply_theme_grading, raw_dir, graded_dir, color_theme, None
+        )
+
+        # --- Step 3: Render video ---
+        await update_job_status(new_job_id, user_id, "running", db,
+            progress_message="Rendering video…")
+        result = await asyncio.to_thread(
+            render_slideshow,
+            input_folder=render_input,
+            output_file=output_file,
+            width=width,
+            height=height,
+            seconds_per_image=seconds_per_image,
+            fps=fps,
+            total_seconds=total_seconds,
+            allow_repeats=allow_repeats,
+            shuffle=True,
+            text_overlay=text_overlay,
+        )
+        if result["returncode"] != 0:
+            logger.error("ffmpeg regrade failed (rc=%d). Last 20 lines:\n%s",
+                         result["returncode"], "\n".join(result["log"][-20:]))
+            raise RuntimeError(f"ffmpeg failed (rc={result['returncode']}). Check server logs.")
+
+        # --- Step 3.5: Extract thumbnail ---
+        thumb_url = None
+        thumb_file = os.path.join(tmp_root, "thumb.jpg")
+        try:
+            thumb_ok = await asyncio.to_thread(extract_thumbnail, output_file, thumb_file, total_seconds)
+            if thumb_ok:
+                thumb_path = await upload_thumbnail(thumb_file, user_id, new_job_id)
+                thumb_url = await get_signed_url(thumb_path, expiry_seconds=172800)
+        except Exception as exc:
+            logger.warning("Regrade thumbnail failed (non-fatal): %s", exc)
+
+        # --- Step 4+5: Upload + signed URL ---
+        await update_job_status(new_job_id, user_id, "running", db,
+            progress_message="Uploading output…")
+        storage_path = await upload_output(output_file, user_id, new_job_id)
+        signed_url = await get_signed_url(storage_path)
+
+        # Build config for new job row
+        new_config = dict(original_config)
+        new_config["color_theme"] = color_theme
+        new_config["seconds_per_image"] = seconds_per_image
+        if preset_name:
+            new_config["preset_name"] = preset_name
+
+        # --- Step 6: Mark done ---
+        await update_job_status(
+            new_job_id, user_id, "done", db,
+            output_url=signed_url,
+            thumbnail_url=thumb_url,
+            progress_message="Done",
+            completed_at=datetime.now(timezone.utc).isoformat(),
+        )
+        db.table("jobs").update({"config": new_config}).eq("id", new_job_id).eq("user_id", user_id).execute()
+
+        # --- Step 7: Increment usage ---
+        await _increment_usage(user_id, db)
+        logger.info("Regrade pipeline complete: source=%s new=%s theme=%s", source_job_id, new_job_id, color_theme)
+
+    except Exception as exc:
+        logger.exception("Regrade pipeline failed for job %s: %s", new_job_id, exc)
+        await update_job_status(
+            new_job_id, user_id, "failed", db,
+            error_message=str(exc),
+            completed_at=datetime.now(timezone.utc).isoformat(),
+        )
+    finally:
+        try:
+            shutil.rmtree(tmp_root, ignore_errors=True)
         except Exception:
             pass

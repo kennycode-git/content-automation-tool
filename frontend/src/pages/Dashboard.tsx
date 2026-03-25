@@ -62,7 +62,7 @@ const VARIANT_THEMES = [
   { value: 'bw',      label: 'Monochrome',  dot: 'bg-white ring-1 ring-stone-500' },
   { value: 'mocha',   label: 'Mocha',       dot: 'bg-amber-950' },
   { value: 'noir',    label: 'Noir',        dot: 'bg-stone-900 ring-1 ring-amber-900' },
-  { value: 'abyss',   label: 'Abyss',       dot: 'bg-blue-950 ring-1 ring-cyan-900' },
+  { value: 'midnight', label: 'Midnight',    dot: 'bg-blue-950 ring-1 ring-cyan-900' },
   { value: 'dusk',    label: 'Dusk',        dot: 'bg-purple-900 ring-1 ring-purple-700' },
 ]
 
@@ -84,6 +84,7 @@ export default function Dashboard({ session }: Props) {
   const [pendingBundles, setPendingBundles] = useState<{ title: string | null; terms: string[]; colorTheme?: string; customGradeParams?: CustomGradeParams; accentFolder?: string | null }[] | null>(null)
   const [appliedPresetName, setAppliedPresetName] = useState<string | null>(null)
   const [showVariants, setShowVariants] = useState(false)
+  const [showVariantsConfirm, setShowVariantsConfirm] = useState(false)
   const [showPromptModal, setShowPromptModal] = useState(false)
   const [checkedThemes, setCheckedThemes] = useState<Set<string>>(new Set(['dark', 'bw', 'none']))
   const [jobEstimates, setJobEstimates] = useState<Record<string, number>>({})
@@ -106,13 +107,11 @@ export default function Dashboard({ session }: Props) {
   const [stagingUsedPexels, setStagingUsedPexels] = useState(false)
   const [previewData, setPreviewData] = useState<PreviewBatchResult[] | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [showGenDropdown, setShowGenDropdown] = useState(false)
   const [showTour, setShowTour] = useState(false)
   const [carouselKey, setCarouselKey] = useState(0)
   const [carouselVisible, setCarouselVisible] = useState(true)
   const [imageSource, setImageSource] = useState<'auto' | 'unsplash' | 'pexels' | 'both'>('auto')
   const [showStagingOverlay, setShowStagingOverlay] = useState(false)
-  const genDropdownRef = useRef<HTMLDivElement>(null)
   const stagingAbortRef = useRef<AbortController | null>(null)
   const stagingOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -145,25 +144,26 @@ export default function Dashboard({ session }: Props) {
   }, [pendingCount])
 
   // Click-outside handler for gen dropdown
-  useEffect(() => {
-    if (!showGenDropdown) return
-    function handleClick(e: MouseEvent) {
-      if (genDropdownRef.current && !genDropdownRef.current.contains(e.target as Node))
-        setShowGenDropdown(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showGenDropdown])
-
-  function addToast(message: string) {
+  function addToast(message: string, duration = 5000) {
     const id = crypto.randomUUID()
-    setToasts(prev => [...prev, { id, message }])
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000)
+    setToasts(prev => [...prev, { id, message, duration }])
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration)
   }
 
   function dismissToast(id: string) {
     setToasts(prev => prev.filter(t => t.id !== id))
   }
+
+  // Allow JobPanel (no addToast prop) to fire toasts via DOM event
+  useEffect(() => {
+    function onCogitoToast(e: Event) {
+      const { message, duration } = (e as CustomEvent<{ message: string; duration?: number }>).detail
+      addToast(message, duration)
+    }
+    window.addEventListener('cogito:toast', onCogitoToast)
+    return () => window.removeEventListener('cogito:toast', onCogitoToast)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Persist active jobs + minimized state across page refreshes
   useEffect(() => {
@@ -327,6 +327,7 @@ export default function Dashboard({ session }: Props) {
       }
       setActiveJobs(prev => [...submitted, ...prev])
       setShowVariants(false)
+      setShowVariantsConfirm(false)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error')
       setPendingCount(0)
@@ -539,6 +540,11 @@ export default function Dashboard({ session }: Props) {
     }
   }, [settings, trialExpired, resolvedSource])
 
+  async function handleRegrade(newJobId: string, title: string | null) {
+    setPendingCount(prev => prev + 1)
+    setActiveJobs(prev => [{ jobId: newJobId, title }, ...prev])
+  }
+
   async function handleSearchClips() {
     const terms = clipTerms.filter(t => t.trim())
     if (terms.length === 0) { setClipsError('Enter at least one search term.'); return }
@@ -638,7 +644,11 @@ export default function Dashboard({ session }: Props) {
   }
 
   const batchCount = batches.filter(b => b.terms.length > 0).length
-  const variantJobCount = batchCount * checkedThemes.size
+  const themesToRun = VARIANT_THEMES.filter(t => checkedThemes.has(t.value))
+  const variantJobCount = batches.filter(b => b.terms.length > 0).reduce((sum, batch) => {
+    const hasExtra = batch.color_theme && !checkedThemes.has(batch.color_theme)
+    return sum + themesToRun.length + (hasExtra ? 1 : 0)
+  }, 0)
 
   return (
     <div className="min-h-screen bg-stone-950">
@@ -690,7 +700,7 @@ export default function Dashboard({ session }: Props) {
         </button>
       )}
 
-      <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="mx-auto max-w-7xl px-4 py-8">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
 
           {/* Left column: batch editor + settings + generate */}
@@ -832,7 +842,7 @@ export default function Dashboard({ session }: Props) {
               </button>
 
               <button
-                onClick={() => setShowVariants(v => !v)}
+                onClick={() => { setShowVariants(v => !v); setShowVariantsConfirm(false) }}
                 disabled={submitting || staging}
                 data-tour="variants-btn"
                 className={`rounded-xl border px-4 py-3 text-sm transition shrink-0 disabled:opacity-50 ${showVariants ? 'border-brand-500 text-brand-400' : 'border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'}`}
@@ -841,40 +851,24 @@ export default function Dashboard({ session }: Props) {
                 🎨
               </button>
 
-              <div ref={genDropdownRef} className="relative flex-1 flex">
+              <div className="flex-1 grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleStagePreview}
+                  disabled={submitting || staging || trialExpired}
+                  data-tour="gen-dropdown"
+                  className="rounded-xl border border-brand-500 py-3 text-sm font-semibold text-brand-400 hover:bg-brand-500/10 disabled:opacity-50 transition"
+                >
+                  {staging ? 'Fetching images…' : 'Preview images first'}
+                </button>
                 <button
                   onClick={handleGenerate}
                   disabled={submitting || staging || trialExpired}
                   data-tour="generate-btn"
-                  className="flex-1 rounded-l-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
+                  className="rounded-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
                 >
-                  {submitting ? 'Submitting…' : staging ? 'Fetching images…'
-                    : batchCount > 1 ? `Generate ${batchCount} videos` : 'Generate video'}
+                  {submitting ? 'Submitting…'
+                    : batchCount > 1 ? `Generate ${batchCount} directly` : 'Generate directly'}
                 </button>
-                <button
-                  onClick={() => setShowGenDropdown(v => !v)}
-                  disabled={submitting || staging}
-                  data-tour="gen-dropdown"
-                  className="rounded-r-xl bg-brand-700 px-3 text-white hover:bg-brand-800 disabled:opacity-50 transition border-l border-brand-600"
-                >
-                  ▾
-                </button>
-                {showGenDropdown && (
-                  <div className="absolute right-0 bottom-full mb-1 w-52 rounded-xl border border-stone-700 bg-stone-800 shadow-xl z-20 py-1">
-                    <button
-                      onClick={() => { setShowGenDropdown(false); handleGenerate() }}
-                      className="w-full px-4 py-2.5 text-left text-sm text-stone-300 hover:bg-stone-700"
-                    >
-                      Generate directly
-                    </button>
-                    <button
-                      onClick={() => { setShowGenDropdown(false); handleStagePreview() }}
-                      className="w-full px-4 py-2.5 text-left text-sm text-stone-300 hover:bg-stone-700"
-                    >
-                      Preview images first →
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
             )}
@@ -883,7 +877,14 @@ export default function Dashboard({ session }: Props) {
             {/* Variants inline panel — images mode only */}
             {contentMode === 'images' && showVariants && (
               <div className="rounded-xl border border-stone-800 bg-stone-900/80 p-4 space-y-3 mt-3">
-                <p className="text-xs text-stone-500">Select themes (one video per theme per batch):</p>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-xs text-stone-500">Select themes (one video per theme per batch):</p>
+                  {variantJobCount > 0 && (
+                    <span className="text-xs text-stone-400 shrink-0 ml-3">
+                      Will create <span className="text-stone-200 font-medium">{variantJobCount}</span> video{variantJobCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   {VARIANT_THEMES.map(t => (
                     <button
@@ -901,7 +902,13 @@ export default function Dashboard({ session }: Props) {
                   ))}
                 </div>
                 <button
-                  onClick={handleGenerateVariants}
+                  onClick={() => {
+                    if (variantJobCount >= 6) {
+                      setShowVariantsConfirm(true)
+                    } else {
+                      handleGenerateVariants()
+                    }
+                  }}
                   disabled={submitting || checkedThemes.size === 0 || batchCount === 0}
                   className="w-full rounded-lg bg-brand-500/20 border border-brand-500/30 py-2.5 text-xs font-semibold text-brand-300 hover:bg-brand-500/30 disabled:opacity-40 transition"
                 >
@@ -909,6 +916,27 @@ export default function Dashboard({ session }: Props) {
                     ? 'Submitting…'
                     : `Generate ${variantJobCount} variant${variantJobCount !== 1 ? 's' : ''}`)}
                 </button>
+
+                {/* Confirmation prompt */}
+                {showVariantsConfirm && (
+                  <div className="rounded-lg border border-amber-800/60 bg-amber-950/40 p-3 space-y-2">
+                    <p className="text-xs text-amber-300">This will create {variantJobCount} videos — continue?</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setShowVariantsConfirm(false); handleGenerateVariants() }}
+                        className="flex-1 rounded-lg bg-brand-500/20 border border-brand-500/30 py-1.5 text-xs font-semibold text-brand-300 hover:bg-brand-500/30 transition"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => setShowVariantsConfirm(false)}
+                        className="flex-1 rounded-lg border border-stone-700 py-1.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200 transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1051,7 +1079,7 @@ export default function Dashboard({ session }: Props) {
 
             <div>
               <h2 className="mb-3 text-sm font-semibold text-stone-300">Recent jobs</h2>
-              <RecentJobs onReuse={handleReuse} onEditImages={handleEditImages} onColourGrade={handleColourGrade} />
+              <RecentJobs onReuse={handleReuse} onEditImages={handleEditImages} onColourGrade={handleColourGrade} onRegrade={handleRegrade} />
               <p className="mt-3 text-xs text-stone-600">
                 Videos are removed after 48 hours to save space — download any you want to keep.
               </p>

@@ -239,40 +239,52 @@ def grade_custom(img: Image.Image, params: dict) -> Image.Image:
     return img_out
 
 
-def grade_mocha(img: Image.Image, intensity: float = 0.85) -> Image.Image:
-    """Dark warm brown: brown hue push then heavy darken + contrast boost."""
-    browned = grade_brown(img, intensity=1.0)
-    arr = np.array(browned, dtype=np.float32)
-    arr = (arr * 0.55).clip(0, 255)
-    darkened = ImageEnhance.Contrast(Image.fromarray(arr.astype(np.uint8), "RGB")).enhance(1.35)
-    orig = np.array(img.convert("RGB"), dtype=np.uint8)
-    return Image.fromarray(blend(orig, np.array(darkened), intensity), "RGB")
+def grade_mocha(img: Image.Image, intensity: float = 0.92) -> Image.Image:
+    """Dark academia: deep shadows with rich coffee/caramel warmth.
+    Darkens overall, crushes blue hard, lifts red+green for amber cast,
+    then high contrast so shadows go near-black while warm tones glow.
+    """
+    base = img.convert("RGB")
+    arr = np.array(base, dtype=np.float32)
+    # Darken overall — dark but not abyss-level
+    arr = (arr * 0.62).clip(0, 255)
+    # Coffee/caramel cast: crush blue, lift red+green (red+green = amber)
+    arr[:, :, 0] = (arr[:, :, 0] * 1.28).clip(0, 255)  # lift red
+    arr[:, :, 1] = (arr[:, :, 1] * 1.10).clip(0, 255)  # lift green slightly → amber
+    arr[:, :, 2] = (arr[:, :, 2] * 0.55).clip(0, 255)  # crush blue hard
+    graded = Image.fromarray(arr.astype(np.uint8), "RGB")
+    # High contrast: shadows go very dark, warm midtones pop
+    graded = ImageEnhance.Contrast(graded).enhance(1.55)
+    # Saturation boost so the caramel feels rich not washed out
+    graded = ImageEnhance.Color(graded).enhance(1.35)
+    orig = np.array(base, dtype=np.uint8)
+    return Image.fromarray(blend(orig, np.array(graded), intensity), "RGB")
 
 
 def grade_noir(img: Image.Image, intensity: float = 1.0) -> Image.Image:
-    """Near-monochrome with warm shadow bleed: dark film-noir feel."""
+    """Cinematic noir: partial desaturation (~25% colour remaining) + amber warm cast
+    + high contrast. Shadows crush to black; warm tones glow in highlights.
+    Distinct from Dark Tones (fully BW+cool) — this retains a golden warmth.
+    """
     base = img.convert("RGB")
-    bw = ImageOps.grayscale(base)
-    bw_rgb = Image.merge("RGB", (bw, bw, bw))
-    bw_rgb = ImageEnhance.Brightness(bw_rgb).enhance(0.45)
-    bw_rgb = ImageEnhance.Contrast(bw_rgb).enhance(1.5)
-    gamma_lut = lambda x: int((x / 255.0) ** 1.4 * 255)
-    r, g, b = bw_rgb.split()
-    r = r.point(gamma_lut)
-    g = g.point(gamma_lut)
-    b = b.point(gamma_lut)
-    bw_rgb = Image.merge("RGB", (r, g, b))
-    # warm tinge: lift red, cut blue (opposite of dark's cool tinge)
-    r, g, b = bw_rgb.split()
-    r = r.point(lambda x: min(255, int(x * 1.08)))
-    b = b.point(lambda x: int(x * 0.88))
-    bw_rgb = Image.merge("RGB", (r, g, b))
+    # Desaturate to ~25% colour — almost BW but not fully stripped
+    desaturated = ImageEnhance.Color(base).enhance(0.25)
+    arr = np.array(desaturated, dtype=np.float32)
+    # Darken
+    arr = (arr * 0.58).clip(0, 255)
+    # Amber/golden warm cast: lift red strongly, lift green a touch, crush blue
+    arr[:, :, 0] = (arr[:, :, 0] * 1.30).clip(0, 255)
+    arr[:, :, 1] = (arr[:, :, 1] * 1.08).clip(0, 255)
+    arr[:, :, 2] = (arr[:, :, 2] * 0.70).clip(0, 255)
+    graded = Image.fromarray(arr.astype(np.uint8), "RGB")
+    # High contrast: shadows go near-black, warm highlights pop
+    graded = ImageEnhance.Contrast(graded).enhance(1.6)
     if intensity >= 0.999:
-        return bw_rgb
-    return Image.fromarray(blend(np.array(base), np.array(bw_rgb), intensity), "RGB")
+        return graded
+    return Image.fromarray(blend(np.array(base), np.array(graded), intensity), "RGB")
 
 
-def grade_abyss(img: Image.Image, intensity: float = 1.0) -> Image.Image:
+def grade_midnight(img: Image.Image, intensity: float = 1.0) -> Image.Image:
     """Low exposure + deep blue hue shift: dark midnight/ocean teal."""
     base = img.convert("RGB")
     darkened = ImageEnhance.Contrast(ImageEnhance.Brightness(base).enhance(0.38)).enhance(1.4)
@@ -356,8 +368,8 @@ def apply_theme_grading(images_dir: str, output_dir: str, theme: str, custom_par
                 out = grade_mocha(img)
             elif theme == "noir":
                 out = grade_noir(img)
-            elif theme == "abyss":
-                out = grade_abyss(img)
+            elif theme == "midnight":
+                out = grade_midnight(img)
             elif theme == "dusk":
                 out = grade_dusk(img)
             elif theme == "custom":
