@@ -812,6 +812,12 @@ async def _run_regrade_pipeline_inner(
         if count == 0:
             raise RuntimeError("No cached images found for this job. Re-grade is unavailable.")
 
+        # Cache images under the new job's ID so it can itself be re-edited
+        try:
+            await asyncio.to_thread(upload_raw_images, raw_dir, user_id, new_job_id)
+        except Exception as exc:
+            logger.warning("Regrade image cache failed (non-fatal) for job %s: %s", new_job_id, exc)
+
         # --- Step 2: Apply colour grading ---
         await update_job_status(new_job_id, user_id, "running", db,
             progress_message="Applying colour grade…")
@@ -861,6 +867,7 @@ async def _run_regrade_pipeline_inner(
         new_config = dict(original_config)
         new_config["color_theme"] = color_theme
         new_config["seconds_per_image"] = seconds_per_image
+        new_config["images_cached"] = True
         if preset_name:
             new_config["preset_name"] = preset_name
 
