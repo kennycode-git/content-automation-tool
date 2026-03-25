@@ -687,8 +687,8 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                         ? `${job.batch_title} · ${reEditTheme}`
                         : reEditTheme
 
-                      // If review images checked and images are cached, fetch + show PreviewModal
-                      if (reviewImages && job.images_cached) {
+                      // If review images checked, fetch cached images + show PreviewModal
+                      if (reviewImages) {
                         setLoadingReview(true)
                         pendingRegrade.current = { theme: reEditTheme, spi: reEditSpi, total: reEditTotal }
                         try {
