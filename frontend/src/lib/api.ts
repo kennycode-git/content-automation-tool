@@ -350,6 +350,7 @@ export interface FindMoreRequest {
   resolution?: string
   color_theme?: string
   image_source?: string
+  exclude_photo_ids?: string[]
 }
 
 export interface FindMoreResponse {
