@@ -242,7 +242,7 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
       }))
       setCuratedBatches(prev =>
         prev.map((b, i) =>
-          i === activeTab ? { ...b, images: [...b.images, ...newImages] } : b
+          i === activeTab ? { ...b, images: [...newImages, ...b.images] } : b
         )
       )
       setFindMoreOpen(false)
