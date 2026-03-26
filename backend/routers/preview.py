@@ -58,6 +58,7 @@ def _stage_batch_sync(
     image_source: str,
     images_dir: str,
     graded_dir: str,
+    page_start: int = 1,
 ) -> tuple[str, bool]:
     """
     Synchronous worker that runs fetch → download → grade for a single batch.
@@ -105,6 +106,7 @@ def _stage_batch_sync(
                 access_key=access_key,
                 color_theme=color_theme,
                 max_per_query=None,
+                page_start=page_start,
             )
             items.extend(unsplash_items)
         except RateLimitError:
@@ -119,6 +121,7 @@ def _stage_batch_sync(
                     access_key=pexels_key,
                     color_theme=color_theme,
                     max_per_query=None,
+                    page_start=page_start,
                 )
                 items.extend(pexels_items)
                 pexels_fallback = True
@@ -135,6 +138,7 @@ def _stage_batch_sync(
             access_key=pexels_key,
             color_theme=color_theme,
             max_per_query=None,
+            page_start=page_start,
         )
         items.extend(pexels_items)
 
@@ -259,6 +263,14 @@ async def preview_find_more(
     w, h = (int(x) for x in body.resolution.lower().split("x"))
     ts = int(time.time() * 1000)
 
+    # Skip pages already fetched. Pexels/Unsplash default per_page=30.
+    # e.g. existing_count=20 → page_start=1 (still on first page but exclude_photo_ids handles dups)
+    # e.g. existing_count=30 → page_start=2 (fresh page of results)
+    _per_page = 30
+    page_start = max(2, 1 + body.existing_count // _per_page)
+    # Fetch a buffer beyond count to absorb any remaining duplicates
+    need_total = body.count + max(5, body.count // 2)
+
     tmp_root = tempfile.mkdtemp(prefix="find_more_")
     client = get_client()
 
@@ -273,7 +285,7 @@ async def preview_find_more(
                 uploaded_image_paths=None,
                 width=w,
                 height=h,
-                need_total=body.count,
+                need_total=need_total,
                 access_key=access_key,
                 pexels_key=pexels_key,
                 color_theme=body.color_theme,
@@ -281,6 +293,7 @@ async def preview_find_more(
                 image_source=body.image_source,
                 images_dir=images_dir,
                 graded_dir=graded_dir,
+                page_start=page_start,
             )
         except Exception as e:
             logger.exception("Find more failed: %s", e)
@@ -301,7 +314,7 @@ async def preview_find_more(
         render_path = Path(render_dir)
         fnames = sorted(f for f in os.listdir(render_dir) if Path(render_dir, f).is_file())
 
-        for fname in fnames:
+        for fname in fnames[:body.count]:
             fpath = render_path / fname
             try:
                 with open(fpath, "rb") as f:

@@ -351,6 +351,7 @@ export interface FindMoreRequest {
   color_theme?: string
   image_source?: string
   exclude_photo_ids?: string[]
+  existing_count?: number
 }
 
 export interface FindMoreResponse {

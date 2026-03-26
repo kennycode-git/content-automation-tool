@@ -313,6 +313,7 @@ class PreviewFindMoreRequest(BaseModel):
     color_theme: str = Field(default="none")
     image_source: str = Field(default="pexels")
     exclude_photo_ids: Optional[List[str]] = None
+    existing_count: int = Field(default=0, ge=0)
 
     @field_validator("search_terms")
     @classmethod
