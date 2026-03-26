@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { PreviewBatchResult } from '../lib/api'
 import { uploadImages, findMoreImages } from '../lib/api'
 
@@ -198,18 +199,32 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
 
   const anyUploading = curatedBatches.some(b => b.images.some(img => img.uploading))
 
+  function extractPhotoId(storagePath: string): string | null {
+    if (!storagePath.includes('/preview/')) return null
+    const basename = storagePath.split('/').pop() ?? ''
+    // basename: "{ts}_{batch_idx}_{fid}.jpg" or "{ts}_more_{fid}.jpg"
+    const withoutExt = basename.replace(/\.jpg$/i, '')
+    const second = withoutExt.indexOf('_', withoutExt.indexOf('_') + 1)
+    if (second === -1) return null
+    return withoutExt.slice(second + 1)
+  }
+
   async function handleFindMore() {
     const batch = curatedBatches[activeTab]
     if (!batch || findMoreLoading) return
     setFindMoreLoading(true)
     setFindMoreError(null)
     try {
+      const existingIds = batch.images
+        .map(img => extractPhotoId(img.storage_path))
+        .filter((id): id is string => id !== null)
       const result = await findMoreImages({
         search_terms: batch.search_terms,
         count: findMoreCount,
         resolution,
         color_theme: colorTheme,
         image_source: imageSource,
+        exclude_photo_ids: existingIds,
       })
       const newImages: CuratedImage[] = result.images.map(img => ({
         id: crypto.randomUUID(),
@@ -247,7 +262,7 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
     b.images.some(img => !img.upload_failed && img.storage_path !== '')
   ).length
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-stone-950/95 backdrop-blur-sm">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-stone-800 bg-stone-900 px-6 py-4 shrink-0">
@@ -454,6 +469,7 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
