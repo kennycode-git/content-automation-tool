@@ -46,6 +46,7 @@ def fetch_images_pexels(
     delay: float = 0.1,
     max_per_query: Optional[int] = None,
     on_item_found: Optional[callable] = None,
+    page_start: int = 1,
 ) -> List[Tuple[str, str]]:
     """Fetch (id, url) pairs from Pexels across multiple queries.
     Signature mirrors fetch_images() in image_pipeline.py for drop-in use."""
@@ -76,11 +77,12 @@ def fetch_images_pexels(
 
         while pulled < want:
             take = min(per_page, want - pulled)
+            actual_page = page_start + (page - 1)
             try:
                 r = _session.get(
                     PEXELS_API,
                     headers=headers,
-                    params={"query": q, "per_page": take, "page": page},
+                    params={"query": q, "per_page": take, "page": actual_page},
                     timeout=12,
                 )
                 if r.status_code == 429:

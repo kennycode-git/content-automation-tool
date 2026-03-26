@@ -233,6 +233,7 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
         color_theme: colorTheme,
         image_source: imageSource,
         exclude_photo_ids: existingIds,
+        existing_count: batch.images.length,
       })
       const newImages: CuratedImage[] = result.images.map(img => ({
         id: crypto.randomUUID(),

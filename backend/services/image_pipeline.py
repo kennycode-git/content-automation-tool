@@ -130,6 +130,7 @@ def fetch_images(
     delay: float = 0.1,
     max_per_query: Optional[int] = None,
     on_item_found: Optional[callable] = None,
+    page_start: int = 1,
 ) -> List[Tuple[str, str]]:
     """Fetch image (id, url) pairs from Unsplash across multiple queries."""
     results: List[Tuple[str, str]] = []
@@ -159,12 +160,13 @@ def fetch_images(
 
         while pulled < want:
             take = min(per_page, want - pulled)
+            actual_page = page_start + (page - 1)
             try:
-                data = fetch_page(q, page, take, access_key)
+                data = fetch_page(q, actual_page, take, access_key)
             except RateLimitError:
                 raise
             except Exception as e:
-                logger.error("page %d: ERROR %s", page, e)
+                logger.error("page %d: ERROR %s", actual_page, e)
                 break
             remaining = data.get("_remaining", "?")
             res = data.get("results", [])
