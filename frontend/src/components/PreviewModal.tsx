@@ -200,13 +200,21 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
   const anyUploading = curatedBatches.some(b => b.images.some(img => img.uploading))
 
   function extractPhotoId(storagePath: string): string | null {
-    if (!storagePath.includes('/preview/')) return null
     const basename = storagePath.split('/').pop() ?? ''
-    // basename: "{ts}_{batch_idx}_{fid}.jpg" or "{ts}_more_{fid}.jpg"
-    const withoutExt = basename.replace(/\.jpg$/i, '')
-    const second = withoutExt.indexOf('_', withoutExt.indexOf('_') + 1)
-    if (second === -1) return null
-    return withoutExt.slice(second + 1)
+    const stem = basename.replace(/\.jpg$/i, '')
+    if (!stem) return null
+
+    if (storagePath.includes('/preview/')) {
+      // "{ts}_{batch_idx}_{fid}.jpg" or "{ts}_more_{fid}.jpg"
+      const second = stem.indexOf('_', stem.indexOf('_') + 1)
+      if (second === -1) return null
+      return stem.slice(second + 1)
+    }
+
+    // Raw cached images: "outputs/raw/{user_id}/{job_id}/{fid}.jpg"
+    // Skip user-uploaded placeholders named "upload_NNNN"
+    if (stem.startsWith('upload_')) return null
+    return stem
   }
 
   async function handleFindMore() {
