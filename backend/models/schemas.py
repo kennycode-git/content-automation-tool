@@ -312,6 +312,7 @@ class PreviewFindMoreRequest(BaseModel):
     resolution: str = Field(default="1080x1920")
     color_theme: str = Field(default="none")
     image_source: str = Field(default="pexels")
+    exclude_photo_ids: Optional[List[str]] = None
 
     @field_validator("search_terms")
     @classmethod

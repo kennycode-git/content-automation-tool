@@ -286,6 +286,17 @@ async def preview_find_more(
             logger.exception("Find more failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Image fetch failed: {e}")
 
+        # Remove any images whose photo ID is already in the current batch
+        exclude_ids = set(body.exclude_photo_ids or [])
+        if exclude_ids:
+            for fname in os.listdir(render_dir):
+                stem = Path(fname).stem  # fid without .jpg
+                if stem in exclude_ids:
+                    try:
+                        os.remove(os.path.join(render_dir, fname))
+                    except Exception:
+                        pass
+
         image_items: list[PreviewImageItem] = []
         render_path = Path(render_dir)
         fnames = sorted(f for f in os.listdir(render_dir) if Path(render_dir, f).is_file())
