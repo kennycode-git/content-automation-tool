@@ -26,8 +26,8 @@ export const DEFAULT_CLIPS_SETTINGS: ClipsSettings = {
   color_theme: 'none',
   transition: 'cut',
   transition_duration: 0.5,
-  max_clip_duration: 10,
-  clips_per_term: 5,
+  max_clip_duration: 5,
+  clips_per_term: 2,
   text_overlay: {
     enabled: false,
     text: '',
@@ -436,7 +436,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         <input
           type="range"
           min="1"
-          max="10"
+          max="5"
           step="1"
           value={settings.clips_per_term}
           onChange={e => set('clips_per_term', parseInt(e.target.value))}
@@ -444,7 +444,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         />
         <div className="flex justify-between text-[10px] text-stone-600 mt-0.5">
           <span>1</span>
-          <span>10</span>
+          <span>5</span>
         </div>
       </div>
 
@@ -457,7 +457,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         <input
           type="range"
           min="3"
-          max="15"
+          max="10"
           step="1"
           value={settings.max_clip_duration}
           onChange={e => set('max_clip_duration', parseInt(e.target.value))}
@@ -465,7 +465,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         />
         <div className="flex justify-between text-[10px] text-stone-600 mt-0.5">
           <span>3s</span>
-          <span>15s</span>
+          <span>10s</span>
         </div>
         <p className="text-xs text-stone-500 mt-1">
           Each clip is capped at this length. Shorter = smaller file size.
