@@ -184,8 +184,12 @@ app = FastAPI(
 )
 
 # CORS — allow all origins locally (ENABLE_DOCS=true), restrict to FRONTEND_URL in production.
-frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
-cors_origins = ["*"] if os.environ.get("ENABLE_DOCS") == "true" else [frontend_url]
+# FRONTEND_URL supports comma-separated values, e.g.:
+#   https://passiveclip.com,https://dev.passiveclip.com
+_frontend_url_raw = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+cors_origins = ["*"] if os.environ.get("ENABLE_DOCS") == "true" else [
+    u.strip() for u in _frontend_url_raw.split(",") if u.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
