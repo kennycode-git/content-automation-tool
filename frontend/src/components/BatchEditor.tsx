@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { uploadImages } from '../lib/api'
 import type { CustomGradeParams } from './SettingsPanel'
+import { THEME_GRADE_DEFAULTS } from './SettingsPanel'
 import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, OverlayAlignment } from '../lib/api'
 
 export type { TextOverlayConfig }
@@ -387,6 +388,7 @@ function BatchStylePopover({
 }) {
   const params = batch.customGradeParams ?? DEFAULT_GRADE
   const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
+  const [fineTuneOpen, setFineTuneOpen] = useState(batch.colorTheme === 'custom')
   const [overlayPresets, setOverlayPresets] = useState<OverlayPreset[]>(() => {
     try { return JSON.parse(localStorage.getItem(OVERLAY_PRESETS_KEY) || '[]') } catch { return [] }
   })
@@ -481,39 +483,76 @@ function BatchStylePopover({
               })}
             </div>
 
-            {/* Custom grade sliders */}
-            {batch.colorTheme === 'custom' && (
-              <div className="mt-3 space-y-2 pt-2 border-t border-stone-800">
-                <div className="flex items-start gap-2 mb-1">
-                  <video
-                    src="/theme-previews/eastern-philosophy.mp4"
-                    autoPlay muted loop playsInline
-                    className="w-14 rounded-md shrink-0 object-cover"
-                    style={{ aspectRatio: '9/16', filter: gradeToFilter(params) }}
-                  />
-                  <p className="text-[10px] text-stone-500 leading-relaxed pt-0.5">Dial in your own colour grade with the sliders below.</p>
-                </div>
-                {CUSTOM_SLIDERS.map(s => (
-                  <div key={s.key}>
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[10px] text-stone-400">{s.label}</span>
-                      <span className="text-[10px] font-mono text-stone-300">
-                        {params[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
-                      </span>
+            {/* Fine-tune grade — collapsible, available for any selected theme */}
+            {batch.colorTheme !== undefined && batch.colorTheme !== 'none' && (
+              <div className="mt-2 pt-2 border-t border-stone-800">
+                <button
+                  onClick={() => setFineTuneOpen(o => !o)}
+                  className="flex items-center justify-between w-full text-left"
+                >
+                  <span className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">
+                    {batch.colorTheme === 'custom' ? 'Grade settings' : 'Fine-tune grade'}
+                  </span>
+                  <svg className={`w-3 h-3 text-stone-600 transition-transform ${fineTuneOpen ? 'rotate-180' : ''}`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+
+                {fineTuneOpen && (() => {
+                  const isCustom = batch.colorTheme === 'custom'
+                  const gradeParams = isCustom
+                    ? (batch.customGradeParams ?? DEFAULT_GRADE)
+                    : (batch.customGradeParams ?? THEME_GRADE_DEFAULTS[batch.colorTheme!] ?? DEFAULT_GRADE)
+                  return (
+                    <div className="mt-2 space-y-2">
+                      {!isCustom && (
+                        <p className="text-[9px] text-stone-600 italic">
+                          Starting from {BATCH_THEME_OPTIONS.find(o => o.value === batch.colorTheme)?.label ?? ''} defaults — adjusting switches to Custom grade
+                        </p>
+                      )}
+                      <div className="flex items-start gap-2">
+                        <video
+                          src="/theme-previews/eastern-philosophy.mp4"
+                          autoPlay muted loop playsInline
+                          className="w-12 rounded-md shrink-0 object-cover"
+                          style={{ aspectRatio: '9/16', filter: gradeToFilter(gradeParams) }}
+                        />
+                        <div className="flex-1 space-y-1.5">
+                          {CUSTOM_SLIDERS.map(s => (
+                            <div key={s.key}>
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className="text-[9px] text-stone-400">{s.label}</span>
+                                <span className="text-[9px] font-mono text-stone-300">
+                                  {gradeParams[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min={s.min}
+                                max={s.max}
+                                step={s.step}
+                                value={gradeParams[s.key]}
+                                onChange={e => onChange({
+                                  colorTheme: 'custom',
+                                  customGradeParams: { ...gradeParams, [s.key]: parseFloat(e.target.value) },
+                                })}
+                                className="w-full accent-violet-500"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {!isCustom && (
+                        <button
+                          onClick={() => onChange({ colorTheme: 'custom', customGradeParams: THEME_GRADE_DEFAULTS[batch.colorTheme!] ?? DEFAULT_GRADE })}
+                          className="text-[9px] text-violet-400 hover:text-violet-300 transition"
+                        >
+                          Use as Custom grade →
+                        </button>
+                      )}
                     </div>
-                    <input
-                      type="range"
-                      min={s.min}
-                      max={s.max}
-                      step={s.step}
-                      value={params[s.key]}
-                      onChange={e => onChange({
-                        customGradeParams: { ...params, [s.key]: parseFloat(e.target.value) },
-                      })}
-                      className="w-full accent-violet-500"
-                    />
-                  </div>
-                ))}
+                  )
+                })()}
               </div>
             )}
           </div>
