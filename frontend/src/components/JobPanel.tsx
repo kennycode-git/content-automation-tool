@@ -403,14 +403,16 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
       const blob = await fetch(url).then(r => r.blob())
       const file = new File([blob], filename, { type: 'video/mp4' })
 
-      // Web Share API with file support — works on iOS and Android (Chrome 86+)
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+
+      // Web Share API with file support — mobile only (iOS/Android)
+      // Excluded on desktop: Windows/macOS Chrome also supports canShare but triggers OS share panel
+      if (isMobile && navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file] })
         return
       }
 
       // Desktop: blob URL anchor download
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
       if (!isMobile) {
         const blobUrl = URL.createObjectURL(blob)
         const a = document.createElement('a')
