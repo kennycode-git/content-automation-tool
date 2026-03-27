@@ -433,6 +433,7 @@ function BatchStylePopover({
                 muted
                 loop
                 playsInline
+                preload="auto"
                 className="absolute inset-0 w-full h-full object-cover"
               />
             </div>

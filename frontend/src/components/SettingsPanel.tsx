@@ -199,6 +199,7 @@ function ThemePreviewPopup({ theme }: { theme: typeof COLOR_THEMES[number] }) {
           muted
           loop
           playsInline
+          preload="auto"
           className="absolute inset-0 w-full h-full object-cover"
         />
         <span className="text-xs text-stone-600 select-none">Preview coming soon</span>
