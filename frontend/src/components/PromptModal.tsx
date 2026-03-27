@@ -79,6 +79,11 @@ search term fifteen
     - Do they maintain consistent aesthetic?
     - Are they specific enough to avoid generic results?
 
+11. **ENSURE HASHTAGS ARE AT THE START OF EACH TITLE**
+    - Output the lists inside a code block to guarantee the \`#\` symbol is preserved as a literal character, not rendered as a heading
+    - Every title line must begin with exactly \`# \` followed by the title text
+    - Double-check before outputting: every list must start with \`# Title\`
+
 **Special Instructions:**
 
 - If user says "too generic" → increase specificity, remove common objects, add unusual details

@@ -21,6 +21,21 @@ export const DEFAULT_CUSTOM_PARAMS: CustomGradeParams = {
   exposure: 1.0, warmth: 0.0, tint: 0.0, hue_shift: 0,
 }
 
+export const THEME_GRADE_DEFAULTS: Record<string, CustomGradeParams> = {
+  dark:     { brightness: 0.55, contrast: 1.30, saturation: 0.20, exposure: 0.70, warmth: -0.15, tint: 0.00,  hue_shift: 0   },
+  sepia:    { brightness: 0.95, contrast: 1.10, saturation: 0.35, exposure: 1.00, warmth:  0.60, tint: 0.15,  hue_shift: 0   },
+  warm:     { brightness: 1.00, contrast: 1.05, saturation: 1.20, exposure: 1.00, warmth:  0.50, tint: 0.00,  hue_shift: 0   },
+  low_exp:  { brightness: 0.40, contrast: 1.40, saturation: 1.00, exposure: 0.55, warmth:  0.00, tint: 0.00,  hue_shift: 0   },
+  grey:     { brightness: 1.00, contrast: 1.10, saturation: 0.10, exposure: 1.00, warmth:  0.00, tint: 0.00,  hue_shift: 0   },
+  blue:     { brightness: 1.00, contrast: 1.15, saturation: 1.10, exposure: 0.95, warmth: -0.50, tint: -0.20, hue_shift: -20 },
+  red:      { brightness: 1.00, contrast: 1.20, saturation: 1.15, exposure: 1.00, warmth:  0.30, tint: 0.40,  hue_shift: 0   },
+  bw:       { brightness: 1.00, contrast: 1.15, saturation: 0.00, exposure: 1.00, warmth:  0.00, tint: 0.00,  hue_shift: 0   },
+  mocha:    { brightness: 0.90, contrast: 1.15, saturation: 0.60, exposure: 0.90, warmth:  0.40, tint: 0.10,  hue_shift: 0   },
+  noir:     { brightness: 0.75, contrast: 1.50, saturation: 0.15, exposure: 0.75, warmth: -0.10, tint: 0.05,  hue_shift: 0   },
+  midnight: { brightness: 0.60, contrast: 1.30, saturation: 0.80, exposure: 0.70, warmth: -0.40, tint: -0.15, hue_shift: -15 },
+  dusk:     { brightness: 0.85, contrast: 1.20, saturation: 1.10, exposure: 0.90, warmth:  0.35, tint: 0.25,  hue_shift: 0   },
+}
+
 export interface VideoSettings {
   resolution: string
   seconds_per_image: number
@@ -152,6 +167,15 @@ function EyeIcon() {
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
       <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function PencilIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
     </svg>
   )
 }
@@ -307,10 +331,21 @@ function CustomThemePanel({ params, onChange }: { params: CustomGradeParams; onC
   )
 }
 
-function ThemeSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function ThemeSelector({ value, onChange, onCustomize }: {
+  value: string
+  onChange: (v: string) => void
+  onCustomize?: (defaults: CustomGradeParams) => void
+}) {
   const [open, setOpen] = useState(false)
   const [hovered, setHovered] = useState<string | null>(null)
   const selected = COLOR_THEMES.find(t => t.value === value) ?? COLOR_THEMES[0]
+
+  function handleEditTheme(e: React.MouseEvent, themeValue: string) {
+    e.stopPropagation()
+    const defaults = THEME_GRADE_DEFAULTS[themeValue] ?? DEFAULT_CUSTOM_PARAMS
+    onCustomize?.(defaults)
+    setOpen(false)
+  }
 
   return (
     <div className="relative">
@@ -324,21 +359,33 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
           : <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[selected.value]}`} />
         }
         <span className={`text-sm text-stone-100 ${selected.value === 'custom' ? 'italic' : ''}`}>{selected.label}</span>
-        {/* Eye preview for selected theme (hidden for Natural and Create Your Own) */}
+        {/* Eye + Edit icons for selected theme in trigger */}
         {selected.value !== 'none' && selected.value !== 'custom' && (
-          <div
-            className="relative ml-1"
-            onMouseEnter={e => { e.stopPropagation(); setHovered(selected.value + '_trigger') }}
-            onMouseLeave={() => setHovered(null)}
-          >
-            <button
-              onClick={e => e.stopPropagation()}
-              className={`p-0.5 transition-colors ${hovered === selected.value + '_trigger' ? 'text-stone-200' : 'text-stone-500 hover:text-stone-300'}`}
-              aria-label={`Preview ${selected.label}`}
+          <div className="flex items-center gap-0.5 ml-1">
+            <div
+              className="relative"
+              onMouseEnter={e => { e.stopPropagation(); setHovered(selected.value + '_trigger') }}
+              onMouseLeave={() => setHovered(null)}
             >
-              <EyeIcon />
-            </button>
-            {hovered === selected.value + '_trigger' && <ThemePreviewPopup theme={selected} />}
+              <button
+                onClick={e => e.stopPropagation()}
+                className={`p-0.5 transition-colors ${hovered === selected.value + '_trigger' ? 'text-stone-200' : 'text-stone-500 hover:text-stone-300'}`}
+                aria-label={`Preview ${selected.label}`}
+              >
+                <EyeIcon />
+              </button>
+              {hovered === selected.value + '_trigger' && <ThemePreviewPopup theme={selected} />}
+            </div>
+            {onCustomize && (
+              <button
+                onClick={e => handleEditTheme(e, selected.value)}
+                className="p-0.5 text-stone-500 hover:text-violet-400 transition-colors"
+                aria-label={`Edit ${selected.label} grade`}
+                title="Edit grade"
+              >
+                <PencilIcon />
+              </button>
+            )}
           </div>
         )}
         <span className="flex-1" />
@@ -348,7 +395,6 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
       {/* Dropdown list */}
       {open && (
         <>
-          {/* Click-away overlay */}
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute z-20 mt-1 w-full rounded-lg border border-stone-700 bg-stone-800 shadow-xl">
             {COLOR_THEMES.map(t => (
@@ -371,26 +417,37 @@ function ThemeSelector({ value, onChange }: { value: string; onChange: (v: strin
                   : <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${THEME_DOT[t.value]}`} />
                 }
                 <span className={`text-sm ${t.value === 'custom' ? 'italic' : ''}`}>{t.label}</span>
-                {/* Eye icon sits right after label text (hidden for Natural and Create Your Own) */}
+                {/* Eye + Edit icons in dropdown rows */}
                 {t.value !== 'none' && t.value !== 'custom' && (
-                  <div
-                    className="relative ml-1"
-                    onMouseEnter={e => { e.stopPropagation(); setHovered(t.value) }}
-                    onMouseLeave={() => setHovered(null)}
-                  >
-                    <button
-                      onClick={e => e.stopPropagation()}
-                      className={`p-0.5 transition-colors ${hovered === t.value ? 'text-stone-200' : 'text-stone-600 hover:text-stone-400'}`}
-                      aria-label={`Preview ${t.label}`}
+                  <div className="flex items-center gap-0.5 ml-1">
+                    <div
+                      className="relative"
+                      onMouseEnter={e => { e.stopPropagation(); setHovered(t.value) }}
+                      onMouseLeave={() => setHovered(null)}
                     >
-                      <EyeIcon />
-                    </button>
-                    {hovered === t.value && <ThemePreviewPopup theme={t} />}
+                      <button
+                        onClick={e => e.stopPropagation()}
+                        className={`p-0.5 transition-colors ${hovered === t.value ? 'text-stone-200' : 'text-stone-600 hover:text-stone-400'}`}
+                        aria-label={`Preview ${t.label}`}
+                      >
+                        <EyeIcon />
+                      </button>
+                      {hovered === t.value && <ThemePreviewPopup theme={t} />}
+                    </div>
+                    {onCustomize && (
+                      <button
+                        onClick={e => handleEditTheme(e, t.value)}
+                        className="p-0.5 text-stone-600 hover:text-violet-400 transition-colors"
+                        aria-label={`Edit ${t.label} grade`}
+                        title="Edit grade"
+                      >
+                        <PencilIcon />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             ))}
-
           </div>
         </>
       )}
@@ -489,6 +546,7 @@ export default function SettingsPanel({ settings, onChange, onPresetApplied, the
                 update({ color_theme: 'custom', custom_grade_params: settings.custom_grade_params ?? DEFAULT_CUSTOM_PARAMS })
               }
             }}
+            onCustomize={defaults => update({ color_theme: 'custom', custom_grade_params: defaults })}
           />
           {settings.color_theme === 'custom' && (
             <CustomThemePanel
