@@ -591,6 +591,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                 muted
                 loop
                 controls
+                playsInline
                 controlsList="nodownload"
                 className="w-full max-h-96 rounded-lg object-contain bg-black"
               />
