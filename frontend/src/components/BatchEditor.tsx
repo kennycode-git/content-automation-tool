@@ -60,18 +60,27 @@ interface Props {
 // ── Style popover constants ────────────────────────────────────────────────────
 
 const BATCH_THEME_OPTIONS: { value: string | undefined; label: string; shortLabel: string; dot: string }[] = [
-  { value: undefined,  label: 'Global (default)', shortLabel: 'Global',  dot: 'bg-stone-600 opacity-50' },
-  { value: 'none',     label: 'Natural',           shortLabel: 'Natural', dot: 'bg-stone-400' },
-  { value: 'dark',     label: 'Dark Tones',         shortLabel: 'Dark',    dot: 'bg-stone-900 ring-1 ring-stone-600' },
-  { value: 'sepia',    label: 'Sepia',              shortLabel: 'Sepia',   dot: 'bg-amber-800' },
-  { value: 'warm',     label: 'Amber',              shortLabel: 'Amber',   dot: 'bg-amber-500' },
-  { value: 'low_exp',  label: 'Low Exposure',        shortLabel: 'Low Exp', dot: 'bg-stone-950 ring-1 ring-stone-700' },
-  { value: 'grey',     label: 'Silver',             shortLabel: 'Silver',  dot: 'bg-slate-400' },
-  { value: 'blue',     label: 'Cobalt',             shortLabel: 'Cobalt',  dot: 'bg-blue-500' },
-  { value: 'red',      label: 'Crimson',            shortLabel: 'Crimson', dot: 'bg-red-500' },
-  { value: 'bw',       label: 'Monochrome',         shortLabel: 'Mono',    dot: 'bg-white ring-1 ring-stone-500' },
-  { value: 'custom',   label: 'Custom',             shortLabel: 'Custom',  dot: 'bg-violet-600' },
+  { value: undefined,   label: 'Global (default)', shortLabel: 'Global',   dot: 'bg-stone-600 opacity-50' },
+  { value: 'none',      label: 'Natural',           shortLabel: 'Natural',  dot: 'bg-stone-400' },
+  { value: 'dark',      label: 'Dark Tones',         shortLabel: 'Dark',     dot: 'bg-stone-900 ring-1 ring-stone-600' },
+  { value: 'sepia',     label: 'Sepia',              shortLabel: 'Sepia',    dot: 'bg-amber-800' },
+  { value: 'warm',      label: 'Amber',              shortLabel: 'Amber',    dot: 'bg-amber-500' },
+  { value: 'low_exp',   label: 'Low Exposure',        shortLabel: 'Low Exp',  dot: 'bg-stone-950 ring-1 ring-stone-700' },
+  { value: 'grey',      label: 'Silver',             shortLabel: 'Silver',   dot: 'bg-slate-400' },
+  { value: 'blue',      label: 'Cobalt',             shortLabel: 'Cobalt',   dot: 'bg-blue-500' },
+  { value: 'red',       label: 'Crimson',            shortLabel: 'Crimson',  dot: 'bg-red-500' },
+  { value: 'bw',        label: 'Monochrome',         shortLabel: 'Mono',     dot: 'bg-white ring-1 ring-stone-500' },
+  { value: 'mocha',     label: 'Mocha',              shortLabel: 'Mocha',    dot: 'bg-amber-950' },
+  { value: 'noir',      label: 'Noir',               shortLabel: 'Noir',     dot: 'bg-stone-900 ring-1 ring-amber-900' },
+  { value: 'midnight',  label: 'Midnight',           shortLabel: 'Midnight', dot: 'bg-blue-950 ring-1 ring-cyan-900' },
+  { value: 'dusk',      label: 'Dusk',               shortLabel: 'Dusk',     dot: 'bg-purple-900 ring-1 ring-purple-700' },
+  { value: 'custom',    label: 'Custom',             shortLabel: 'Custom',   dot: 'bg-violet-600' },
 ]
+
+// Themes with an available preview video in /theme-previews/
+const THEMES_WITH_PREVIEW_VIDEO = new Set([
+  'dark', 'sepia', 'warm', 'low_exp', 'grey', 'blue', 'red', 'bw', 'midnight', 'dusk',
+])
 
 const BATCH_ACCENT_OPTIONS: { value: string | null | undefined; label: string; dot: string }[] = [
   { value: undefined, label: 'Global', dot: 'bg-stone-600 opacity-50' },
@@ -409,9 +418,9 @@ function BatchStylePopover({
       {/* Popover panel */}
       <div className="absolute top-full left-0 mt-1 z-30 w-72 rounded-xl border border-stone-700 bg-stone-900 shadow-2xl">
 
-        {/* Hover preview — appears to the right of the popover */}
+        {/* Hover preview — right of popover on desktop, fixed bottom-right on mobile */}
         {hoveredPreview && (
-          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 w-28 rounded-lg border border-stone-600 bg-stone-900 shadow-xl overflow-hidden z-50 pointer-events-none">
+          <div className="fixed bottom-4 right-4 sm:absolute sm:bottom-auto sm:right-auto sm:left-full sm:top-1/2 sm:-translate-y-1/2 sm:ml-2 w-28 rounded-lg border border-stone-600 bg-stone-900 shadow-xl overflow-hidden z-50 pointer-events-none">
             <div className="relative w-full bg-stone-950" style={{ aspectRatio: '9/16' }}>
               <video
                 key={`${hoveredPreview.type}-${hoveredPreview.value}`}
@@ -436,7 +445,7 @@ function BatchStylePopover({
             <div className="grid grid-cols-2 gap-1">
               {BATCH_THEME_OPTIONS.map(opt => {
                 const isSelected = batch.colorTheme === opt.value
-                const hasPreview = opt.value !== undefined && opt.value !== 'none' && opt.value !== 'custom'
+                const hasPreview = opt.value !== undefined && THEMES_WITH_PREVIEW_VIDEO.has(opt.value)
                 return (
                   <button
                     key={opt.value ?? '_global'}
