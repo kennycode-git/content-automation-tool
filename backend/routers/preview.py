@@ -16,6 +16,7 @@ Security considerations:
 """
 
 import asyncio
+import io
 import logging
 import os
 import shutil
@@ -23,6 +24,8 @@ import tempfile
 import time
 from pathlib import Path
 from typing import List
+
+from PIL import Image as PilImage
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -42,6 +45,22 @@ from services.storage import get_user_uploads_signed_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+_PREVIEW_MAX_PX = 720  # longest edge for staged preview thumbnails
+
+
+def _preview_thumbnail(fpath: Path) -> bytes:
+    """Re-encode an image as a small JPEG thumbnail for preview display.
+    Reduces the longest edge to _PREVIEW_MAX_PX and saves at quality 78.
+    This is display-only — the full-res graded images are stored separately
+    in the raw-image cache used for actual rendering.
+    """
+    with PilImage.open(fpath) as img:
+        img = img.convert("RGB")
+        img.thumbnail((_PREVIEW_MAX_PX, _PREVIEW_MAX_PX), PilImage.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=78, optimize=True)
+        return buf.getvalue()
 
 
 def _stage_batch_sync(
@@ -220,8 +239,7 @@ async def preview_stage(
             for fname in fnames:
                 fpath = render_path / fname
                 try:
-                    with open(fpath, "rb") as f:
-                        data = f.read()
+                    data = _preview_thumbnail(fpath)
                     storage_path = f"{user_id}/preview/{ts}_{batch_idx}_{fname}"
                     client.storage.from_("user-uploads").upload(
                         path=storage_path,
@@ -317,8 +335,7 @@ async def preview_find_more(
         for fname in fnames[:body.count]:
             fpath = render_path / fname
             try:
-                with open(fpath, "rb") as f:
-                    data = f.read()
+                data = _preview_thumbnail(fpath)
                 storage_path = f"{user_id}/preview/{ts}_more_{fname}"
                 client.storage.from_("user-uploads").upload(
                     path=storage_path,
