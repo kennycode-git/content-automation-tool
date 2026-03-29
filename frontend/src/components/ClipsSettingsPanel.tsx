@@ -436,7 +436,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         <input
           type="range"
           min="1"
-          max="5"
+          max="2"
           step="1"
           value={settings.clips_per_term}
           onChange={e => set('clips_per_term', parseInt(e.target.value))}
@@ -444,7 +444,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         />
         <div className="flex justify-between text-[10px] text-stone-600 mt-0.5">
           <span>1</span>
-          <span>5</span>
+          <span>2</span>
         </div>
       </div>
 
