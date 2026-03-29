@@ -269,6 +269,15 @@ Dashboard has a mode toggle: **Photos** (default) vs **Clips**. In Clips mode:
 All API calls use `resolvedSource` so 'auto' resolves to Pexels before sending.
 
 ## Deployment (Vercel)
+
+**Before pushing to production, always run the build check first:**
+```bash
+cd frontend
+npm install
+npm run build   # runs tsc && vite build — must pass with zero errors before pushing
+```
+If the build fails, fix all TypeScript errors before pushing. Do not push to main with a broken build.
+
 ```bash
 vercel --prod
 # Set env vars in Vercel dashboard under Project > Settings > Environment Variables

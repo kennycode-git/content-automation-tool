@@ -39,7 +39,7 @@ class ClaimBody(BaseModel):
 @router.post("/auth/check-invite")
 async def check_invite(body: EmailBody):
     """Check whether an email is registered for the trial and whether it has been claimed."""
-    email = body.email.lower()
+    email = body.email.strip().lower()
     sb = get_client()
     result = (
         sb.table("trial_invites")
@@ -61,7 +61,7 @@ async def claim_invite(body: ClaimBody):
     if len(body.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
 
-    email = body.email.lower()
+    email = body.email.strip().lower()
     sb = get_client()
 
     # Re-verify invite is still unclaimed (guard against double-submit)

@@ -174,8 +174,6 @@ async def lifespan(app: FastAPI):
         scheduler.start()
         logger.info("TikTok scheduler started")
     yield
-    if scheduler.running:
-        scheduler.shutdown(wait=False)
     logger.info("Cogito SaaS backend shutting down")
 
 
@@ -221,7 +219,6 @@ app.include_router(stripe_webhook.router, tags=["stripe"])
 app.include_router(trial_auth.router, prefix="/api", tags=["trial-auth"])
 app.include_router(clips.router, prefix="/api", tags=["clips"])
 app.include_router(admin.router, prefix="/api", tags=["admin"])
-app.include_router(tiktok_router.router, prefix="/api", tags=["tiktok"])
 
 
 @app.get("/health", tags=["health"])

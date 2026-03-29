@@ -9,8 +9,6 @@ import Photos from './pages/Photos'
 import Pricing from './pages/Pricing'
 import Account from './pages/Account'
 import Admin from './pages/Admin'
-import Schedule from './pages/Schedule'
-import TikTokCallback from './pages/TikTokCallback'
 
 const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS === 'true'
 
@@ -89,7 +87,6 @@ export default function App() {
         />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/admin" element={<Admin />} />
-        <Route path="/tiktok-callback" element={<TikTokCallback />} />
         <Route
           path="/photos"
           element={
@@ -111,14 +108,6 @@ export default function App() {
           element={
             <ProtectedRoute session={session}>
               <Account session={session!} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/schedule"
-          element={
-            <ProtectedRoute session={session}>
-              <Schedule session={session!} />
             </ProtectedRoute>
           }
         />

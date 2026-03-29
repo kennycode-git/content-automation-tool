@@ -1,4 +1,11 @@
 {
+  "redirects": [
+    {
+      "source": "/tutorial",
+      "destination": "https://www.loom.com/share/929366c678b241f585b52271bf1d5d1e",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!api/.*).*)",

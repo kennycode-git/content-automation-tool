@@ -194,7 +194,7 @@ function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) =
   const videoRef = useRef<HTMLVideoElement>(null)
 
   function handleMouseEnter() {
-    videoRef.current?.play()
+    videoRef.current?.play().catch(() => {})
   }
 
   function handleMouseLeave() {
@@ -216,10 +216,12 @@ function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) =
           <video
             ref={videoRef}
             src={`/theme-previews/${preset.id}.mp4`}
+            poster={`/theme-previews/posters/${preset.id}.jpg`}
+            autoPlay
             muted
             loop
             playsInline
-            preload="metadata"
+            preload="auto"
             className="absolute inset-0 w-full h-full object-cover"
             onError={() => setFailed(true)}
           />

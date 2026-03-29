@@ -305,6 +305,7 @@ class PreviewStageResponse(BaseModel):
     pexels_fallback: bool = False
 
 
+
 class PreviewFindMoreRequest(BaseModel):
     search_terms: List[str] = Field(..., min_length=1, max_length=20)
     count: int = Field(..., ge=1, le=50)

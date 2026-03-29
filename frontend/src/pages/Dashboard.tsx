@@ -540,6 +540,7 @@ export default function Dashboard({ session }: Props) {
     }
   }, [settings, trialExpired, resolvedSource])
 
+
   async function handleRegrade(newJobId: string, title: string | null) {
     setPendingCount(prev => prev + 1)
     setActiveJobs(prev => [{ jobId: newJobId, title }, ...prev])

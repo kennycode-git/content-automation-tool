@@ -53,7 +53,7 @@ class AdjustRendersBody(BaseModel):
 async def add_invite(body: InviteBody, request: Request):
     """Insert an email into trial_invites. Idempotent."""
     _check_key(request)
-    email = body.email.lower()
+    email = body.email.strip().lower()
     sb = get_client()
 
     existing = (
@@ -75,7 +75,7 @@ async def add_invite(body: InviteBody, request: Request):
 async def delete_invite(body: InviteBody, request: Request):
     """Remove an email from trial_invites."""
     _check_key(request)
-    email = body.email.lower()
+    email = body.email.strip().lower()
     sb = get_client()
     sb.table("trial_invites").delete().eq("email", email).execute()
     logger.info("Admin removed trial invite: %s", email)
@@ -197,6 +197,16 @@ async def send_invite_email(body: InviteBody, request: Request):
     <div style="margin:32px 0">
       <a href="https://www.passiveclip.com/login" style="display:inline-block;background:#F5A623;font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:15px 32px;text-decoration:none;border-radius:2px;font-family:Arial,sans-serif;color:#111">Accept invite</a>
     </div>
+    <hr style="border:none;border-top:1px solid #eee;margin:32px 0">
+    <p style="font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#888;margin-bottom:12px;font-family:Arial,sans-serif">Quick start tutorial</p>
+    <a href="https://www.passiveclip.com/tutorial" style="display:block;position:relative;border-radius:4px;overflow:hidden;margin-bottom:24px;text-decoration:none">
+      <img src="https://www.passiveclip.com/tutorial-thumb.png" alt="Watch tutorial" style="width:100%;display:block">
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.35)">
+        <div style="width:56px;height:56px;border-radius:50%;background:#F5A623;display:flex;align-items:center;justify-content:center">
+          <div style="width:0;height:0;border-top:11px solid transparent;border-bottom:11px solid transparent;border-left:18px solid #111;margin-left:4px"></div>
+        </div>
+      </div>
+    </a>
     <hr style="border:none;border-top:1px solid #eee;margin:32px 0">
     <p style="font-size:15px;color:#333;line-height:1.75;margin-bottom:8px;font-family:Arial,sans-serif">Sign in using: <strong>{email}</strong></p>
     <p style="font-size:15px;color:#333;line-height:1.75;margin-bottom:16px;font-family:Arial,sans-serif">This invite expires in 48 hours. If you weren't expecting this, you can safely ignore it.</p>

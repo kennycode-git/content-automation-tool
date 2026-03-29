@@ -386,7 +386,6 @@ function BatchStylePopover({
   onClose: () => void
   onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
 }) {
-  const params = batch.customGradeParams ?? DEFAULT_GRADE
   const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
   const [fineTuneOpen, setFineTuneOpen] = useState(batch.colorTheme === 'custom')
   const [overlayPresets, setOverlayPresets] = useState<OverlayPreset[]>(() => {
