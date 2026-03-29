@@ -24,7 +24,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-from routers import admin, auth, clips, generate, jobs, presets, preview, stripe_webhook, trial_auth
+from routers import admin, auth, clips, generate, jobs, presets, preview, stripe_webhook, trial_auth, tiktok as tiktok_router
+from services.scheduler import scheduler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -169,6 +170,9 @@ async def lifespan(app: FastAPI):
     logger.info("Cogito SaaS backend starting up")
     await _recover_stuck_jobs()
     asyncio.create_task(_daily_cleanup_loop())
+    if os.environ.get("TIKTOK_CLIENT_KEY"):
+        scheduler.start()
+        logger.info("TikTok scheduler started")
     yield
     logger.info("Cogito SaaS backend shutting down")
 
