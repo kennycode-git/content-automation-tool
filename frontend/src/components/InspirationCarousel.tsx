@@ -191,10 +191,11 @@ export default function InspirationCarousel({ onApply, onHide }: Props) {
 
 function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) => void }) {
   const [failed, setFailed] = useState(false)
+  const [playing, setPlaying] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   function handleMouseEnter() {
-    videoRef.current?.play()
+    videoRef.current?.play().catch(() => {})
   }
 
   function handleMouseLeave() {
@@ -216,15 +217,17 @@ function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) =
           <video
             ref={videoRef}
             src={`/theme-previews/${preset.id}.mp4`}
+            autoPlay
             muted
             loop
             playsInline
-            preload="metadata"
+            preload="auto"
             className="absolute inset-0 w-full h-full object-cover"
+            onPlay={() => setPlaying(true)}
             onError={() => setFailed(true)}
           />
         )}
-        <div className={`absolute inset-0 bg-gradient-to-br ${preset.gradient} ${failed ? '' : 'opacity-0'}`} />
+        <div className={`absolute inset-0 bg-gradient-to-br ${preset.gradient} transition-opacity duration-500 ${playing ? 'opacity-0' : ''}`} />
 
         {/* Hover label — no overlay, just text */}
         <div className="absolute inset-0 flex items-center justify-center">
