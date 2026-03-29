@@ -815,12 +815,42 @@ async def _run_regrade_pipeline_inner(
         if count == 0:
             raise RuntimeError("No cached images found for this job. Re-grade is unavailable.")
 
-        # If caller specified a subset of images, remove the rest
+        # If caller specified a subset of images, remove unselected cached images
+        # and download any extra images that came from user-uploads (find-more / staged)
         if selected_paths:
             selected_fnames = {os.path.basename(p) for p in selected_paths}
+            # Remove cached images the user deselected
             for fname in os.listdir(raw_dir):
                 if fname not in selected_fnames:
                     os.remove(os.path.join(raw_dir, fname))
+
+            # Download extra images from user-uploads bucket (e.g. find-more / staged previews).
+            # Raw-cache paths start with "raw/"; anything else is a user-uploads path.
+            extra_paths = [p for p in selected_paths if not p.startswith("raw/")]
+            if extra_paths:
+                def _download_extras(paths: list[str]) -> None:
+                    from db.supabase_client import get_client as _get_client
+                    _client = _get_client()
+                    for path in paths:
+                        try:
+                            data = _client.storage.from_("user-uploads").download(path)
+                            fname = os.path.basename(path)
+                            dest = os.path.join(raw_dir, fname)
+                            # Avoid overwriting an existing cached image with the same filename
+                            if os.path.exists(dest):
+                                base, ext = os.path.splitext(fname)
+                                fname = f"{base}_new{ext}"
+                                dest = os.path.join(raw_dir, fname)
+                            with open(dest, "wb") as f:
+                                f.write(data)
+                        except Exception as exc:
+                            logger.warning("Regrade: could not download extra image %s: %s", path, exc)
+                await asyncio.to_thread(_download_extras, extra_paths)
+
+        # Verify we still have at least one image after filtering/downloading
+        remaining = [f for f in os.listdir(raw_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+        if not remaining:
+            raise RuntimeError("No images remain after selection — please select at least one image.")
 
         # Cache images under the new job's ID so it can itself be re-edited
         try:
