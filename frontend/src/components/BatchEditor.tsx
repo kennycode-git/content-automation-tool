@@ -80,7 +80,7 @@ const BATCH_THEME_OPTIONS: { value: string | undefined; label: string; shortLabe
 
 // Themes with an available preview video in /theme-previews/
 const THEMES_WITH_PREVIEW_VIDEO = new Set([
-  'dark', 'sepia', 'warm', 'low_exp', 'grey', 'blue', 'red', 'bw', 'midnight', 'dusk',
+  'dark', 'sepia', 'warm', 'low_exp', 'grey', 'blue', 'red', 'bw', 'midnight', 'dusk', 'mocha', 'noir',
 ])
 
 const BATCH_ACCENT_OPTIONS: { value: string | null | undefined; label: string; dot: string }[] = [
