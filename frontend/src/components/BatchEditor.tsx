@@ -510,37 +510,39 @@ function BatchStylePopover({
                           Starting from {BATCH_THEME_OPTIONS.find(o => o.value === batch.colorTheme)?.label ?? ''} defaults — adjusting switches to Custom grade
                         </p>
                       )}
-                      <div className="flex items-start gap-2">
+                      {/* Live grade preview */}
+                      <div className="relative rounded-lg overflow-hidden w-full h-20">
                         <video
-                          src="/theme-previews/eastern-philosophy.mp4"
+                          src={THEMES_WITH_PREVIEW_VIDEO.has(batch.colorTheme ?? '') ? `/theme-previews/${batch.colorTheme}.mp4` : '/theme-previews/eastern-philosophy.mp4'}
                           autoPlay muted loop playsInline
-                          className="w-12 rounded-md shrink-0 object-cover"
-                          style={{ aspectRatio: '9/16', filter: gradeToFilter(gradeParams) }}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          style={{ filter: gradeToFilter(gradeParams) }}
                         />
-                        <div className="flex-1 space-y-1.5">
-                          {CUSTOM_SLIDERS.map(s => (
-                            <div key={s.key}>
-                              <div className="flex items-center justify-between mb-0.5">
-                                <span className="text-[9px] text-stone-400">{s.label}</span>
-                                <span className="text-[9px] font-mono text-stone-300">
-                                  {gradeParams[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
-                                </span>
-                              </div>
-                              <input
-                                type="range"
-                                min={s.min}
-                                max={s.max}
-                                step={s.step}
-                                value={gradeParams[s.key]}
-                                onChange={e => onChange({
-                                  colorTheme: 'custom',
-                                  customGradeParams: { ...gradeParams, [s.key]: parseFloat(e.target.value) },
-                                })}
-                                className="w-full accent-violet-500"
-                              />
+                        <span className="absolute bottom-1 left-2 text-[8px] text-white/50 bg-black/30 px-1.5 py-0.5 rounded-full">Live preview</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {CUSTOM_SLIDERS.map(s => (
+                          <div key={s.key}>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-[9px] text-stone-400">{s.label}</span>
+                              <span className="text-[9px] font-mono text-stone-300">
+                                {gradeParams[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
+                              </span>
                             </div>
-                          ))}
-                        </div>
+                            <input
+                              type="range"
+                              min={s.min}
+                              max={s.max}
+                              step={s.step}
+                              value={gradeParams[s.key]}
+                              onChange={e => onChange({
+                                colorTheme: 'custom',
+                                customGradeParams: { ...gradeParams, [s.key]: parseFloat(e.target.value) },
+                              })}
+                              className="w-full accent-violet-500"
+                            />
+                          </div>
+                        ))}
                       </div>
                       {!isCustom && (
                         <button
