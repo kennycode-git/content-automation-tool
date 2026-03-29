@@ -4,7 +4,7 @@
  * Video generation settings: resolution, timing, colour theme, presets.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export interface CustomGradeParams {
   brightness: number
@@ -188,21 +188,38 @@ function ChevronIcon({ open }: { open: boolean }) {
   )
 }
 
-function ThemePreviewPopup({ theme }: { theme: typeof COLOR_THEMES[number] }) {
+// Themes that have a preview video
+const PREVIEW_THEMES = COLOR_THEMES.filter(t => t.value !== 'none' && t.value !== 'custom')
+
+function ThemePreviewPopup({ theme, visible }: { theme: typeof COLOR_THEMES[number]; visible: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    if (visible) {
+      v.play().catch(() => {})
+    } else {
+      v.pause()
+      v.currentTime = 0
+    }
+  }, [visible])
+
   return (
-    <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 w-36 rounded-lg border border-stone-600 bg-stone-900 shadow-xl overflow-hidden z-50 pointer-events-none">
-      <div className="relative w-full aspect-[9/16] bg-stone-950 flex items-center justify-center">
+    <div
+      className="absolute left-full top-1/2 -translate-y-1/2 ml-3 w-36 rounded-lg border border-stone-600 bg-stone-900 shadow-xl overflow-hidden z-50 pointer-events-none"
+      style={{ visibility: visible ? 'visible' : 'hidden' }}
+    >
+      <div className="relative w-full aspect-[9/16] bg-stone-950">
         <video
-          key={theme.value}
+          ref={videoRef}
           src={`/theme-previews/${theme.value}.mp4`}
-          autoPlay
           muted
           loop
           playsInline
           preload="auto"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        <span className="text-xs text-stone-600 select-none">Preview coming soon</span>
       </div>
       <div className="px-2 py-1.5 text-xs text-stone-400 border-t border-stone-700">
         {theme.label}
@@ -350,6 +367,13 @@ function ThemeSelector({ value, onChange, onCustomize }: {
 
   return (
     <div className="relative">
+      {/* Preload all theme preview videos so popup plays instantly */}
+      <div style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
+        {PREVIEW_THEMES.map(t => (
+          <video key={t.value} src={`/theme-previews/${t.value}.mp4`} preload="auto" muted playsInline />
+        ))}
+      </div>
+
       {/* Collapsed trigger */}
       <div
         onClick={() => setOpen(o => !o)}
@@ -375,7 +399,7 @@ function ThemeSelector({ value, onChange, onCustomize }: {
               >
                 <EyeIcon />
               </button>
-              {hovered === selected.value + '_trigger' && <ThemePreviewPopup theme={selected} />}
+              <ThemePreviewPopup theme={selected} visible={hovered === selected.value + '_trigger'} />
             </div>
             {onCustomize && (
               <button
@@ -433,7 +457,7 @@ function ThemeSelector({ value, onChange, onCustomize }: {
                       >
                         <EyeIcon />
                       </button>
-                      {hovered === t.value && <ThemePreviewPopup theme={t} />}
+                      <ThemePreviewPopup theme={t} visible={hovered === t.value} />
                     </div>
                     {onCustomize && (
                       <button

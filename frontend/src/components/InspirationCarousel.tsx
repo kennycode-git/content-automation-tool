@@ -224,6 +224,7 @@ function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) =
             preload="auto"
             className="absolute inset-0 w-full h-full object-cover"
             onError={() => setFailed(true)}
+            onLoadedMetadata={() => videoRef.current?.pause()}
           />
         )}
         <div className={`absolute inset-0 bg-gradient-to-br ${preset.gradient} ${failed ? '' : 'opacity-0'}`} />
