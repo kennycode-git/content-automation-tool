@@ -12,10 +12,11 @@ import { listUserPhilosophers, createUserPhilosopher, deleteUserPhilosopher, upl
 import type { UserPhilosopher } from '../lib/api'
 
 const ACCENT_OPTIONS = [
-  { value: null,   label: 'None', dot: 'bg-stone-600' },
-  { value: 'blue', label: 'Blue', dot: 'bg-blue-500' },
-  { value: 'red',  label: 'Red',  dot: 'bg-red-500' },
-  { value: 'gold', label: 'Gold', dot: 'bg-amber-400' },
+  { value: null,     label: 'None',   dot: 'bg-stone-600' },
+  { value: 'blue',   label: 'Blue',   dot: 'bg-blue-500' },
+  { value: 'red',    label: 'Red',    dot: 'bg-red-500' },
+  { value: 'gold',   label: 'Gold',   dot: 'bg-amber-400' },
+  { value: 'purple', label: 'Purple', dot: 'bg-purple-500' },
 ]
 
 interface Props {
@@ -200,7 +201,7 @@ export default function AdvancedModal({
             Accent images{' '}
             <span className="text-stone-600">(~20% of frames, ungraded)</span>
           </p>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-5 gap-2">
             {ACCENT_OPTIONS.map(opt => (
               <div
                 key={opt.value ?? 'none'}
