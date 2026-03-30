@@ -20,6 +20,7 @@ import type { VideoSettings, CustomGradeParams } from '../components/SettingsPan
 import ClipsSettingsPanel, { DEFAULT_CLIPS_SETTINGS } from '../components/ClipsSettingsPanel'
 import type { ClipsSettings } from '../components/ClipsSettingsPanel'
 import VideoClipSearch from '../components/VideoClipSearch'
+import ClipBundles from '../components/ClipBundles'
 import ClipPreviewGrid from '../components/ClipPreviewGrid'
 import JobPanel from '../components/JobPanel'
 import RecentJobs from '../components/RecentJobs'
@@ -748,6 +749,10 @@ export default function Dashboard({ session }: Props) {
               </div>
             ) : (
               <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6">
+                <ClipBundles
+                  onLoad={terms => setClipTerms(terms)}
+                  disabled={clipsSearching || clipsGenerating}
+                />
                 <p className="text-xs text-stone-500 mb-3">Enter up to 3 search terms to find Pexels video clips.</p>
                 <VideoClipSearch
                   terms={clipTerms}
