@@ -331,11 +331,14 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   function handleFullscreen() {
     const v = videoRef.current
     if (!v) return
-    if ((v as any).webkitEnterFullscreen) {
+    if (v.requestFullscreen) {
+      v.requestFullscreen().catch(() => {})
+    } else if ((v as any).webkitRequestFullscreen) {
+      // Safari desktop
+      ;(v as any).webkitRequestFullscreen()
+    } else if ((v as any).webkitEnterFullscreen) {
       // iOS Safari
       ;(v as any).webkitEnterFullscreen()
-    } else if (v.requestFullscreen) {
-      v.requestFullscreen()
     }
   }
 
@@ -613,7 +616,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                 />
                 <button
                   onClick={handleFullscreen}
-                  className="absolute top-2 right-2 rounded-md bg-black/60 p-1.5 text-white
+                  className="absolute bottom-10 right-2 rounded-md bg-black/60 p-1.5 text-white
                              hover:bg-black/80 transition-colors"
                   title="Fullscreen"
                 >
