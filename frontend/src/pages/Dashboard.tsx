@@ -257,6 +257,7 @@ export default function Dashboard({ session }: Props) {
           accent_folder: effectiveAccent ?? undefined,
           philosopher: batch.philosopher ?? undefined,
           grade_philosopher: batch.grade_philosopher || undefined,
+          philosopher_is_user: batch.philosopher_is_user || undefined,
           image_source: resolvedSource,
           text_overlay: batch.text_overlay ?? undefined,
         })
@@ -407,6 +408,7 @@ export default function Dashboard({ session }: Props) {
           accent_folder: effectiveAccent ?? undefined,
           philosopher: originalBatch?.philosopher ?? undefined,
           grade_philosopher: originalBatch?.grade_philosopher || undefined,
+          philosopher_is_user: originalBatch?.philosopher_is_user || undefined,
           preset_name: appliedPresetName ?? undefined,
           image_source: resolvedSource,
           text_overlay: originalBatch?.text_overlay ?? undefined,

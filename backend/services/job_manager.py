@@ -73,6 +73,7 @@ class JobConfig:
     custom_grade_params: Optional[Dict] = None
     philosopher: Optional[str] = None
     grade_philosopher: bool = False
+    philosopher_is_user: bool = False
     text_overlay: Optional[Dict] = None
 
     def to_dict(self) -> dict:
@@ -266,6 +267,47 @@ def _download_accent_images(folder: str, dest_dir: str, width: int, height: int,
         except Exception as e:
             logger.warning("Failed to download accent image %s: %s", path, e)
     logger.info("Saved %d/%d accent images from accent/%s", saved, len(selected), folder)
+    return saved
+
+
+def _download_user_philosopher_images(
+    user_id: str,
+    key: str,
+    dest_dir: str,
+    width: int,
+    height: int,
+    max_count: int,
+    file_prefix: str = "phil",
+) -> int:
+    """Download user philosopher images from user-uploads bucket."""
+    from services.storage import list_user_philosopher_images, download_user_philosopher_image
+    from services.image_injector import resize_cover
+    import random
+    from pathlib import Path
+    from io import BytesIO
+    from PIL import Image
+
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+
+    paths = list_user_philosopher_images(user_id, key)
+    if not paths:
+        logger.warning("No user philosopher images found for %s/%s", user_id, key)
+        return 0
+
+    selected = random.sample(paths, min(max_count, len(paths)))
+    saved = 0
+    for idx, path in enumerate(selected, 1):
+        try:
+            data = download_user_philosopher_image(path)
+            img = Image.open(BytesIO(data)).convert("RGB")
+            img = resize_cover(img, width, height)
+            out = dest / f"{file_prefix}_{idx:03d}.jpg"
+            img.save(str(out), "JPEG", quality=92, optimize=True)
+            saved += 1
+        except Exception as e:
+            logger.warning("Failed to download user philosopher image %s: %s", path, e)
+    logger.info("Downloaded %d/%d user philosopher images", saved, len(selected))
     return saved
 
 
@@ -470,15 +512,27 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
             await update_job_status(job_id, user_id, "running", db, progress_message="Adding philosopher images…")
             max_phil = max(1, needed_frames // 5)  # ~20% of frames
             phil_staging = os.path.join(tmp_root, "phil_staging")
-            await asyncio.to_thread(
-                _download_accent_images,
-                f"philosopher/{config.philosopher}",
-                phil_staging,
-                width,
-                height,
-                max_phil,
-                "phil",
-            )
+            if config.philosopher_is_user:
+                await asyncio.to_thread(
+                    _download_user_philosopher_images,
+                    user_id,
+                    config.philosopher,
+                    phil_staging,
+                    width,
+                    height,
+                    max_phil,
+                    "phil",
+                )
+            else:
+                await asyncio.to_thread(
+                    _download_accent_images,
+                    f"philosopher/{config.philosopher}",
+                    phil_staging,
+                    width,
+                    height,
+                    max_phil,
+                    "phil",
+                )
             if config.grade_philosopher and config.color_theme != "none":
                 phil_graded = os.path.join(tmp_root, "phil_graded")
                 graded_phil_dir = await asyncio.to_thread(

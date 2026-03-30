@@ -11,7 +11,8 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { uploadImages } from '../lib/api'
+import { uploadImages, listUserPhilosophers } from '../lib/api'
+import type { UserPhilosopher } from '../lib/api'
 import type { CustomGradeParams } from './SettingsPanel'
 import { THEME_GRADE_DEFAULTS } from './SettingsPanel'
 import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, OverlayAlignment } from '../lib/api'
@@ -19,6 +20,22 @@ import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, Ove
 export type { TextOverlayConfig }
 
 const STORAGE_KEY = 'cogito_classic_text'
+const USER_THEMES_KEY = 'cogito_user_themes'
+
+export interface UserColorTheme {
+  id: string
+  name: string
+  colorTag: string     // hex color string e.g. "#7c3aed"
+  gradeParams: CustomGradeParams
+}
+
+function loadUserThemes(): UserColorTheme[] {
+  try { return JSON.parse(localStorage.getItem(USER_THEMES_KEY) || '[]') } catch { return [] }
+}
+
+function saveUserThemesToStorage(themes: UserColorTheme[]) {
+  try { localStorage.setItem(USER_THEMES_KEY, JSON.stringify(themes)) } catch { /* ignore */ }
+}
 
 // ── Philosopher detection ────────────────────────────────────────────────────
 
@@ -80,6 +97,7 @@ export interface BatchOutput {
   text_overlay?: TextOverlayConfig | null
   philosopher?: string | null            // resolved philosopher key, null = none
   grade_philosopher?: boolean            // grade philosopher images with color theme
+  philosopher_is_user?: boolean
 }
 
 interface VisualBatch {
@@ -92,6 +110,7 @@ interface VisualBatch {
   usePhilosopher?: boolean               // true = include philosopher images
   philosopherOverride?: string | null    // manual pick; undefined = use auto-detected
   gradePhilosopher?: boolean             // grade philosopher images (default true)
+  philosopherIsUser?: boolean            // true = user's own philosopher (not system)
 }
 
 interface PendingBundle {
@@ -432,11 +451,13 @@ function BatchStylePopover({
   onChange,
   onClose,
   onApplyOverlayToAll,
+  userPhilosophers = [],
 }: {
   batch: VisualBatch
   onChange: (patch: Partial<VisualBatch>) => void
   onClose: () => void
   onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
+  userPhilosophers?: UserPhilosopher[]
 }) {
   const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
   const [fineTuneOpen, setFineTuneOpen] = useState(batch.colorTheme === 'custom')
@@ -445,6 +466,10 @@ function BatchStylePopover({
   })
   const [savingPreset, setSavingPreset] = useState(false)
   const [presetName, setPresetName] = useState('')
+  const [userThemes, setUserThemes] = useState<UserColorTheme[]>(loadUserThemes)
+  const [savingTheme, setSavingTheme] = useState(false)
+  const [themeName, setThemeName] = useState('')
+  const [themeColorTag, setThemeColorTag] = useState('#7c3aed')
 
   function saveOverlayPreset(ov: TextOverlayConfig) {
     const name = presetName.trim() || 'Preset'
@@ -461,6 +486,26 @@ function BatchStylePopover({
     const updated = overlayPresets.filter(p => p.id !== id)
     setOverlayPresets(updated)
     try { localStorage.setItem(OVERLAY_PRESETS_KEY, JSON.stringify(updated)) } catch { /* ignore */ }
+  }
+
+  function saveUserTheme(gradeParams: CustomGradeParams) {
+    const name = themeName.trim() || 'My Theme'
+    const theme: UserColorTheme = { id: crypto.randomUUID(), name, colorTag: themeColorTag, gradeParams }
+    const updated = [...userThemes, theme]
+    setUserThemes(updated)
+    saveUserThemesToStorage(updated)
+    setSavingTheme(false)
+    setThemeName('')
+  }
+
+  function deleteUserTheme(id: string) {
+    const updated = userThemes.filter(t => t.id !== id)
+    setUserThemes(updated)
+    saveUserThemesToStorage(updated)
+    // If deleted theme is currently selected, clear it
+    if (batch.colorTheme === `user:${id}`) {
+      onChange({ colorTheme: undefined, customGradeParams: undefined })
+    }
   }
 
   return (
@@ -535,6 +580,31 @@ function BatchStylePopover({
               })}
             </div>
 
+            {/* User saved themes */}
+            {userThemes.length > 0 && (
+              <div className="mt-1 pt-1 border-t border-stone-800 grid grid-cols-2 gap-1">
+                {userThemes.map(theme => (
+                  <button
+                    key={theme.id}
+                    onClick={() => onChange({ colorTheme: `user:${theme.id}`, customGradeParams: theme.gradeParams })}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-left transition group/ut ${
+                      batch.colorTheme === `user:${theme.id}`
+                        ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
+                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0 flex-shrink-0" style={{ background: theme.colorTag }} />
+                    <span className="flex-1 truncate text-left">{theme.name}</span>
+                    <span
+                      role="button"
+                      onClick={e => { e.stopPropagation(); deleteUserTheme(theme.id) }}
+                      className="text-[9px] text-stone-700 hover:text-red-400 opacity-0 group-hover/ut:opacity-100 transition ml-auto"
+                    >✕</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Fine-tune grade — collapsible, available for any selected theme */}
             {batch.colorTheme !== undefined && batch.colorTheme !== 'none' && (
               <div className="mt-2 pt-2 border-t border-stone-800">
@@ -604,6 +674,42 @@ function BatchStylePopover({
                           Use as Custom grade →
                         </button>
                       )}
+                      {/* Save as named theme */}
+                      {savingTheme ? (
+                        <div className="flex items-center gap-1 mt-1 pt-1 border-t border-stone-800">
+                          <input
+                            type="text"
+                            value={themeName}
+                            onChange={e => setThemeName(e.target.value)}
+                            placeholder="Theme name…"
+                            maxLength={30}
+                            className="flex-1 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-[10px] text-stone-200 focus:outline-none focus:border-stone-500"
+                            onKeyDown={e => e.key === 'Enter' && saveUserTheme(gradeParams)}
+                          />
+                          <input
+                            type="color"
+                            value={themeColorTag}
+                            onChange={e => setThemeColorTag(e.target.value)}
+                            className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent"
+                            title="Pick a colour tag"
+                          />
+                          <button
+                            onClick={() => saveUserTheme(gradeParams)}
+                            className="text-[9px] text-green-400 hover:text-green-300 transition whitespace-nowrap"
+                          >Save</button>
+                          <button
+                            onClick={() => { setSavingTheme(false); setThemeName('') }}
+                            className="text-[9px] text-stone-500 hover:text-stone-300 transition"
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setSavingTheme(true)}
+                          className="text-[9px] text-violet-400 hover:text-violet-300 transition mt-1"
+                        >
+                          + Save as named theme
+                        </button>
+                      )}
                     </div>
                   )
                 })()}
@@ -670,13 +776,26 @@ function BatchStylePopover({
                   <div className="space-y-2">
                     <select
                       value={resolvedKey ?? ''}
-                      onChange={e => onChange({ philosopherOverride: e.target.value || null })}
+                      onChange={e => {
+                        const val = e.target.value
+                        const isUser = userPhilosophers.some(p => p.key === val)
+                        onChange({ philosopherOverride: val || null, philosopherIsUser: isUser })
+                      }}
                       className="w-full bg-stone-800 border border-stone-700 rounded-lg px-2 py-1.5 text-[11px] text-stone-200 focus:outline-none focus:border-stone-500"
                     >
                       {!resolvedKey && <option value="">Select philosopher…</option>}
-                      {PHILOSOPHER_LIST.map(p => (
-                        <option key={p.key} value={p.key}>{p.display}</option>
-                      ))}
+                      <optgroup label="System">
+                        {PHILOSOPHER_LIST.map(p => (
+                          <option key={p.key} value={p.key}>{p.display}</option>
+                        ))}
+                      </optgroup>
+                      {userPhilosophers.length > 0 && (
+                        <optgroup label="My philosophers">
+                          {userPhilosophers.map(p => (
+                            <option key={p.key} value={p.key}>{p.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] text-stone-500">Grade images with theme</span>
@@ -998,22 +1117,31 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const [openPopover, setOpenPopover] = useState<number | null>(null)
+  const [userPhilosophers, setUserPhilosophers] = useState<UserPhilosopher[]>([])
+
+  useEffect(() => {
+    listUserPhilosophers().then(setUserPhilosophers).catch(() => {})
+  }, [])
 
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
     return vBatches.map((b, i) => {
       const resolvedPhilosopher = b.usePhilosopher
         ? (b.philosopherOverride !== undefined ? b.philosopherOverride : detectPhilosopher(b.title))
         : null
+      const resolvedColorTheme = b.colorTheme?.startsWith('user:')
+        ? 'custom'
+        : b.colorTheme
       return {
         title: b.title.trim() || null,
         terms: parseBatchText(b.terms),
         uploaded_image_paths: paths[i] ?? [],
-        color_theme: b.colorTheme,
+        color_theme: resolvedColorTheme,
         custom_grade_params: b.customGradeParams,
         accent_folder_override: b.accentFolder,
         text_overlay: b.textOverlay,
         philosopher: resolvedPhilosopher || undefined,
         grade_philosopher: resolvedPhilosopher ? (b.gradePhilosopher !== false) : undefined,
+        philosopher_is_user: resolvedPhilosopher && b.philosopherIsUser ? true : undefined,
       }
     })
   }
@@ -1315,6 +1443,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                         onChange={patch => handleBatchOverride(idx, patch)}
                         onClose={() => setOpenPopover(null)}
                         onApplyOverlayToAll={batches.length > 1 ? handleApplyOverlayToAll : undefined}
+                        userPhilosophers={userPhilosophers}
                       />
                     )}
                   </div>

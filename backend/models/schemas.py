@@ -30,6 +30,19 @@ ALLOWED_PHILOSOPHERS = {
     "heidegger", "spinoza", "locke", "hume", "voltaire", "rousseau", "kierkegaard",
     "wittgenstein", "diogenes", "heraclitus", "epicurus", "zeno",
 }
+
+
+class UserPhilosopherCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+
+
+class UserPhilosopherResponse(BaseModel):
+    key: str
+    name: str
+    image_count: int
+    created_at: str
+
+
 ALLOWED_OVERLAY_FONTS = {
     "garamond", "cormorant", "playfair", "crimson", "philosopher", "lora",
     "outfit", "raleway", "josefin", "inter",
@@ -127,6 +140,7 @@ class GenerateRequest(BaseModel):
     custom_grade_params: Optional[CustomGradeParams] = None
     philosopher: Optional[str] = Field(default=None)
     grade_philosopher: bool = False
+    philosopher_is_user: bool = False
     text_overlay: Optional[TextOverlayConfig] = None
 
     @field_validator("search_terms")
@@ -167,15 +181,11 @@ class GenerateRequest(BaseModel):
             raise ValueError(f"image_source must be one of: {', '.join(sorted(ALLOWED_IMAGE_SOURCES))}")
         return v
 
-    @field_validator("philosopher")
-    @classmethod
-    def validate_philosopher(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in ALLOWED_PHILOSOPHERS:
-            raise ValueError(f"philosopher must be one of: {', '.join(sorted(ALLOWED_PHILOSOPHERS))}")
-        return v
-
-    @model_validator(mode="after")
-    def check_custom_params(self) -> "GenerateRequest":
+    @model_validator(mode='after')
+    def validate_post_init(self) -> 'GenerateRequest':
+        if self.philosopher and not self.philosopher_is_user:
+            if self.philosopher not in ALLOWED_PHILOSOPHERS:
+                raise ValueError(f"philosopher must be one of the allowed list, or set philosopher_is_user=True for custom philosophers")
         if self.color_theme == "custom" and self.custom_grade_params is None:
             raise ValueError("custom_grade_params is required when color_theme is 'custom'")
         return self

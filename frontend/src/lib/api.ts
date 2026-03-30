@@ -90,6 +90,7 @@ export interface GenerateRequest {
   custom_grade_params?: CustomGradeParams
   philosopher?: string | null
   grade_philosopher?: boolean
+  philosopher_is_user?: boolean
   text_overlay?: TextOverlayConfig | null
 }
 
@@ -486,6 +487,50 @@ export async function cancelScheduledPost(id: string): Promise<void> {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail ?? `HTTP ${res.status}`)
   }
+}
+
+// ── User philosophers ─────────────────────────────────────────────────────────
+
+export interface UserPhilosopher {
+  key: string
+  name: string
+  image_count: number
+  created_at: string
+}
+
+export async function listUserPhilosophers(): Promise<UserPhilosopher[]> {
+  if (DEV_BYPASS) return []
+  const res = await fetch(`${API_URL}/api/philosophers`, { headers: await authHeaders() })
+  return handleResponse<UserPhilosopher[]>(res)
+}
+
+export async function createUserPhilosopher(name: string): Promise<UserPhilosopher> {
+  const res = await fetch(`${API_URL}/api/philosophers`, {
+    method: 'POST',
+    headers: { ...await authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  return handleResponse<UserPhilosopher>(res)
+}
+
+export async function deleteUserPhilosopher(key: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/philosophers/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!res.ok && res.status !== 204) throw new Error(await res.text())
+}
+
+export async function uploadPhilosopherImages(key: string, files: File[]): Promise<{ uploaded: number }> {
+  const form = new FormData()
+  files.forEach(f => form.append('files', f))
+  const token = await getAccessToken()
+  const res = await fetch(`${API_URL}/api/philosophers/${encodeURIComponent(key)}/images`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  return handleResponse<{ uploaded: number }>(res)
 }
 
 // ─── Video Clips ──────────────────────────────────────────────────────────────
