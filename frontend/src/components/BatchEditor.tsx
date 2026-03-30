@@ -19,6 +19,54 @@ import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, Ove
 export type { TextOverlayConfig }
 
 const STORAGE_KEY = 'cogito_classic_text'
+
+// ── Philosopher detection ────────────────────────────────────────────────────
+
+export const PHILOSOPHER_LIST: { key: string; display: string }[] = [
+  { key: 'aristotle',      display: 'Aristotle' },
+  { key: 'camus',          display: 'Camus' },
+  { key: 'descartes',      display: 'Descartes' },
+  { key: 'diogenes',       display: 'Diogenes' },
+  { key: 'epicurus',       display: 'Epicurus' },
+  { key: 'epictetus',      display: 'Epictetus' },
+  { key: 'heraclitus',     display: 'Heraclitus' },
+  { key: 'hegel',          display: 'Hegel' },
+  { key: 'heidegger',      display: 'Heidegger' },
+  { key: 'hume',           display: 'Hume' },
+  { key: 'kant',           display: 'Kant' },
+  { key: 'kierkegaard',    display: 'Kierkegaard' },
+  { key: 'locke',          display: 'Locke' },
+  { key: 'marcus_aurelius', display: 'Marcus Aurelius' },
+  { key: 'nietzsche',      display: 'Nietzsche' },
+  { key: 'plato',          display: 'Plato' },
+  { key: 'rousseau',       display: 'Rousseau' },
+  { key: 'sartre',         display: 'Sartre' },
+  { key: 'schopenhauer',   display: 'Schopenhauer' },
+  { key: 'seneca',         display: 'Seneca' },
+  { key: 'socrates',       display: 'Socrates' },
+  { key: 'spinoza',        display: 'Spinoza' },
+  { key: 'voltaire',       display: 'Voltaire' },
+  { key: 'wittgenstein',   display: 'Wittgenstein' },
+  { key: 'zeno',           display: 'Zeno' },
+]
+
+function asciiFold(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+export function detectPhilosopher(title: string): string | null {
+  const norm = asciiFold(title.toLowerCase().replace(/_/g, ' '))
+  let bestKey: string | null = null
+  let bestLen = 0
+  for (const { key } of PHILOSOPHER_LIST) {
+    const keyNorm = asciiFold(key.replace(/_/g, ' '))
+    if (keyNorm.length > bestLen && norm.includes(keyNorm)) {
+      bestKey = key
+      bestLen = keyNorm.length
+    }
+  }
+  return bestKey
+}
 const DEFAULT_CLASSIC_TEXT =
   '# Stoicism\nmarble statue philosophy\nancient greece\nstoic stone\n\n# Existentialism\nmeditation silence\nminimalist monk'
 
@@ -30,6 +78,8 @@ export interface BatchOutput {
   custom_grade_params?: CustomGradeParams
   accent_folder_override?: string | null // undefined = inherit global, null = explicit none
   text_overlay?: TextOverlayConfig | null
+  philosopher?: string | null            // resolved philosopher key, null = none
+  grade_philosopher?: boolean            // grade philosopher images with color theme
 }
 
 interface VisualBatch {
@@ -39,6 +89,9 @@ interface VisualBatch {
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null           // undefined = inherit global, null = explicit none
   textOverlay?: TextOverlayConfig | null
+  usePhilosopher?: boolean               // true = include philosopher images
+  philosopherOverride?: string | null    // manual pick; undefined = use auto-detected
+  gradePhilosopher?: boolean             // grade philosopher images (default true)
 }
 
 interface PendingBundle {
@@ -118,7 +171,6 @@ const CUSTOM_SLIDERS: { key: keyof CustomGradeParams; label: string; min: number
   { key: 'hue_shift',  label: 'Hue Shift',  min: -180, max: 180, step: 1,    unit: '°' },
 ]
 
-const PHILOSOPHER_NAMES = ['Marcus Aurelius', 'Seneca', 'Nietzsche', 'Socrates', 'Aristotle', 'Epictetus']
 
 const DEFAULT_OVERLAY: TextOverlayConfig = {
   enabled: true,
@@ -591,23 +643,55 @@ function BatchStylePopover({
 
           <hr className="border-stone-800" />
 
-          {/* Philosopher — coming soon */}
-          <div className="opacity-40 pointer-events-none select-none">
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Philosopher</p>
-              <span className="text-[9px] font-semibold bg-stone-800 text-stone-500 border border-stone-700/60 px-1.5 py-0.5 rounded-full">Soon</span>
-            </div>
-            <div className="grid grid-cols-3 gap-1">
-              {PHILOSOPHER_NAMES.map(name => (
-                <div
-                  key={name}
-                  className="flex items-center justify-center px-2 py-1.5 rounded-lg border border-stone-700 bg-stone-800/60 text-[10px] text-stone-500 text-center leading-tight"
-                >
-                  {name}
+          {/* Philosopher */}
+          {(() => {
+            const detectedKey = detectPhilosopher(batch.title)
+            const detectedDisplay = detectedKey ? PHILOSOPHER_LIST.find(p => p.key === detectedKey)?.display : null
+            const resolvedKey = batch.philosopherOverride !== undefined ? batch.philosopherOverride : detectedKey
+            return (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Philosopher</p>
+                    {detectedDisplay && (
+                      <span className="text-[9px] bg-stone-800 text-amber-500/80 border border-stone-700 px-1.5 py-0.5 rounded-full">
+                        Auto: {detectedDisplay}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => onChange({ usePhilosopher: !batch.usePhilosopher, gradePhilosopher: batch.gradePhilosopher !== false })}
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${batch.usePhilosopher ? 'bg-brand-500' : 'bg-stone-700'}`}
+                  >
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${batch.usePhilosopher ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </button>
                 </div>
-              ))}
-            </div>
-          </div>
+                {batch.usePhilosopher && (
+                  <div className="space-y-2">
+                    <select
+                      value={resolvedKey ?? ''}
+                      onChange={e => onChange({ philosopherOverride: e.target.value || null })}
+                      className="w-full bg-stone-800 border border-stone-700 rounded-lg px-2 py-1.5 text-[11px] text-stone-200 focus:outline-none focus:border-stone-500"
+                    >
+                      {!resolvedKey && <option value="">Select philosopher…</option>}
+                      {PHILOSOPHER_LIST.map(p => (
+                        <option key={p.key} value={p.key}>{p.display}</option>
+                      ))}
+                    </select>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-stone-500">Grade images with theme</span>
+                      <button
+                        onClick={() => onChange({ gradePhilosopher: batch.gradePhilosopher === false })}
+                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${batch.gradePhilosopher !== false ? 'bg-brand-500' : 'bg-stone-700'}`}
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${batch.gradePhilosopher !== false ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           <hr className="border-stone-800" />
 
@@ -916,15 +1000,22 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
   const [openPopover, setOpenPopover] = useState<number | null>(null)
 
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
-    return vBatches.map((b, i) => ({
-      title: b.title.trim() || null,
-      terms: parseBatchText(b.terms),
-      uploaded_image_paths: paths[i] ?? [],
-      color_theme: b.colorTheme,
-      custom_grade_params: b.customGradeParams,
-      accent_folder_override: b.accentFolder,
-      text_overlay: b.textOverlay,
-    }))
+    return vBatches.map((b, i) => {
+      const resolvedPhilosopher = b.usePhilosopher
+        ? (b.philosopherOverride !== undefined ? b.philosopherOverride : detectPhilosopher(b.title))
+        : null
+      return {
+        title: b.title.trim() || null,
+        terms: parseBatchText(b.terms),
+        uploaded_image_paths: paths[i] ?? [],
+        color_theme: b.colorTheme,
+        custom_grade_params: b.customGradeParams,
+        accent_folder_override: b.accentFolder,
+        text_overlay: b.textOverlay,
+        philosopher: resolvedPhilosopher || undefined,
+        grade_philosopher: resolvedPhilosopher ? (b.gradePhilosopher !== false) : undefined,
+      }
+    })
   }
 
   // Emit initial batches on mount

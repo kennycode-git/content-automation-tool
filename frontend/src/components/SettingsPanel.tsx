@@ -191,6 +191,20 @@ function ChevronIcon({ open }: { open: boolean }) {
 // Themes that have a preview video
 const PREVIEW_THEMES = COLOR_THEMES.filter(t => t.value !== 'none' && t.value !== 'custom')
 
+// Module-level preload: create off-DOM video elements so the browser buffers each
+// preview as soon as this module is imported — before any hover happens.
+// Off-DOM elements are not subject to the zero-size/overflow:hidden restrictions
+// that cause browsers to skip preloading for hidden in-DOM videos.
+// The HTTP cache is shared by URL, so ThemePreviewPopup plays from cache instantly.
+void (typeof document !== 'undefined' && PREVIEW_THEMES.forEach(t => {
+  const v = document.createElement('video')
+  v.src = `/theme-previews/${t.value}.mp4`
+  v.preload = 'auto'
+  v.muted = true
+  v.playsInline = true
+  v.load()
+}))
+
 function ThemePreviewPopup({ theme, visible }: { theme: typeof COLOR_THEMES[number]; visible: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -367,13 +381,6 @@ function ThemeSelector({ value, onChange, onCustomize }: {
 
   return (
     <div className="relative">
-      {/* Preload all theme preview videos so popup plays instantly */}
-      <div style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
-        {PREVIEW_THEMES.map(t => (
-          <video key={t.value} src={`/theme-previews/${t.value}.mp4`} preload="auto" muted playsInline />
-        ))}
-      </div>
-
       {/* Collapsed trigger */}
       <div
         onClick={() => setOpen(o => !o)}

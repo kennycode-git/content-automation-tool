@@ -24,7 +24,12 @@ ALLOWED_RESOLUTIONS = {"1080x1920", "1920x1080", "1080x1080"}
 ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp", "custom", "mocha", "noir", "midnight", "dusk"}
 ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold"}
 ALLOWED_IMAGE_SOURCES = {"unsplash", "pexels", "both"}
-ALLOWED_PHILOSOPHERS = {"marcus_aurelius", "seneca", "epictetus", "nietzsche", "socrates", "aristotle"}
+ALLOWED_PHILOSOPHERS = {
+    "marcus_aurelius", "seneca", "epictetus", "nietzsche", "socrates", "aristotle",
+    "plato", "kant", "descartes", "hegel", "schopenhauer", "camus", "sartre",
+    "heidegger", "spinoza", "locke", "hume", "voltaire", "rousseau", "kierkegaard",
+    "wittgenstein", "diogenes", "heraclitus", "epicurus", "zeno",
+}
 ALLOWED_OVERLAY_FONTS = {
     "garamond", "cormorant", "playfair", "crimson", "philosopher", "lora",
     "outfit", "raleway", "josefin", "inter",

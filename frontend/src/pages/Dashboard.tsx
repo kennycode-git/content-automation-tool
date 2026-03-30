@@ -92,8 +92,6 @@ export default function Dashboard({ session }: Props) {
   const activeJobsRef = useRef(activeJobs)
   const [variantStatus, setVariantStatus] = useState<string | null>(null)
   const [accentFolder, setAccentFolder] = useState<string | null>(null)
-  const [philosopher] = useState<string | null>(null)
-  const [gradePhilosopher] = useState(false)
   const [contentMode, setContentMode] = useState<ContentMode>('images')
   const [clipTerms, setClipTerms] = useState<string[]>([''])
   const [clipsSettings, setClipsSettings] = useState<ClipsSettings>(DEFAULT_CLIPS_SETTINGS)
@@ -256,8 +254,8 @@ export default function Dashboard({ session }: Props) {
           uploaded_image_paths: batch.uploaded_image_paths?.length ? batch.uploaded_image_paths : undefined,
           preset_name: appliedPresetName ?? undefined,
           accent_folder: effectiveAccent ?? undefined,
-          philosopher: philosopher ?? undefined,
-          grade_philosopher: gradePhilosopher || undefined,
+          philosopher: batch.philosopher ?? undefined,
+          grade_philosopher: batch.grade_philosopher || undefined,
           image_source: resolvedSource,
           text_overlay: batch.text_overlay ?? undefined,
         })
@@ -271,7 +269,7 @@ export default function Dashboard({ session }: Props) {
       submittingRef.current = false
       setSubmitting(false)
     }
-  }, [batches, settings, trialExpired, appliedPresetName, accentFolder, philosopher, gradePhilosopher, resolvedSource])
+  }, [batches, settings, trialExpired, appliedPresetName, accentFolder, resolvedSource])
 
   const handleGenerateVariants = useCallback(async () => {
     if (submittingRef.current) return
@@ -406,8 +404,8 @@ export default function Dashboard({ session }: Props) {
           uploaded_image_paths: batch.images.map(img => img.storage_path),
           uploaded_only: true,
           accent_folder: effectiveAccent ?? undefined,
-          philosopher: philosopher ?? undefined,
-          grade_philosopher: gradePhilosopher || undefined,
+          philosopher: originalBatch?.philosopher ?? undefined,
+          grade_philosopher: originalBatch?.grade_philosopher || undefined,
           preset_name: appliedPresetName ?? undefined,
           image_source: resolvedSource,
           text_overlay: originalBatch?.text_overlay ?? undefined,
@@ -421,7 +419,7 @@ export default function Dashboard({ session }: Props) {
     } finally {
       setSubmitting(false)
     }
-  }, [settings, batches, accentFolder, philosopher, gradePhilosopher, appliedPresetName, resolvedSource])
+  }, [settings, batches, accentFolder, appliedPresetName, resolvedSource])
 
   // Ctrl/Cmd+Enter to generate
   useEffect(() => {
