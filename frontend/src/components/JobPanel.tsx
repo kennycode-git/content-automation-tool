@@ -598,7 +598,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
 
           {job.status === 'done' && job.output_url && (
             <div className="mt-3 space-y-2">
-              <div className="relative group">
+              <div className="relative">
                 <video
                   ref={videoRef}
                   src={job.output_url}
@@ -608,13 +608,13 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                   loop
                   controls
                   playsInline
-                  controlsList="nodownload nofullscreen"
+                  controlsList="nodownload"
                   className="w-full max-h-96 rounded-lg object-contain bg-black"
                 />
                 <button
                   onClick={handleFullscreen}
-                  className="absolute top-2 right-2 rounded-md bg-black/50 p-1.5 text-white/80
-                             opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                  className="absolute top-2 right-2 rounded-md bg-black/60 p-1.5 text-white
+                             hover:bg-black/80 transition-colors"
                   title="Fullscreen"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
