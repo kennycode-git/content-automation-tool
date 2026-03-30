@@ -30,6 +30,7 @@ ALLOWED_PHILOSOPHERS = {
     "heidegger", "spinoza", "locke", "hume", "voltaire", "rousseau", "kierkegaard",
     "wittgenstein", "diogenes", "heraclitus", "epicurus", "zeno",
     "kafka", "dostoevsky", "alan_watts",
+    "carl_jung", "leo_tolstoy", "tolstoy", "zhuangzi",
 }
 
 

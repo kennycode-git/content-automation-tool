@@ -43,6 +43,7 @@ export const PHILOSOPHER_LIST: { key: string; display: string }[] = [
   { key: 'alan_watts',     display: 'Alan Watts' },
   { key: 'aristotle',      display: 'Aristotle' },
   { key: 'camus',          display: 'Camus' },
+  { key: 'carl_jung',      display: 'Carl Jung' },
   { key: 'descartes',      display: 'Descartes' },
   { key: 'diogenes',       display: 'Diogenes' },
   { key: 'dostoevsky',     display: 'Dostoevsky' },
@@ -55,6 +56,7 @@ export const PHILOSOPHER_LIST: { key: string; display: string }[] = [
   { key: 'kafka',          display: 'Kafka' },
   { key: 'kant',           display: 'Kant' },
   { key: 'kierkegaard',    display: 'Kierkegaard' },
+  { key: 'leo_tolstoy',    display: 'Leo Tolstoy' },
   { key: 'locke',          display: 'Locke' },
   { key: 'marcus_aurelius', display: 'Marcus Aurelius' },
   { key: 'nietzsche',      display: 'Nietzsche' },
@@ -66,8 +68,10 @@ export const PHILOSOPHER_LIST: { key: string; display: string }[] = [
   { key: 'socrates',       display: 'Socrates' },
   { key: 'spinoza',        display: 'Spinoza' },
   { key: 'voltaire',       display: 'Voltaire' },
+  { key: 'tolstoy',        display: 'Tolstoy' },
   { key: 'wittgenstein',   display: 'Wittgenstein' },
   { key: 'zeno',           display: 'Zeno' },
+  { key: 'zhuangzi',       display: 'Zhuangzi' },
 ]
 
 function asciiFold(s: string): string {
