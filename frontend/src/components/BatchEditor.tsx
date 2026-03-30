@@ -347,7 +347,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           overflow: 'hidden',
           display: 'flex',
           alignItems: pos.items,
-          justifyContent: pos.justify,
+          justifyContent: { left: 'flex-start', center: 'center', right: 'flex-end' }[ov.alignment ?? 'center'] ?? 'center',
           border: '1px solid #333',
           flexShrink: 0,
           padding: margin,
