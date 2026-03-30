@@ -64,7 +64,7 @@ def _clip_duration(spec: ClipSpec, max_clip_duration: float = 15.0) -> float:
     return max(0.1, end - spec.trim_start)
 
 
-def _run(cmd: List[str], label: str) -> Dict:
+def _run(cmd: List[str], label: str, cwd: Optional[str] = None) -> Dict:
     """Run a subprocess, capturing stderr. Returns {"returncode", "stderr"}."""
     logger.debug("ffmpeg [%s]: %s", label, " ".join(cmd))
     proc = subprocess.run(
@@ -74,6 +74,7 @@ def _run(cmd: List[str], label: str) -> Dict:
         text=True,
         encoding="utf-8",
         errors="replace",
+        cwd=cwd,
     )
     if proc.returncode != 0:
         logger.error("ffmpeg [%s] rc=%d stderr tail:\n%s",
@@ -279,7 +280,7 @@ def render_clips(
             dt = _build_drawtext(text_overlay, width, height)
             if dt:
                 vf = dt.lstrip(",")
-                use_fonts_cwd = os.path.isdir(_FONTS_DIR)
+                fonts_cwd = _FONTS_DIR if os.path.isdir(_FONTS_DIR) else None
                 cmd = [
                     "ffmpeg", "-y",
                     "-i", combined,
@@ -291,7 +292,7 @@ def render_clips(
                     "-movflags", "faststart",
                     overlay_out,
                 ]
-                result = _run(cmd, "drawtext")
+                result = _run(cmd, "drawtext", cwd=fonts_cwd)
                 log_lines.append(f"[drawtext] rc={result['returncode']}")
                 if result["returncode"] == 0:
                     combined = overlay_out
