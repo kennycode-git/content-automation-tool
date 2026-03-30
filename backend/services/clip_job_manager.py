@@ -145,6 +145,7 @@ async def _run_clips_pipeline_inner(job_id: str, user_id: str, config: ClipJobCo
 
         # Build ClipSpec list in original order, skipping failed downloads
         clip_specs_for_render: List[ClipSpec] = []
+        failed_downloads = 0
         for i, spec in enumerate(config.clip_specs):
             path = local_paths.get(i)
             if path and os.path.exists(path):
@@ -154,11 +155,33 @@ async def _run_clips_pipeline_inner(job_id: str, user_id: str, config: ClipJobCo
                     trim_end=float(spec.get("trim_end", 0.0)),
                     duration=int(spec.get("duration", 10)),
                 ))
+            else:
+                failed_downloads += 1
 
         if not clip_specs_for_render:
             raise RuntimeError("All clip downloads failed — no clips available to render.")
 
+        if failed_downloads > 0:
+            logger.warning("Job %s: %d/%d clips failed to download", job_id, failed_downloads, n)
+            await update_job_status(job_id, user_id, "running", db,
+                                    progress_message=f"Downloaded {len(clip_specs_for_render)}/{n} clips ({failed_downloads} failed) — rendering…")
+
         logger.info("Downloaded %d/%d clips for job %s", len(clip_specs_for_render), n, job_id)
+
+        # Validate clip durations against transition duration (crossfade only)
+        if config.transition == "crossfade" and len(clip_specs_for_render) > 1:
+            from services.clip_builder import _clip_duration
+            mcd = float(config.max_clip_duration)
+            td = config.transition_duration
+            short_clips = [
+                i for i, spec in enumerate(clip_specs_for_render)
+                if _clip_duration(spec, mcd) < td
+            ]
+            if short_clips:
+                raise RuntimeError(
+                    f"Crossfade transition ({td}s) exceeds the duration of clip(s) "
+                    f"{[i+1 for i in short_clips]}. Reduce transition duration or increase clip length."
+                )
 
         # --- Step 2: Render ---
         await update_job_status(job_id, user_id, "running", db, progress_message="Rendering video…")

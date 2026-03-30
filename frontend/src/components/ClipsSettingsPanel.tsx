@@ -512,7 +512,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
               <span>0.2s</span>
               <span>2.0s</span>
             </div>
-            {settings.transition === 'crossfade' && settings.transition_duration >= settings.max_clip_duration / 2 && (
+            {settings.transition === 'crossfade' && settings.transition_duration > settings.max_clip_duration / 2 && (
               <p className="text-[10px] text-amber-500/80 mt-1">
                 Crossfade ({settings.transition_duration}s) is ≥ half the max clip duration ({settings.max_clip_duration}s) — reduce transition or increase clip duration.
               </p>

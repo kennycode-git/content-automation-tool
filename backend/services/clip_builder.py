@@ -41,15 +41,20 @@ class ClipSpec:
 
 
 CLIP_GRADE_FILTERS: Dict[str, str] = {
-    "none":    "",
-    "dark":    "eq=brightness=-0.15:contrast=1.2:saturation=0.7",
-    "sepia":   "eq=saturation=0.3:contrast=1.1,colorchannelmixer=rr=1.1:rb=0.1:gr=0.05:br=-0.1",
-    "warm":    "eq=brightness=0.05:contrast=1.05:saturation=1.3",
-    "low_exp": "eq=brightness=-0.25:contrast=1.15:saturation=0.85",
-    "grey":    "eq=saturation=0.1:contrast=1.1",
-    "blue":    "eq=saturation=1.1,colorchannelmixer=rb=0.1:gb=0.05",
-    "red":     "eq=saturation=1.15,colorchannelmixer=rr=1.1:gr=0.0:br=0.0",
-    "bw":      "eq=saturation=0",
+    "none":     "",
+    "dark":     "eq=brightness=-0.15:contrast=1.2:saturation=0.7",
+    "sepia":    "eq=saturation=0.3:contrast=1.1,colorchannelmixer=rr=1.1:rb=0.1:gr=0.05:br=-0.1",
+    "warm":     "eq=brightness=0.05:contrast=1.05:saturation=1.3",
+    "low_exp":  "eq=brightness=-0.25:contrast=1.15:saturation=0.85",
+    "grey":     "eq=saturation=0.1:contrast=1.1",
+    "blue":     "eq=saturation=1.1,colorchannelmixer=rb=0.1:gb=0.05",
+    "red":      "eq=saturation=1.15,colorchannelmixer=rr=1.1:gr=0.0:br=0.0",
+    "bw":       "eq=saturation=0",
+    # 4 newer themes — ffmpeg approximations of the PIL grades in image_grader.py
+    "mocha":    "eq=brightness=-0.18:contrast=1.55:saturation=1.3,colorchannelmixer=rr=1.15:gg=0.95:bb=0.45",
+    "noir":     "eq=brightness=-0.20:contrast=1.6:saturation=0.3,colorchannelmixer=rr=1.25:gg=1.05:bb=0.75",
+    "midnight": "eq=brightness=-0.25:contrast=1.4:saturation=1.15,hue=h=150",
+    "dusk":     "eq=brightness=-0.18:contrast=1.3,colorchannelmixer=rr=0.72:gg=0.45:bb=0.78",
 }
 
 
@@ -182,36 +187,6 @@ def _xfade_pair(
     ]
     return _run(cmd, f"xfade → {os.path.basename(output)}")
 
-
-def _apply_drawtext(
-    input_file: str,
-    output_file: str,
-    text_overlay: dict,
-    width: int,
-    height: int,
-) -> Dict:
-    """Pass 3 (optional): burn in drawtext overlay on the combined file."""
-    dt = _build_drawtext(text_overlay, width, height)
-    if not dt:
-        shutil.copy2(input_file, output_file)
-        return {"returncode": 0, "stderr": ""}
-
-    # _build_drawtext returns ",drawtext=..." — strip leading comma for -vf
-    vf = dt.lstrip(",")
-
-    use_fonts_cwd = os.path.isdir(_FONTS_DIR)
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", input_file,
-        "-vf", vf,
-        "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-pix_fmt", "yuv420p",
-        "-threads", "1",
-        "-movflags", "faststart",
-        output_file,
-    ]
-    return _run(cmd, "drawtext")  # cwd handled below
 
 
 def render_clips(
