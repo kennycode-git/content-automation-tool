@@ -29,6 +29,7 @@ ALLOWED_PHILOSOPHERS = {
     "plato", "kant", "descartes", "hegel", "schopenhauer", "camus", "sartre",
     "heidegger", "spinoza", "locke", "hume", "voltaire", "rousseau", "kierkegaard",
     "wittgenstein", "diogenes", "heraclitus", "epicurus", "zeno",
+    "kafka", "dostoevsky", "alan_watts",
 }
 
 

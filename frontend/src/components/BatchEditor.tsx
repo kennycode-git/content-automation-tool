@@ -40,16 +40,19 @@ function saveUserThemesToStorage(themes: UserColorTheme[]) {
 // ── Philosopher detection ────────────────────────────────────────────────────
 
 export const PHILOSOPHER_LIST: { key: string; display: string }[] = [
+  { key: 'alan_watts',     display: 'Alan Watts' },
   { key: 'aristotle',      display: 'Aristotle' },
   { key: 'camus',          display: 'Camus' },
   { key: 'descartes',      display: 'Descartes' },
   { key: 'diogenes',       display: 'Diogenes' },
+  { key: 'dostoevsky',     display: 'Dostoevsky' },
   { key: 'epicurus',       display: 'Epicurus' },
   { key: 'epictetus',      display: 'Epictetus' },
   { key: 'heraclitus',     display: 'Heraclitus' },
   { key: 'hegel',          display: 'Hegel' },
   { key: 'heidegger',      display: 'Heidegger' },
   { key: 'hume',           display: 'Hume' },
+  { key: 'kafka',          display: 'Kafka' },
   { key: 'kant',           display: 'Kant' },
   { key: 'kierkegaard',    display: 'Kierkegaard' },
   { key: 'locke',          display: 'Locke' },
