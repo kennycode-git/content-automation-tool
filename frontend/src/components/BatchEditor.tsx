@@ -40,7 +40,7 @@ function saveUserThemesToStorage(themes: UserColorTheme[]) {
 // ── Philosopher detection ────────────────────────────────────────────────────
 
 export const PHILOSOPHER_LIST: { key: string; display: string }[] = [
-  { key: 'alan_watts',     display: 'Alan Watts' },
+  { key: 'watts',          display: 'Alan Watts' },
   { key: 'aristotle',      display: 'Aristotle' },
   { key: 'camus',          display: 'Camus' },
   { key: 'carl_jung',      display: 'Carl Jung' },
