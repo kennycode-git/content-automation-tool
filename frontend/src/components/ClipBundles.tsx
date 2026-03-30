@@ -2,7 +2,8 @@
  * ClipBundles.tsx
  *
  * Collapsible panel of pre-built b-roll search term bundles for clips mode.
- * Clicking a bundle loads its terms (up to 3) into the VideoClipSearch slots.
+ * Matches the style of TermBundles. Clicking a bundle loads its terms (up to 3)
+ * directly into the VideoClipSearch slots.
  */
 
 import { useState } from 'react'
@@ -55,47 +56,56 @@ const CLIP_BUNDLES: ClipBundle[] = [
   },
 ]
 
+const INITIAL_VISIBLE = 4
+
 interface Props {
   onLoad: (terms: string[]) => void
   disabled?: boolean
 }
 
 export default function ClipBundles({ onLoad, disabled }: Props) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
+  const [showAll, setShowAll] = useState(false)
 
   return (
-    <div className="mb-3">
+    <div className="mb-4">
       <button
         onClick={() => setOpen(o => !o)}
-        disabled={disabled}
-        className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-200
-                   disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="flex items-center gap-2 text-xs font-semibold text-stone-300 hover:text-stone-100 transition"
       >
-        <svg
-          className={`w-3 h-3 transition-transform ${open ? 'rotate-90' : ''}`}
-          viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
-        >
-          <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
+        <span className="rounded bg-stone-700 px-1.5 py-0.5 text-stone-400 text-[10px]">
+          {open ? '▲' : '▼'}
+        </span>
         B-roll bundles
-        <span className="text-stone-600">({CLIP_BUNDLES.length})</span>
       </button>
 
       {open && (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {CLIP_BUNDLES.map(bundle => (
-            <button
-              key={bundle.label}
-              onClick={() => onLoad(bundle.terms.slice(0, 3))}
-              disabled={disabled}
-              className="rounded-full border border-stone-700 bg-stone-800 px-2.5 py-1
-                         text-[11px] text-stone-300 hover:border-brand-500 hover:text-brand-400
-                         disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              title={bundle.terms.join(' · ')}
-            >
-              {bundle.label}
-            </button>
-          ))}
+        <div className="mt-3">
+          <div className="flex flex-wrap gap-2">
+            {CLIP_BUNDLES.map((b, i) => (
+              <button
+                key={b.label}
+                onClick={() => onLoad(b.terms.slice(0, 3))}
+                disabled={disabled}
+                title={b.terms.join(' · ')}
+                className={`rounded-full border px-3 py-1 text-xs transition
+                  border-stone-700 bg-stone-800 text-stone-300
+                  hover:border-stone-500 hover:text-stone-100
+                  disabled:opacity-40 disabled:cursor-not-allowed
+                  ${i >= INITIAL_VISIBLE && !showAll ? 'hidden' : ''}`}
+              >
+                {b.label}
+              </button>
+            ))}
+            {!showAll && (
+              <button
+                onClick={() => setShowAll(true)}
+                className="rounded-full border border-stone-700 bg-stone-800 px-3 py-1 text-xs text-stone-500 hover:text-stone-300 transition"
+              >
+                +{CLIP_BUNDLES.length - INITIAL_VISIBLE} more
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
