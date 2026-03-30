@@ -326,6 +326,18 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   const imageCountRef = useRef<{ done: number; total: number } | null>(null)
   const sourceRef = useRef<string | null>(null)
   const overlayHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  function handleFullscreen() {
+    const v = videoRef.current
+    if (!v) return
+    if ((v as any).webkitEnterFullscreen) {
+      // iOS Safari
+      ;(v as any).webkitEnterFullscreen()
+    } else if (v.requestFullscreen) {
+      v.requestFullscreen()
+    }
+  }
 
   function openOverlay() {
     if (overlayHideTimeout.current) clearTimeout(overlayHideTimeout.current)
@@ -586,17 +598,30 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
 
           {job.status === 'done' && job.output_url && (
             <div className="mt-3 space-y-2">
-              <video
-                src={job.output_url}
-                poster={job.thumbnail_url ?? undefined}
-                autoPlay
-                muted
-                loop
-                controls
-                playsInline
-                controlsList="nodownload"
-                className="w-full max-h-96 rounded-lg object-contain bg-black"
-              />
+              <div className="relative group">
+                <video
+                  ref={videoRef}
+                  src={job.output_url}
+                  poster={job.thumbnail_url ?? undefined}
+                  autoPlay
+                  muted
+                  loop
+                  controls
+                  playsInline
+                  controlsList="nodownload nofullscreen"
+                  className="w-full max-h-96 rounded-lg object-contain bg-black"
+                />
+                <button
+                  onClick={handleFullscreen}
+                  className="absolute top-2 right-2 rounded-md bg-black/50 p-1.5 text-white/80
+                             opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                  title="Fullscreen"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                  </svg>
+                </button>
+              </div>
               <button
                 onClick={() => handleDownload(job.output_url!)}
                 disabled={downloading}
