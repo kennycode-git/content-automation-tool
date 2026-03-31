@@ -78,11 +78,12 @@ def _download_bg_videos(urls: List[str], tmp_dir: str) -> List[str]:
         if not url.startswith(_ALLOWED_PREFIX):
             raise ValueError(f"Invalid background video URL: {url!r}")
         logger.info("Downloading background video %d/%d", i + 1, len(urls))
-        resp = httpx.get(url, timeout=120.0, follow_redirects=True)
-        resp.raise_for_status()
         path = os.path.join(tmp_dir, f"bg_{i:03d}.mp4")
-        with open(path, "wb") as f:
-            f.write(resp.content)
+        with httpx.stream("GET", url, timeout=120.0, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            with open(path, "wb") as f:
+                for chunk in resp.iter_bytes(chunk_size=65536):
+                    f.write(chunk)
         paths.append(path)
     return paths
 
