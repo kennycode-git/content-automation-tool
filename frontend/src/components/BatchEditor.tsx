@@ -323,20 +323,39 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
 
   const color = overlayColorHex(ov)
   const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
-  const displayText = ov.text.trim() || 'Preview text'
 
   function PreviewBox({ h, w }: { h: number; w: number }) {
     const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.045)))
     const marginPct = ov.margin_pct ?? 0.05
     const marginX = Math.round(w * marginPct)
     const marginY = Math.round(h * marginPct)
-    const usableW = w - 2 * marginX
+    const usableW = Math.max(10, w - 2 * marginX)
+    const lineHeight = Math.max(1, Math.round(fontSize * 1.25))
 
-    // Approximate block width from longest line (mirrors backend char_w = fontsize * 0.52)
-    const charW = fontSize * 0.52
-    const lines = displayText.split('\n')
-    const maxLineLen = lines.reduce((max, l) => Math.max(max, l.length), 5)
-    const blockW = Math.min(Math.max(Math.round(maxLineLen * charW), 20), usableW)
+    // Mirror backend word-wrap: charsPerLine = usableW / (fontSize * 0.52)
+    // This is scale-independent — same chars per line in preview and render.
+    const charsPerLine = Math.max(10, Math.floor(usableW / (fontSize * 0.52)))
+
+    // Word-wrap matching Python textwrap.wrap logic
+    const rawInput = ov.text.trim() || 'Preview text'
+    const previewLines: string[] = []
+    for (const seg of rawInput.replace(/\r\n/g, '\n').split('\n')) {
+      if (!seg.trim()) { previewLines.push(''); continue }
+      const words = seg.split(' ')
+      let cur = ''
+      for (const word of words) {
+        if (!cur) { cur = word }
+        else if (cur.length + 1 + word.length <= charsPerLine) { cur += ' ' + word }
+        else { previewLines.push(cur); cur = word }
+      }
+      if (cur) previewLines.push(cur)
+    }
+    if (!previewLines.some(l => l)) previewLines.push('Preview text')
+
+    // Block width as fraction of usable_width — capped at 1.0, mirrors backend
+    const maxLineLen = previewLines.reduce((max, l) => Math.max(max, l.length), 5)
+    const blockFrac = Math.min(maxLineLen / charsPerLine, 1.0)
+    const blockW = Math.max(20, Math.round(blockFrac * usableW))
 
     const [vertPart, horizPart] = (ov.position as OverlayPosition).split('-') as ['top' | 'middle' | 'bottom', 'left' | 'center' | 'right']
 
@@ -349,6 +368,17 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
       : vertPart === 'bottom'
       ? { bottom: marginY }
       : { top: '50%', transform: 'translateY(-50%)' }
+
+    const textStyle: React.CSSProperties = {
+      color, fontFamily, fontSize,
+      lineHeight: `${lineHeight}px`,
+      height: lineHeight,
+      textAlign: (ov.alignment ?? 'center') as React.CSSProperties['textAlign'],
+      whiteSpace: 'pre',
+      overflow: 'hidden',
+      ...(ov.background_box ? { background: 'rgba(0,0,0,0.55)', padding: '0 3px', borderRadius: 2 } : {}),
+      ...(ov.outline ? { textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' } : {}),
+    }
 
     return (
       <div
@@ -363,31 +393,12 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           boxSizing: 'border-box',
         }}
       >
-        <div
-          style={{
-            position: 'absolute',
-            left: blockLeft,
-            width: blockW,
-            ...vertStyle,
-          }}
-        >
-          <div
-            style={{
-              color, fontFamily, fontSize,
-              lineHeight: 1.25,
-              textAlign: (ov.alignment ?? 'center') as CanvasTextAlign,
-              wordBreak: 'break-word',
-              whiteSpace: 'pre-wrap',
-              ...(ov.background_box
-                ? { background: 'rgba(0,0,0,0.55)', padding: '1px 3px', borderRadius: 2 }
-                : {}),
-              ...(ov.outline
-                ? { textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }
-                : {}),
-            }}
-          >
-            {displayText}
-          </div>
+        <div style={{ position: 'absolute', left: blockLeft, width: blockW, ...vertStyle }}>
+          {previewLines.map((line, i) =>
+            line
+              ? <div key={i} style={textStyle}>{line}</div>
+              : <div key={i} style={{ height: lineHeight }} />
+          )}
         </div>
       </div>
     )
