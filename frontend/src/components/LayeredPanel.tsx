@@ -15,7 +15,6 @@ import type { BgVideoResult } from '../lib/api'
 export interface LayeredPanelConfig {
   bgVideoUrls: string[]
   opacity: number
-  fgSpeed: number
   gradeTarget: 'foreground' | 'background' | 'both'
   crossfadeDuration: number
 }
@@ -23,22 +22,21 @@ export interface LayeredPanelConfig {
 export const DEFAULT_LAYERED_CONFIG: LayeredPanelConfig = {
   bgVideoUrls: [],
   opacity: 0.55,
-  fgSpeed: 0.25,
   gradeTarget: 'both',
   crossfadeDuration: 0.5,
 }
+
+export const OPACITY_PRESETS = [
+  { label: 'Subtle',    value: 0.30 },
+  { label: 'Medium',    value: 0.55 },
+  { label: 'Cinematic', value: 0.70 },
+  { label: 'Heavy',     value: 0.85 },
+]
 
 interface Props {
   config: LayeredPanelConfig
   onChange: (c: LayeredPanelConfig) => void
 }
-
-const OPACITY_PRESETS = [
-  { label: 'Subtle',     value: 0.30 },
-  { label: 'Medium',     value: 0.55 },
-  { label: 'Cinematic',  value: 0.70 },
-  { label: 'Heavy',      value: 0.85 },
-]
 
 export default function LayeredPanel({ config, onChange }: Props) {
   const [query, setQuery]           = useState('')
@@ -175,55 +173,6 @@ export default function LayeredPanel({ config, onChange }: Props) {
       )}
 
       <hr className="border-stone-800" />
-
-      {/* Foreground opacity */}
-      <div data-tour="layered-opacity">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-stone-300">Foreground image opacity</span>
-          <span className="text-xs tabular-nums text-stone-400">{Math.round(config.opacity * 100)}%</span>
-        </div>
-        <div className="flex gap-1.5 mb-3">
-          {OPACITY_PRESETS.map(p => (
-            <button
-              key={p.label}
-              onClick={() => onChange({ ...config, opacity: p.value })}
-              className={`flex-1 rounded-lg py-1.5 text-[11px] font-medium transition ${
-                Math.abs(config.opacity - p.value) < 0.01
-                  ? 'bg-brand-500/20 border border-brand-500/50 text-brand-300'
-                  : 'bg-stone-800 border border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <input
-          type="range"
-          min={0} max={1} step={0.05}
-          value={config.opacity}
-          onChange={e => onChange({ ...config, opacity: parseFloat(e.target.value) })}
-          className="w-full accent-amber-500"
-        />
-      </div>
-
-      {/* Foreground image speed */}
-      <div data-tour="layered-speed">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-stone-300">Foreground image speed</span>
-          <span className="text-xs tabular-nums text-stone-400">{config.fgSpeed.toFixed(2)}s per image</span>
-        </div>
-        <input
-          type="range"
-          min={0.05} max={0.5} step={0.05}
-          value={config.fgSpeed}
-          onChange={e => onChange({ ...config, fgSpeed: parseFloat(e.target.value) })}
-          className="w-full accent-amber-500"
-        />
-        <div className="flex justify-between text-[10px] text-stone-600 mt-1">
-          <span>Fast (0.05s)</span>
-          <span>Slow (0.50s)</span>
-        </div>
-      </div>
 
       {/* Grade target */}
       <div data-tour="layered-grade-target">

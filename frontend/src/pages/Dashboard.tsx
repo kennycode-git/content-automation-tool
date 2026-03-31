@@ -23,7 +23,7 @@ import type { ClipsSettings } from '../components/ClipsSettingsPanel'
 import VideoClipSearch from '../components/VideoClipSearch'
 import ClipBundles from '../components/ClipBundles'
 import ClipPreviewGrid from '../components/ClipPreviewGrid'
-import LayeredPanel, { DEFAULT_LAYERED_CONFIG } from '../components/LayeredPanel'
+import LayeredPanel, { DEFAULT_LAYERED_CONFIG, OPACITY_PRESETS } from '../components/LayeredPanel'
 import type { LayeredPanelConfig } from '../components/LayeredPanel'
 import LayeredTour, { LAYERED_TOUR_KEY } from '../components/LayeredTour'
 import JobPanel from '../components/JobPanel'
@@ -678,7 +678,7 @@ export default function Dashboard({ session }: Props) {
       const lc: LayeredConfig = {
         background_video_urls: layeredConfig.bgVideoUrls,
         foreground_opacity: layeredConfig.opacity,
-        foreground_speed: layeredConfig.fgSpeed,
+        foreground_speed: settings.seconds_per_image,
         grade_target: layeredConfig.gradeTarget,
         crossfade_duration: layeredConfig.crossfadeDuration,
       }
@@ -892,12 +892,44 @@ export default function Dashboard({ session }: Props) {
                   onChange={setClipsSettings}
                 />
               ) : (
-                <SettingsPanel
-                  settings={settings}
-                  onChange={s => { setSettings(s); setAppliedPresetName(null) }}
-                  onPresetApplied={setAppliedPresetName}
-                  themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
-                />
+                <>
+                  <SettingsPanel
+                    settings={settings}
+                    onChange={s => { setSettings(s); setAppliedPresetName(null) }}
+                    onPresetApplied={setAppliedPresetName}
+                    themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
+                  />
+                  {contentMode === 'layered' && (
+                    <div className="mt-4 pt-4 border-t border-stone-800" data-tour="layered-opacity">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-stone-300">Foreground image opacity</span>
+                        <span className="text-xs tabular-nums text-stone-400">{Math.round(layeredConfig.opacity * 100)}%</span>
+                      </div>
+                      <div className="flex gap-1.5 mb-3">
+                        {OPACITY_PRESETS.map(p => (
+                          <button
+                            key={p.label}
+                            onClick={() => setLayeredConfig(c => ({ ...c, opacity: p.value }))}
+                            className={`flex-1 rounded-lg py-1.5 text-[11px] font-medium transition ${
+                              Math.abs(layeredConfig.opacity - p.value) < 0.01
+                                ? 'bg-brand-500/20 border border-brand-500/50 text-brand-300'
+                                : 'bg-stone-800 border border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        type="range"
+                        min={0} max={1} step={0.05}
+                        value={layeredConfig.opacity}
+                        onChange={e => setLayeredConfig(c => ({ ...c, opacity: parseFloat(e.target.value) }))}
+                        className="w-full accent-amber-500"
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

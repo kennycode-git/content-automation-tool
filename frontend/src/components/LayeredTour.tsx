@@ -79,23 +79,12 @@ export default function LayeredTour({ active, onClose }: Props) {
     },
     {
       target: 'layered-opacity',
-      title: 'Foreground opacity',
+      title: 'Opacity & image speed',
       description: (
         <>
-          Controls how <strong className="text-stone-200">visible the image layer</strong> is over the background video.
-          <strong className="text-stone-200"> Medium (55%)</strong> balances both layers well.
-          Lower values let the background breathe through more; higher values make imagery dominant.
-        </>
-      ),
-    },
-    {
-      target: 'layered-speed',
-      title: 'Image speed',
-      description: (
-        <>
-          How <strong className="text-stone-200">fast the foreground images cycle</strong>.
-          Fast (0.05s) feels energetic and rhythmic; slow (0.50s) lets each image breathe
-          over the moving background. Match it to the pace of your background video.
+          <strong className="text-stone-200">Opacity</strong> controls how visible the image layer is over the background video —
+          Medium (55%) balances both layers well. The <strong className="text-stone-200">seconds per image</strong> slider
+          above controls how fast images cycle.
         </>
       ),
     },
