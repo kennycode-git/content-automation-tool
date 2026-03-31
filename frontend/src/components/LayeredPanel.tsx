@@ -87,7 +87,7 @@ export default function LayeredPanel({ config, onChange }: Props) {
       </p>
 
       {/* Search bar */}
-      <div className="flex gap-2">
+      <div className="flex gap-2" data-tour="layered-bg-search">
         <input
           type="text"
           value={query}
@@ -177,7 +177,7 @@ export default function LayeredPanel({ config, onChange }: Props) {
       <hr className="border-stone-800" />
 
       {/* Foreground opacity */}
-      <div>
+      <div data-tour="layered-opacity">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-stone-300">Foreground image opacity</span>
           <span className="text-xs tabular-nums text-stone-400">{Math.round(config.opacity * 100)}%</span>
@@ -207,7 +207,7 @@ export default function LayeredPanel({ config, onChange }: Props) {
       </div>
 
       {/* Foreground image speed */}
-      <div>
+      <div data-tour="layered-speed">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-stone-300">Foreground image speed</span>
           <span className="text-xs tabular-nums text-stone-400">{config.fgSpeed.toFixed(2)}s per image</span>
@@ -226,7 +226,7 @@ export default function LayeredPanel({ config, onChange }: Props) {
       </div>
 
       {/* Grade target */}
-      <div>
+      <div data-tour="layered-grade-target">
         <span className="text-xs font-medium text-stone-300 block mb-2">Apply colour grade to</span>
         <div className="grid grid-cols-3 gap-1.5">
           {(['foreground', 'background', 'both'] as const).map(t => (

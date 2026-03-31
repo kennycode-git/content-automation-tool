@@ -25,6 +25,7 @@ import ClipBundles from '../components/ClipBundles'
 import ClipPreviewGrid from '../components/ClipPreviewGrid'
 import LayeredPanel, { DEFAULT_LAYERED_CONFIG } from '../components/LayeredPanel'
 import type { LayeredPanelConfig } from '../components/LayeredPanel'
+import LayeredTour, { LAYERED_TOUR_KEY } from '../components/LayeredTour'
 import JobPanel from '../components/JobPanel'
 import RecentJobs from '../components/RecentJobs'
 import TermBundles from '../components/TermBundles'
@@ -107,6 +108,7 @@ export default function Dashboard({ session }: Props) {
   const [layeredConfig, setLayeredConfig] = useState<LayeredPanelConfig>(DEFAULT_LAYERED_CONFIG)
   const [layeredError, setLayeredError] = useState<string | null>(null)
   const [layeredSubmitting, setLayeredSubmitting] = useState(false)
+  const [showLayeredTour, setShowLayeredTour] = useState(false)
   const [staging, setStaging] = useState(false)
   const [stagingError, setStagingError] = useState<string | null>(null)
   const [stagingUsedPexels, setStagingUsedPexels] = useState(false)
@@ -139,6 +141,14 @@ export default function Dashboard({ session }: Props) {
       return () => clearTimeout(t)
     }
   }, [])
+
+  // Auto-show layered tour on first visit to the Layered tab
+  useEffect(() => {
+    if (contentMode === 'layered' && !localStorage.getItem(LAYERED_TOUR_KEY)) {
+      const t = setTimeout(() => setShowLayeredTour(true), 400)
+      return () => clearTimeout(t)
+    }
+  }, [contentMode])
 
   // Browser tab title: show pending job count while running
   useEffect(() => {
@@ -803,6 +813,25 @@ export default function Dashboard({ session }: Props) {
               </button>
             </div>
 
+            {/* Layered tour banner — always visible when in layered mode */}
+            {contentMode === 'layered' && (
+              <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 px-4 py-3 mb-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-stone-200">Layered rendering</p>
+                  <p className="text-[11px] text-stone-500 mt-0.5">Composite your images over a looping background video</p>
+                </div>
+                <button
+                  onClick={() => setShowLayeredTour(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-400 hover:bg-brand-500/20 hover:border-brand-500/50 transition shrink-0"
+                >
+                  <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                    <path d="M2 2l8 4-8 4z"/>
+                  </svg>
+                  Take a tour
+                </button>
+              </div>
+            )}
+
             {/* Step 1 */}
             <div className="flex items-center gap-2 mb-2">
               <span className="rounded bg-brand-500/20 px-2 py-0.5 text-[10px] font-bold text-brand-400 tracking-wider">STEP 1</span>
@@ -874,9 +903,11 @@ export default function Dashboard({ session }: Props) {
 
             {/* Layered panel — shown below settings in layered mode */}
             {contentMode === 'layered' && (
-              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6 mt-4">
-                <LayeredPanel config={layeredConfig} onChange={setLayeredConfig} />
-              </div>
+              <>
+                <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6 mt-4">
+                  <LayeredPanel config={layeredConfig} onChange={setLayeredConfig} />
+                </div>
+              </>
             )}
 
             {/* Step 3 */}
@@ -900,7 +931,7 @@ export default function Dashboard({ session }: Props) {
 
             {/* Action row */}
             {contentMode === 'layered' ? (
-              <div>
+              <div data-tour="layered-generate">
                 <button
                   onClick={handleGenerateLayered}
                   disabled={layeredSubmitting || layeredConfig.bgVideoUrls.length === 0 || trialExpired}
@@ -1220,6 +1251,7 @@ export default function Dashboard({ session }: Props) {
         onOpenPrompt={() => setShowPromptModal(true)}
         onOpenVariants={() => setShowVariants(true)}
       />
+      <LayeredTour active={showLayeredTour} onClose={() => setShowLayeredTour(false)} />
       {showPromptModal && <PromptModal fromTour={showTour} onClose={() => setShowPromptModal(false)} />}
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
