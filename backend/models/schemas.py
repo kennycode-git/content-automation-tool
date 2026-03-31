@@ -119,6 +119,14 @@ class CustomGradeParams(BaseModel):
     hue_shift:  float = Field(default=0.0, ge=-180.0, le=180.0)
 
 
+class LayeredConfig(BaseModel):
+    background_video_urls: List[str] = Field(..., min_length=1, max_length=5)
+    foreground_opacity: float = Field(default=0.55, ge=0.0, le=1.0)
+    foreground_speed: float = Field(default=0.25, ge=0.05, le=0.5)
+    grade_target: str = Field(default="both")
+    crossfade_duration: float = Field(default=0.5, ge=0.2, le=2.0)
+
+
 class GenerateRequest(BaseModel):
     search_terms: List[str] = Field(
         ...,
@@ -144,6 +152,7 @@ class GenerateRequest(BaseModel):
     grade_philosopher: bool = False
     philosopher_is_user: bool = False
     text_overlay: Optional[TextOverlayConfig] = None
+    layered_config: Optional[LayeredConfig] = None
 
     @field_validator("search_terms")
     @classmethod

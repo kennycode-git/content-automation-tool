@@ -72,6 +72,14 @@ export interface TextOverlayConfig {
   font_size_pct?: number
 }
 
+export interface LayeredConfig {
+  background_video_urls: string[]
+  foreground_opacity: number
+  foreground_speed: number
+  grade_target: 'foreground' | 'background' | 'both'
+  crossfade_duration: number
+}
+
 export interface GenerateRequest {
   search_terms: string[]
   resolution?: string
@@ -92,6 +100,7 @@ export interface GenerateRequest {
   grade_philosopher?: boolean
   philosopher_is_user?: boolean
   text_overlay?: TextOverlayConfig | null
+  layered_config?: LayeredConfig | null
 }
 
 export interface GenerateResponse {
@@ -600,4 +609,25 @@ export async function generateFromClips(req: ClipGenerateRequest): Promise<Gener
     body: JSON.stringify(req),
   })
   return handleResponse<GenerateResponse>(res)
+}
+
+// ─── Layered rendering ────────────────────────────────────────────────────────
+
+export interface BgVideoResult {
+  id: string
+  duration: number
+  thumbnail: string
+  preview_url: string
+  download_url: string
+  width: number
+  height: number
+}
+
+export async function searchBgVideos(query: string, count = 9): Promise<BgVideoResult[]> {
+  if (DEV_BYPASS) return []
+  const params = new URLSearchParams({ query, count: String(count) })
+  const res = await fetch(`${API_URL}/api/layered/search-backgrounds?${params}`, {
+    headers: await authHeaders(),
+  })
+  return handleResponse<BgVideoResult[]>(res)
 }

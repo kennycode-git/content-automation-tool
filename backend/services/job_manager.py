@@ -75,6 +75,7 @@ class JobConfig:
     grade_philosopher: bool = False
     philosopher_is_user: bool = False
     text_overlay: Optional[Dict] = None
+    layered_config: Optional[Dict] = None
 
     def to_dict(self) -> dict:
         d = {
@@ -550,19 +551,41 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
 
         # --- Step 3: Render video ---
         await update_job_status(job_id, user_id, "running", db, progress_message="Rendering video…")
-        result = await asyncio.to_thread(
-            render_slideshow,
-            input_folder=render_input,
-            output_file=output_file,
-            width=width,
-            height=height,
-            seconds_per_image=config.seconds_per_image,
-            fps=config.fps,
-            total_seconds=config.total_seconds,
-            allow_repeats=config.allow_repeats,
-            shuffle=True,
-            text_overlay=config.text_overlay,
-        )
+        lc = config.layered_config
+        if lc:
+            from services.layered_builder import render_layered_sync
+            result = await asyncio.to_thread(
+                render_layered_sync,
+                input_folder=render_input,
+                output_file=output_file,
+                bg_urls=lc["background_video_urls"],
+                opacity=lc.get("foreground_opacity", 0.55),
+                fg_speed=lc.get("foreground_speed", 0.25),
+                color_theme=config.color_theme,
+                custom_grade_params=config.custom_grade_params,
+                grade_target=lc.get("grade_target", "both"),
+                crossfade_dur=lc.get("crossfade_duration", 0.5),
+                width=width,
+                height=height,
+                fps=config.fps,
+                total_seconds=config.total_seconds,
+                allow_repeats=config.allow_repeats,
+                text_overlay=config.text_overlay,
+            )
+        else:
+            result = await asyncio.to_thread(
+                render_slideshow,
+                input_folder=render_input,
+                output_file=output_file,
+                width=width,
+                height=height,
+                seconds_per_image=config.seconds_per_image,
+                fps=config.fps,
+                total_seconds=config.total_seconds,
+                allow_repeats=config.allow_repeats,
+                shuffle=True,
+                text_overlay=config.text_overlay,
+            )
         if result["returncode"] != 0:
             logger.error("ffmpeg failed (rc=%d). Last 20 lines:\n%s",
                          result["returncode"], "\n".join(result["log"][-20:]))

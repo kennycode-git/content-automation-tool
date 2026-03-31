@@ -12,6 +12,7 @@ import type { Session } from '@supabase/supabase-js'
 
 const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS === 'true'
 import { generateVideo, generateVariants, stagePreview, deleteJob, getUsage, fetchVideoClips, generateFromClips } from '../lib/api'
+import type { LayeredConfig } from '../lib/api'
 import type { JobStatus, PreviewBatchResult, UsageInfo, ClipSearchResult, SelectedClip } from '../lib/api'
 import BatchEditor from '../components/BatchEditor'
 import type { BatchOutput } from '../components/BatchEditor'
@@ -22,6 +23,8 @@ import type { ClipsSettings } from '../components/ClipsSettingsPanel'
 import VideoClipSearch from '../components/VideoClipSearch'
 import ClipBundles from '../components/ClipBundles'
 import ClipPreviewGrid from '../components/ClipPreviewGrid'
+import LayeredPanel, { DEFAULT_LAYERED_CONFIG } from '../components/LayeredPanel'
+import type { LayeredPanelConfig } from '../components/LayeredPanel'
 import JobPanel from '../components/JobPanel'
 import RecentJobs from '../components/RecentJobs'
 import TermBundles from '../components/TermBundles'
@@ -35,7 +38,7 @@ import PromptModal from '../components/PromptModal'
 import AppNavbar from '../components/AppNavbar'
 import InspirationCarousel from '../components/InspirationCarousel'
 
-type ContentMode = 'images' | 'clips'
+type ContentMode = 'images' | 'clips' | 'layered'
 
 interface Props {
   session: Session
@@ -101,6 +104,9 @@ export default function Dashboard({ session }: Props) {
   const [clipsSearching, setClipsSearching] = useState(false)
   const [clipsGenerating, setClipsGenerating] = useState(false)
   const [clipsError, setClipsError] = useState<string | null>(null)
+  const [layeredConfig, setLayeredConfig] = useState<LayeredPanelConfig>(DEFAULT_LAYERED_CONFIG)
+  const [layeredError, setLayeredError] = useState<string | null>(null)
+  const [layeredSubmitting, setLayeredSubmitting] = useState(false)
   const [staging, setStaging] = useState(false)
   const [stagingError, setStagingError] = useState<string | null>(null)
   const [stagingUsedPexels, setStagingUsedPexels] = useState(false)
@@ -427,13 +433,15 @@ export default function Dashboard({ session }: Props) {
   // Ctrl/Cmd+Enter to generate
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !submitting) {
-        handleGenerate()
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !submitting && !layeredSubmitting) {
+        if (contentMode === 'layered') handleGenerateLayered()
+        else handleGenerate()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleGenerate, submitting])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleGenerate, submitting, layeredSubmitting, contentMode])
 
   function handleJobDone(job: JobStatus) {
     setPendingCount(prev => Math.max(0, prev - 1))
@@ -636,6 +644,61 @@ export default function Dashboard({ session }: Props) {
     }
   }
 
+  async function handleGenerateLayered() {
+    if (submittingRef.current) return
+    if (layeredConfig.bgVideoUrls.length === 0) {
+      setLayeredError('Select at least one background video.')
+      return
+    }
+    if (trialExpired) {
+      setLayeredError('Your trial has ended. Upgrade to continue generating.')
+      return
+    }
+    const validBatches = batches.filter(b => b.terms.length > 0)
+    if (validBatches.length === 0) {
+      setLayeredError('Enter at least one search term.')
+      return
+    }
+    setLayeredError(null)
+    submittingRef.current = true
+    setLayeredSubmitting(true)
+    setPendingCount(prev => prev + validBatches.length)
+    try {
+      const submitted: { jobId: string; title: string | null }[] = []
+      const lc: LayeredConfig = {
+        background_video_urls: layeredConfig.bgVideoUrls,
+        foreground_opacity: layeredConfig.opacity,
+        foreground_speed: layeredConfig.fgSpeed,
+        grade_target: layeredConfig.gradeTarget,
+        crossfade_duration: layeredConfig.crossfadeDuration,
+      }
+      for (const batch of validBatches) {
+        const effectiveTheme = batch.color_theme ?? settings.color_theme
+        const effectiveGradeParams = effectiveTheme === 'custom'
+          ? (batch.custom_grade_params ?? settings.custom_grade_params)
+          : undefined
+        const res = await generateVideo({
+          search_terms: batch.terms,
+          ...settings,
+          color_theme: effectiveTheme,
+          custom_grade_params: effectiveGradeParams,
+          batch_title: batch.title,
+          image_source: resolvedSource,
+          text_overlay: batch.text_overlay ?? undefined,
+          layered_config: lc,
+        })
+        submitted.push({ jobId: res.job_id, title: batch.title })
+      }
+      setActiveJobs(prev => [...submitted, ...prev])
+    } catch (e: unknown) {
+      setLayeredError(e instanceof Error ? e.message : 'Unknown error')
+      setPendingCount(0)
+    } finally {
+      submittingRef.current = false
+      setLayeredSubmitting(false)
+    }
+  }
+
   function toggleTheme(value: string) {
     setCheckedThemes(prev => {
       const next = new Set(prev)
@@ -728,6 +791,16 @@ export default function Dashboard({ session }: Props) {
               >
                 Video Clips
               </button>
+              <button
+                onClick={() => setContentMode('layered')}
+                className={`px-4 py-2 text-sm font-bold transition border-b-2 -mb-px flex items-center gap-1.5 ${
+                  contentMode === 'layered'
+                    ? 'border-brand-500 text-brand-400'
+                    : 'border-transparent text-stone-500 hover:text-stone-300'}`}
+              >
+                Layered
+                <span className="rounded bg-brand-500/20 px-1 py-0.5 text-[8px] font-bold text-brand-400 tracking-wider leading-none">★ NEW</span>
+              </button>
             </div>
 
             {/* Step 1 */}
@@ -736,7 +809,7 @@ export default function Dashboard({ session }: Props) {
               <span className="text-xs text-stone-500">Search terms</span>
             </div>
 
-            {contentMode === 'images' ? (
+            {contentMode === 'images' || contentMode === 'layered' ? (
               <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="batch-editor">
                 <TermBundles onLoad={bundles => setPendingBundles(bundles)} />
                 <hr className="border-stone-800 my-4" />
@@ -784,20 +857,27 @@ export default function Dashboard({ session }: Props) {
               <span className="text-xs text-stone-500">Video settings</span>
             </div>
             <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="theme-selector">
-              {contentMode === 'images' ? (
+              {contentMode === 'clips' ? (
+                <ClipsSettingsPanel
+                  settings={clipsSettings}
+                  onChange={setClipsSettings}
+                />
+              ) : (
                 <SettingsPanel
                   settings={settings}
                   onChange={s => { setSettings(s); setAppliedPresetName(null) }}
                   onPresetApplied={setAppliedPresetName}
                   themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
                 />
-              ) : (
-                <ClipsSettingsPanel
-                  settings={clipsSettings}
-                  onChange={setClipsSettings}
-                />
               )}
             </div>
+
+            {/* Layered panel — shown below settings in layered mode */}
+            {contentMode === 'layered' && (
+              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6 mt-4">
+                <LayeredPanel config={layeredConfig} onChange={setLayeredConfig} />
+              </div>
+            )}
 
             {/* Step 3 */}
             <div className="flex items-center gap-2 mb-2 mt-6">
@@ -805,9 +885,9 @@ export default function Dashboard({ session }: Props) {
               <span className="text-xs text-stone-500">Generate</span>
             </div>
 
-            {(contentMode === 'images' ? (error || stagingError) : clipsError) && (
+            {(contentMode === 'images' ? (error || stagingError) : contentMode === 'layered' ? layeredError : clipsError) && (
               <div className="rounded-xl bg-red-950 px-4 py-3 text-sm text-red-400 mb-3">
-                {contentMode === 'images' ? (error ?? stagingError) : clipsError}
+                {contentMode === 'images' ? (error ?? stagingError) : contentMode === 'layered' ? layeredError : clipsError}
               </div>
             )}
 
@@ -819,7 +899,19 @@ export default function Dashboard({ session }: Props) {
             )}
 
             {/* Action row */}
-            {contentMode === 'clips' ? (
+            {contentMode === 'layered' ? (
+              <div>
+                <button
+                  onClick={handleGenerateLayered}
+                  disabled={layeredSubmitting || layeredConfig.bgVideoUrls.length === 0 || trialExpired}
+                  className="w-full rounded-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
+                >
+                  {layeredSubmitting ? 'Submitting…'
+                    : layeredConfig.bgVideoUrls.length === 0 ? 'Select a background video first'
+                    : batchCount > 1 ? `Generate Layered ×${batchCount}` : 'Generate Layered'}
+                </button>
+              </div>
+            ) : contentMode === 'clips' ? (
               <div className="flex gap-2">
                 <button
                   onClick={handleAutoGenerateClips}
@@ -878,7 +970,7 @@ export default function Dashboard({ session }: Props) {
               </div>
             </div>
             )}
-            {contentMode === 'images' && <p className="text-center text-xs text-stone-600 mt-2">or press Ctrl+Enter</p>}
+            {(contentMode === 'images' || contentMode === 'layered') && <p className="text-center text-xs text-stone-600 mt-2">or press Ctrl+Enter</p>}
 
             {/* Variants inline panel — images mode only */}
             {contentMode === 'images' && showVariants && (
