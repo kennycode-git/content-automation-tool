@@ -309,17 +309,6 @@ const FONT_CSS_FAMILY: Record<OverlayFont, string> = {
   space_mono:  '"Courier New", Courier, monospace',
 }
 
-const POSITION_FLEX: Record<OverlayPosition, { items: string; justify: string; textAlign: string }> = {
-  'top-left':      { items: 'flex-start', justify: 'flex-start',  textAlign: 'left' },
-  'top-center':    { items: 'flex-start', justify: 'center',      textAlign: 'center' },
-  'top-right':     { items: 'flex-start', justify: 'flex-end',    textAlign: 'right' },
-  'middle-left':   { items: 'center',     justify: 'flex-start',  textAlign: 'left' },
-  'middle-center': { items: 'center',     justify: 'center',      textAlign: 'center' },
-  'middle-right':  { items: 'center',     justify: 'flex-end',    textAlign: 'right' },
-  'bottom-left':   { items: 'flex-end',   justify: 'flex-start',  textAlign: 'left' },
-  'bottom-center': { items: 'flex-end',   justify: 'center',      textAlign: 'center' },
-  'bottom-right':  { items: 'flex-end',   justify: 'flex-end',    textAlign: 'right' },
-}
 
 function overlayColorHex(ov: TextOverlayConfig): string {
   if (ov.color === 'custom') return ov.custom_color ?? '#ffffff'
@@ -332,7 +321,6 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   const [previewH, setPreviewH] = useState(200)
   const dragStartRef = useRef<{ y: number; h: number } | null>(null)
 
-  const pos = POSITION_FLEX[ov.position as OverlayPosition] ?? POSITION_FLEX['bottom-center']
   const color = overlayColorHex(ov)
   const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
   const displayText = ov.text.trim() || 'Preview text'
@@ -340,7 +328,28 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   function PreviewBox({ h, w }: { h: number; w: number }) {
     const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.045)))
     const marginPct = ov.margin_pct ?? 0.05
-    const margin = Math.round(h * marginPct)
+    const marginX = Math.round(w * marginPct)
+    const marginY = Math.round(h * marginPct)
+    const usableW = w - 2 * marginX
+
+    // Approximate block width from longest line (mirrors backend char_w = fontsize * 0.52)
+    const charW = fontSize * 0.52
+    const lines = displayText.split('\n')
+    const maxLineLen = lines.reduce((max, l) => Math.max(max, l.length), 5)
+    const blockW = Math.min(Math.max(Math.round(maxLineLen * charW), 20), usableW)
+
+    const [vertPart, horizPart] = (ov.position as OverlayPosition).split('-') as ['top' | 'middle' | 'bottom', 'left' | 'center' | 'right']
+
+    const blockLeft = horizPart === 'left' ? marginX
+      : horizPart === 'right' ? w - marginX - blockW
+      : Math.round((w - blockW) / 2)
+
+    const vertStyle: React.CSSProperties = vertPart === 'top'
+      ? { top: marginY }
+      : vertPart === 'bottom'
+      ? { bottom: marginY }
+      : { top: '50%', transform: 'translateY(-50%)' }
+
     return (
       <div
         style={{
@@ -348,33 +357,37 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           background: '#0e0e0e',
           borderRadius: 4,
           overflow: 'hidden',
-          display: 'flex',
-          alignItems: pos.items,
-          justifyContent: pos.justify,  // position controls placement; alignment controls text justification only
           border: '1px solid #333',
           flexShrink: 0,
-          padding: margin,
+          position: 'relative',
           boxSizing: 'border-box',
         }}
       >
         <div
           style={{
-            color, fontFamily, fontSize,
-            lineHeight: 1.25,
-            textAlign: (ov.alignment ?? 'center') as CanvasTextAlign,
-            width: 'fit-content',
-            maxWidth: '100%',
-            wordBreak: 'break-word',
-            whiteSpace: 'pre-wrap',
-            ...(ov.background_box
-              ? { background: 'rgba(0,0,0,0.55)', padding: '1px 3px', borderRadius: 2 }
-              : {}),
-            ...(ov.outline
-              ? { textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }
-              : {}),
+            position: 'absolute',
+            left: blockLeft,
+            width: blockW,
+            ...vertStyle,
           }}
         >
-          {displayText}
+          <div
+            style={{
+              color, fontFamily, fontSize,
+              lineHeight: 1.25,
+              textAlign: (ov.alignment ?? 'center') as CanvasTextAlign,
+              wordBreak: 'break-word',
+              whiteSpace: 'pre-wrap',
+              ...(ov.background_box
+                ? { background: 'rgba(0,0,0,0.55)', padding: '1px 3px', borderRadius: 2 }
+                : {}),
+              ...(ov.outline
+                ? { textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }
+                : {}),
+            }}
+          >
+            {displayText}
+          </div>
         </div>
       </div>
     )

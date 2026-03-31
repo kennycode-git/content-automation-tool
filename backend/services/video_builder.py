@@ -131,14 +131,6 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
     position = overlay.get("position", "bottom-center")
     vert, horiz = position.split("-", 1)
     alignment = overlay.get("alignment", "center")
-    # Position's horizontal component sets where the text block is anchored on screen.
-    # Alignment sets how lines are justified relative to that anchor.
-    anchor_x = {"left": mx, "center": width // 2, "right": width - mx}[horiz]
-    x = {
-        "left":   str(anchor_x),
-        "center": f"({anchor_x}-tw/2)",
-        "right":  f"({anchor_x}-tw)",
-    }.get(alignment, f"({anchor_x}-tw/2)")
     font_path_filter = os.path.basename(font_path)
 
     # Word-wrap text to fit the frame width, then split into individual lines.
@@ -158,6 +150,29 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
             lines.append("")  # preserve intentional blank lines as spacers
     line_height = max(1, int(fontsize * 1.25))
     n = len(lines)
+
+    # Compute approximate block width from the longest wrapped line.
+    # This lets us place the text block (position) independently from how lines
+    # are justified within it (alignment). 'tw' is ffmpeg's per-line text width.
+    char_w = fontsize * 0.52
+    max_line_len = max((len(ln) for ln in lines if ln), default=10)
+    max_block_w = min(int(max_line_len * char_w), int(usable_width))
+
+    # block_left: left edge of the text block on the frame
+    if horiz == "left":
+        block_left = mx
+    elif horiz == "right":
+        block_left = width - mx - max_block_w
+    else:  # center
+        block_left = (width - max_block_w) // 2
+
+    # Per-line x: alignment justifies lines within the block
+    if alignment == "left":
+        x = str(block_left)
+    elif alignment == "right":
+        x = f"({block_left}+{max_block_w}-tw)"
+    else:  # center
+        x = f"({block_left}+({max_block_w}-tw)/2)"
 
     filters = []
     for i, line in enumerate(lines):
