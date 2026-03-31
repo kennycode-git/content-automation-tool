@@ -352,10 +352,25 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
     }
     if (!previewLines.some(l => l)) previewLines.push('Preview text')
 
-    // Block width as fraction of usable_width — capped at 1.0, mirrors backend
-    const maxLineLen = previewLines.reduce((max, l) => Math.max(max, l.length), 5)
-    const blockFrac = Math.min(maxLineLen / charsPerLine, 1.0)
-    const blockW = Math.max(20, Math.round(blockFrac * usableW))
+    // Measure actual pixel width of the widest line using canvas, mirroring PIL
+    // in the backend. This gives accurate block centering regardless of font.
+    let maxLineWidthPx = 0
+    try {
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.font = `${fontSize}px ${fontFamily}`
+        maxLineWidthPx = previewLines
+          .filter(l => l)
+          .reduce((max, l) => Math.max(max, ctx.measureText(l).width), 0)
+      }
+    } catch { /* ignore */ }
+    if (!maxLineWidthPx) {
+      // Fallback: same ratio approximation as backend
+      const maxLineLen = previewLines.reduce((max, l) => Math.max(max, l.length), 5)
+      maxLineWidthPx = Math.min(maxLineLen / charsPerLine, 1.0) * usableW
+    }
+    const blockW = Math.max(20, Math.min(Math.round(maxLineWidthPx), usableW))
 
     const [vertPart, horizPart] = (ov.position as OverlayPosition).split('-') as ['top' | 'middle' | 'bottom', 'left' | 'center' | 'right']
 
