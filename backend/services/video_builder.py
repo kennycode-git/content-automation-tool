@@ -126,18 +126,26 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
         hex_color = COLOR_MAP.get(color_key, "ffffff")
 
     fontsize = max(8, int(height * overlay.get("font_size_pct", 0.045)))
-    mx, my = int(width * 0.05), int(height * 0.05)
+    margin_pct = float(overlay.get("margin_pct", 0.05))
+    mx, my = int(width * margin_pct), int(height * margin_pct)
     position = overlay.get("position", "bottom-center")
-    vert = position.split("-", 1)[0]
+    vert, horiz = position.split("-", 1)
     alignment = overlay.get("alignment", "center")
-    x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(alignment, "(w-tw)/2")
+    # Position's horizontal component sets where the text block is anchored on screen.
+    # Alignment sets how lines are justified relative to that anchor.
+    anchor_x = {"left": mx, "center": width // 2, "right": width - mx}[horiz]
+    x = {
+        "left":   str(anchor_x),
+        "center": f"({anchor_x}-tw/2)",
+        "right":  f"({anchor_x}-tw)",
+    }.get(alignment, f"({anchor_x}-tw/2)")
     font_path_filter = os.path.basename(font_path)
 
     # Word-wrap text to fit the frame width, then split into individual lines.
     # Each line becomes its own drawtext filter so ffmpeg renders them at the
     # correct vertical positions — matching the preview's natural CSS word-wrap.
     # Approximate character width = 0.52 * fontsize (proportional serif/sans average).
-    usable_width = width * 0.88  # 6% margin each side
+    usable_width = width * (1.0 - 2 * margin_pct)
     chars_per_line = max(10, int(usable_width / (fontsize * 0.52)))
 
     raw = overlay.get("text", "").rstrip("\r\n")
@@ -172,6 +180,8 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
         ]
         if overlay.get("background_box"):
             parts += ["box=1", "boxcolor=000000@0.55", "boxborderw=18"]
+        if overlay.get("outline"):
+            parts += ["borderw=2", "bordercolor=000000ff"]
         filters.append("drawtext=" + ":".join(parts))
 
     return ",".join(filters) if filters else None

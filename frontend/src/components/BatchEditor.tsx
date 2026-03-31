@@ -207,6 +207,8 @@ const DEFAULT_OVERLAY: TextOverlayConfig = {
   alignment: 'center',
   position: 'bottom-center',
   font_size_pct: 0.045,
+  margin_pct: 0.05,
+  outline: false,
 }
 
 const OVERLAY_FONT_GROUPS: { category: string; fonts: { value: OverlayFont; label: string }[] }[] = [
@@ -337,7 +339,8 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
 
   function PreviewBox({ h, w }: { h: number; w: number }) {
     const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.045)))
-    const margin = Math.round(h * 0.05)
+    const marginPct = ov.margin_pct ?? 0.05
+    const margin = Math.round(h * marginPct)
     return (
       <div
         style={{
@@ -347,7 +350,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           overflow: 'hidden',
           display: 'flex',
           alignItems: pos.items,
-          justifyContent: { left: 'flex-start', center: 'center', right: 'flex-end' }[ov.alignment ?? 'center'] ?? 'center',
+          justifyContent: pos.justify,  // position controls placement; alignment controls text justification only
           border: '1px solid #333',
           flexShrink: 0,
           padding: margin,
@@ -365,6 +368,9 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
             whiteSpace: 'pre-wrap',
             ...(ov.background_box
               ? { background: 'rgba(0,0,0,0.55)', padding: '1px 3px', borderRadius: 2 }
+              : {}),
+            ...(ov.outline
+              ? { textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }
               : {}),
           }}
         >
@@ -990,16 +996,27 @@ function BatchStylePopover({
                     )}
                   </div>
 
-                  {/* Background box */}
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={ov.background_box}
-                      onChange={e => onChange({ textOverlay: { ...ov, background_box: e.target.checked } })}
-                      className="rounded border-stone-600 bg-stone-800 accent-brand-500"
-                    />
-                    <span className="text-[10px] text-stone-400">Background box</span>
-                  </label>
+                  {/* Background box + Outline */}
+                  <div className="flex gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ov.background_box}
+                        onChange={e => onChange({ textOverlay: { ...ov, background_box: e.target.checked } })}
+                        className="rounded border-stone-600 bg-stone-800 accent-brand-500"
+                      />
+                      <span className="text-[10px] text-stone-400">Background box</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ov.outline ?? false}
+                        onChange={e => onChange({ textOverlay: { ...ov, outline: e.target.checked } })}
+                        className="rounded border-stone-600 bg-stone-800 accent-brand-500"
+                      />
+                      <span className="text-[10px] text-stone-400">Outline</span>
+                    </label>
+                  </div>
 
                   {/* Position grid */}
                   <div>
@@ -1056,6 +1073,25 @@ function BatchStylePopover({
                       step={0.002}
                       value={ov.font_size_pct ?? 0.045}
                       onChange={e => onChange({ textOverlay: { ...ov, font_size_pct: parseFloat(e.target.value) } })}
+                      className="w-full accent-brand-500"
+                    />
+                  </div>
+
+                  {/* Margin */}
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <p className="text-[9px] font-semibold tracking-widest uppercase text-stone-600">Margin</p>
+                      <span className="text-[10px] font-mono text-stone-300">
+                        {Math.round((ov.margin_pct ?? 0.05) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={0.30}
+                      step={0.01}
+                      value={ov.margin_pct ?? 0.05}
+                      onChange={e => onChange({ textOverlay: { ...ov, margin_pct: parseFloat(e.target.value) } })}
                       className="w-full accent-brand-500"
                     />
                   </div>

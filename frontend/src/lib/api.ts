@@ -70,6 +70,8 @@ export interface TextOverlayConfig {
   alignment: OverlayAlignment
   position: OverlayPosition
   font_size_pct?: number
+  margin_pct?: number
+  outline?: boolean
 }
 
 export interface LayeredConfig {
