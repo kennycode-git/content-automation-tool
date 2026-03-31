@@ -128,8 +128,9 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
     fontsize = max(8, int(height * overlay.get("font_size_pct", 0.045)))
     mx, my = int(width * 0.05), int(height * 0.05)
     position = overlay.get("position", "bottom-center")
-    vert, horiz = position.split("-", 1)
-    x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(horiz, "(w-tw)/2")
+    vert = position.split("-", 1)[0]
+    alignment = overlay.get("alignment", "center")
+    x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(alignment, "(w-tw)/2")
     font_path_filter = os.path.basename(font_path)
 
     # Word-wrap text to fit the frame width, then split into individual lines.

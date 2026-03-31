@@ -11,7 +11,8 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { uploadImages } from '../lib/api'
+import { uploadImages, listUserPhilosophers } from '../lib/api'
+import type { UserPhilosopher } from '../lib/api'
 import type { CustomGradeParams } from './SettingsPanel'
 import { THEME_GRADE_DEFAULTS } from './SettingsPanel'
 import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, OverlayAlignment } from '../lib/api'
@@ -19,6 +20,77 @@ import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, Ove
 export type { TextOverlayConfig }
 
 const STORAGE_KEY = 'cogito_classic_text'
+const USER_THEMES_KEY = 'cogito_user_themes'
+
+export interface UserColorTheme {
+  id: string
+  name: string
+  colorTag: string     // hex color string e.g. "#7c3aed"
+  gradeParams: CustomGradeParams
+}
+
+function loadUserThemes(): UserColorTheme[] {
+  try { return JSON.parse(localStorage.getItem(USER_THEMES_KEY) || '[]') } catch { return [] }
+}
+
+function saveUserThemesToStorage(themes: UserColorTheme[]) {
+  try { localStorage.setItem(USER_THEMES_KEY, JSON.stringify(themes)) } catch { /* ignore */ }
+}
+
+// ── Philosopher detection ────────────────────────────────────────────────────
+
+export const PHILOSOPHER_LIST: { key: string; display: string }[] = [
+  { key: 'watts',          display: 'Alan Watts' },
+  { key: 'aristotle',      display: 'Aristotle' },
+  { key: 'camus',          display: 'Camus' },
+  { key: 'carl_jung',      display: 'Carl Jung' },
+  { key: 'descartes',      display: 'Descartes' },
+  { key: 'diogenes',       display: 'Diogenes' },
+  { key: 'dostoevsky',     display: 'Dostoevsky' },
+  { key: 'epicurus',       display: 'Epicurus' },
+  { key: 'epictetus',      display: 'Epictetus' },
+  { key: 'heraclitus',     display: 'Heraclitus' },
+  { key: 'hegel',          display: 'Hegel' },
+  { key: 'heidegger',      display: 'Heidegger' },
+  { key: 'hume',           display: 'Hume' },
+  { key: 'kafka',          display: 'Kafka' },
+  { key: 'kant',           display: 'Kant' },
+  { key: 'kierkegaard',    display: 'Kierkegaard' },
+  { key: 'leo_tolstoy',    display: 'Leo Tolstoy' },
+  { key: 'locke',          display: 'Locke' },
+  { key: 'marcus_aurelius', display: 'Marcus Aurelius' },
+  { key: 'nietzsche',      display: 'Nietzsche' },
+  { key: 'plato',          display: 'Plato' },
+  { key: 'rousseau',       display: 'Rousseau' },
+  { key: 'sartre',         display: 'Sartre' },
+  { key: 'schopenhauer',   display: 'Schopenhauer' },
+  { key: 'seneca',         display: 'Seneca' },
+  { key: 'socrates',       display: 'Socrates' },
+  { key: 'spinoza',        display: 'Spinoza' },
+  { key: 'voltaire',       display: 'Voltaire' },
+  { key: 'tolstoy',        display: 'Tolstoy' },
+  { key: 'wittgenstein',   display: 'Wittgenstein' },
+  { key: 'zeno',           display: 'Zeno' },
+  { key: 'zhuangzi',       display: 'Zhuangzi' },
+]
+
+function asciiFold(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+export function detectPhilosopher(title: string): string | null {
+  const norm = asciiFold(title.toLowerCase().replace(/_/g, ' '))
+  let bestKey: string | null = null
+  let bestLen = 0
+  for (const { key } of PHILOSOPHER_LIST) {
+    const keyNorm = asciiFold(key.replace(/_/g, ' '))
+    if (keyNorm.length > bestLen && norm.includes(keyNorm)) {
+      bestKey = key
+      bestLen = keyNorm.length
+    }
+  }
+  return bestKey
+}
 const DEFAULT_CLASSIC_TEXT =
   '# Stoicism\nmarble statue philosophy\nancient greece\nstoic stone\n\n# Existentialism\nmeditation silence\nminimalist monk'
 
@@ -30,6 +102,9 @@ export interface BatchOutput {
   custom_grade_params?: CustomGradeParams
   accent_folder_override?: string | null // undefined = inherit global, null = explicit none
   text_overlay?: TextOverlayConfig | null
+  philosopher?: string | null            // resolved philosopher key, null = none
+  grade_philosopher?: boolean            // grade philosopher images with color theme
+  philosopher_is_user?: boolean
 }
 
 interface VisualBatch {
@@ -39,6 +114,10 @@ interface VisualBatch {
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null           // undefined = inherit global, null = explicit none
   textOverlay?: TextOverlayConfig | null
+  usePhilosopher?: boolean               // true = include philosopher images
+  philosopherOverride?: string | null    // manual pick; undefined = use auto-detected
+  gradePhilosopher?: boolean             // grade philosopher images (default true)
+  philosopherIsUser?: boolean            // true = user's own philosopher (not system)
 }
 
 interface PendingBundle {
@@ -80,7 +159,7 @@ const BATCH_THEME_OPTIONS: { value: string | undefined; label: string; shortLabe
 
 // Themes with an available preview video in /theme-previews/
 const THEMES_WITH_PREVIEW_VIDEO = new Set([
-  'dark', 'sepia', 'warm', 'low_exp', 'grey', 'blue', 'red', 'bw', 'midnight', 'dusk',
+  'dark', 'sepia', 'warm', 'low_exp', 'grey', 'blue', 'red', 'bw', 'midnight', 'dusk', 'mocha', 'noir',
 ])
 
 const BATCH_ACCENT_OPTIONS: { value: string | null | undefined; label: string; dot: string }[] = [
@@ -118,7 +197,6 @@ const CUSTOM_SLIDERS: { key: keyof CustomGradeParams; label: string; min: number
   { key: 'hue_shift',  label: 'Hue Shift',  min: -180, max: 180, step: 1,    unit: '°' },
 ]
 
-const PHILOSOPHER_NAMES = ['Marcus Aurelius', 'Seneca', 'Nietzsche', 'Socrates', 'Aristotle', 'Epictetus']
 
 const DEFAULT_OVERLAY: TextOverlayConfig = {
   enabled: true,
@@ -269,7 +347,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           overflow: 'hidden',
           display: 'flex',
           alignItems: pos.items,
-          justifyContent: pos.justify,
+          justifyContent: { left: 'flex-start', center: 'center', right: 'flex-end' }[ov.alignment ?? 'center'] ?? 'center',
           border: '1px solid #333',
           flexShrink: 0,
           padding: margin,
@@ -380,11 +458,13 @@ function BatchStylePopover({
   onChange,
   onClose,
   onApplyOverlayToAll,
+  userPhilosophers = [],
 }: {
   batch: VisualBatch
   onChange: (patch: Partial<VisualBatch>) => void
   onClose: () => void
   onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
+  userPhilosophers?: UserPhilosopher[]
 }) {
   const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
   const [fineTuneOpen, setFineTuneOpen] = useState(batch.colorTheme === 'custom')
@@ -393,6 +473,10 @@ function BatchStylePopover({
   })
   const [savingPreset, setSavingPreset] = useState(false)
   const [presetName, setPresetName] = useState('')
+  const [userThemes, setUserThemes] = useState<UserColorTheme[]>(loadUserThemes)
+  const [savingTheme, setSavingTheme] = useState(false)
+  const [themeName, setThemeName] = useState('')
+  const [themeColorTag, setThemeColorTag] = useState('#7c3aed')
 
   function saveOverlayPreset(ov: TextOverlayConfig) {
     const name = presetName.trim() || 'Preset'
@@ -409,6 +493,26 @@ function BatchStylePopover({
     const updated = overlayPresets.filter(p => p.id !== id)
     setOverlayPresets(updated)
     try { localStorage.setItem(OVERLAY_PRESETS_KEY, JSON.stringify(updated)) } catch { /* ignore */ }
+  }
+
+  function saveUserTheme(gradeParams: CustomGradeParams) {
+    const name = themeName.trim() || 'My Theme'
+    const theme: UserColorTheme = { id: crypto.randomUUID(), name, colorTag: themeColorTag, gradeParams }
+    const updated = [...userThemes, theme]
+    setUserThemes(updated)
+    saveUserThemesToStorage(updated)
+    setSavingTheme(false)
+    setThemeName('')
+  }
+
+  function deleteUserTheme(id: string) {
+    const updated = userThemes.filter(t => t.id !== id)
+    setUserThemes(updated)
+    saveUserThemesToStorage(updated)
+    // If deleted theme is currently selected, clear it
+    if (batch.colorTheme === `user:${id}`) {
+      onChange({ colorTheme: undefined, customGradeParams: undefined })
+    }
   }
 
   return (
@@ -483,6 +587,31 @@ function BatchStylePopover({
               })}
             </div>
 
+            {/* User saved themes */}
+            {userThemes.length > 0 && (
+              <div className="mt-1 pt-1 border-t border-stone-800 grid grid-cols-2 gap-1">
+                {userThemes.map(theme => (
+                  <button
+                    key={theme.id}
+                    onClick={() => onChange({ colorTheme: `user:${theme.id}`, customGradeParams: theme.gradeParams })}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-left transition group/ut ${
+                      batch.colorTheme === `user:${theme.id}`
+                        ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
+                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0 flex-shrink-0" style={{ background: theme.colorTag }} />
+                    <span className="flex-1 truncate text-left">{theme.name}</span>
+                    <span
+                      role="button"
+                      onClick={e => { e.stopPropagation(); deleteUserTheme(theme.id) }}
+                      className="text-[9px] text-stone-700 hover:text-red-400 opacity-0 group-hover/ut:opacity-100 transition ml-auto"
+                    >✕</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Fine-tune grade — collapsible, available for any selected theme */}
             {batch.colorTheme !== undefined && batch.colorTheme !== 'none' && (
               <div className="mt-2 pt-2 border-t border-stone-800">
@@ -510,37 +639,39 @@ function BatchStylePopover({
                           Starting from {BATCH_THEME_OPTIONS.find(o => o.value === batch.colorTheme)?.label ?? ''} defaults — adjusting switches to Custom grade
                         </p>
                       )}
-                      <div className="flex items-start gap-2">
+                      {/* Live grade preview */}
+                      <div className="relative rounded-lg overflow-hidden w-full h-20">
                         <video
-                          src="/theme-previews/eastern-philosophy.mp4"
+                          src={THEMES_WITH_PREVIEW_VIDEO.has(batch.colorTheme ?? '') ? `/theme-previews/${batch.colorTheme}.mp4` : '/theme-previews/eastern-philosophy.mp4'}
                           autoPlay muted loop playsInline
-                          className="w-12 rounded-md shrink-0 object-cover"
-                          style={{ aspectRatio: '9/16', filter: gradeToFilter(gradeParams) }}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          style={{ filter: gradeToFilter(gradeParams) }}
                         />
-                        <div className="flex-1 space-y-1.5">
-                          {CUSTOM_SLIDERS.map(s => (
-                            <div key={s.key}>
-                              <div className="flex items-center justify-between mb-0.5">
-                                <span className="text-[9px] text-stone-400">{s.label}</span>
-                                <span className="text-[9px] font-mono text-stone-300">
-                                  {gradeParams[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
-                                </span>
-                              </div>
-                              <input
-                                type="range"
-                                min={s.min}
-                                max={s.max}
-                                step={s.step}
-                                value={gradeParams[s.key]}
-                                onChange={e => onChange({
-                                  colorTheme: 'custom',
-                                  customGradeParams: { ...gradeParams, [s.key]: parseFloat(e.target.value) },
-                                })}
-                                className="w-full accent-violet-500"
-                              />
+                        <span className="absolute bottom-1 left-2 text-[8px] text-white/50 bg-black/30 px-1.5 py-0.5 rounded-full">Live preview</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {CUSTOM_SLIDERS.map(s => (
+                          <div key={s.key}>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-[9px] text-stone-400">{s.label}</span>
+                              <span className="text-[9px] font-mono text-stone-300">
+                                {gradeParams[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
+                              </span>
                             </div>
-                          ))}
-                        </div>
+                            <input
+                              type="range"
+                              min={s.min}
+                              max={s.max}
+                              step={s.step}
+                              value={gradeParams[s.key]}
+                              onChange={e => onChange({
+                                colorTheme: 'custom',
+                                customGradeParams: { ...gradeParams, [s.key]: parseFloat(e.target.value) },
+                              })}
+                              className="w-full accent-violet-500"
+                            />
+                          </div>
+                        ))}
                       </div>
                       {!isCustom && (
                         <button
@@ -548,6 +679,42 @@ function BatchStylePopover({
                           className="text-[9px] text-violet-400 hover:text-violet-300 transition"
                         >
                           Use as Custom grade →
+                        </button>
+                      )}
+                      {/* Save as named theme */}
+                      {savingTheme ? (
+                        <div className="flex items-center gap-1 mt-1 pt-1 border-t border-stone-800">
+                          <input
+                            type="text"
+                            value={themeName}
+                            onChange={e => setThemeName(e.target.value)}
+                            placeholder="Theme name…"
+                            maxLength={30}
+                            className="flex-1 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-[10px] text-stone-200 focus:outline-none focus:border-stone-500"
+                            onKeyDown={e => e.key === 'Enter' && saveUserTheme(gradeParams)}
+                          />
+                          <input
+                            type="color"
+                            value={themeColorTag}
+                            onChange={e => setThemeColorTag(e.target.value)}
+                            className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent"
+                            title="Pick a colour tag"
+                          />
+                          <button
+                            onClick={() => saveUserTheme(gradeParams)}
+                            className="text-[9px] text-green-400 hover:text-green-300 transition whitespace-nowrap"
+                          >Save</button>
+                          <button
+                            onClick={() => { setSavingTheme(false); setThemeName('') }}
+                            className="text-[9px] text-stone-500 hover:text-stone-300 transition"
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setSavingTheme(true)}
+                          className="text-[9px] text-violet-400 hover:text-violet-300 transition mt-1"
+                        >
+                          + Save as named theme
                         </button>
                       )}
                     </div>
@@ -589,23 +756,68 @@ function BatchStylePopover({
 
           <hr className="border-stone-800" />
 
-          {/* Philosopher — coming soon */}
-          <div className="opacity-40 pointer-events-none select-none">
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Philosopher</p>
-              <span className="text-[9px] font-semibold bg-stone-800 text-stone-500 border border-stone-700/60 px-1.5 py-0.5 rounded-full">Soon</span>
-            </div>
-            <div className="grid grid-cols-3 gap-1">
-              {PHILOSOPHER_NAMES.map(name => (
-                <div
-                  key={name}
-                  className="flex items-center justify-center px-2 py-1.5 rounded-lg border border-stone-700 bg-stone-800/60 text-[10px] text-stone-500 text-center leading-tight"
-                >
-                  {name}
+          {/* Philosopher */}
+          {(() => {
+            const detectedKey = detectPhilosopher(batch.title)
+            const detectedDisplay = detectedKey ? PHILOSOPHER_LIST.find(p => p.key === detectedKey)?.display : null
+            const resolvedKey = batch.philosopherOverride !== undefined ? batch.philosopherOverride : detectedKey
+            return (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Philosopher</p>
+                    {detectedDisplay && (
+                      <span className="text-[9px] bg-stone-800 text-amber-500/80 border border-stone-700 px-1.5 py-0.5 rounded-full">
+                        Auto: {detectedDisplay}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => onChange({ usePhilosopher: !batch.usePhilosopher, gradePhilosopher: batch.gradePhilosopher !== false })}
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${batch.usePhilosopher ? 'bg-brand-500' : 'bg-stone-700'}`}
+                  >
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${batch.usePhilosopher ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </button>
                 </div>
-              ))}
-            </div>
-          </div>
+                {batch.usePhilosopher && (
+                  <div className="space-y-2">
+                    <select
+                      value={resolvedKey ?? ''}
+                      onChange={e => {
+                        const val = e.target.value
+                        const isUser = userPhilosophers.some(p => p.key === val)
+                        onChange({ philosopherOverride: val || null, philosopherIsUser: isUser })
+                      }}
+                      className="w-full bg-stone-800 border border-stone-700 rounded-lg px-2 py-1.5 text-[11px] text-stone-200 focus:outline-none focus:border-stone-500"
+                    >
+                      {!resolvedKey && <option value="">Select philosopher…</option>}
+                      <optgroup label="System">
+                        {PHILOSOPHER_LIST.map(p => (
+                          <option key={p.key} value={p.key}>{p.display}</option>
+                        ))}
+                      </optgroup>
+                      {userPhilosophers.length > 0 && (
+                        <optgroup label="My philosophers">
+                          {userPhilosophers.map(p => (
+                            <option key={p.key} value={p.key}>{p.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-stone-500">Grade images with theme</span>
+                      <button
+                        onClick={() => onChange({ gradePhilosopher: batch.gradePhilosopher === false })}
+                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${batch.gradePhilosopher !== false ? 'bg-brand-500' : 'bg-stone-700'}`}
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${batch.gradePhilosopher !== false ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           <hr className="border-stone-800" />
 
@@ -912,17 +1124,33 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const [openPopover, setOpenPopover] = useState<number | null>(null)
+  const [userPhilosophers, setUserPhilosophers] = useState<UserPhilosopher[]>([])
+
+  useEffect(() => {
+    listUserPhilosophers().then(setUserPhilosophers).catch(() => {})
+  }, [])
 
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
-    return vBatches.map((b, i) => ({
-      title: b.title.trim() || null,
-      terms: parseBatchText(b.terms),
-      uploaded_image_paths: paths[i] ?? [],
-      color_theme: b.colorTheme,
-      custom_grade_params: b.customGradeParams,
-      accent_folder_override: b.accentFolder,
-      text_overlay: b.textOverlay,
-    }))
+    return vBatches.map((b, i) => {
+      const resolvedPhilosopher = b.usePhilosopher
+        ? (b.philosopherOverride !== undefined ? b.philosopherOverride : detectPhilosopher(b.title))
+        : null
+      const resolvedColorTheme = b.colorTheme?.startsWith('user:')
+        ? 'custom'
+        : b.colorTheme
+      return {
+        title: b.title.trim() || null,
+        terms: parseBatchText(b.terms),
+        uploaded_image_paths: paths[i] ?? [],
+        color_theme: resolvedColorTheme,
+        custom_grade_params: b.customGradeParams,
+        accent_folder_override: b.accentFolder,
+        text_overlay: b.textOverlay,
+        philosopher: resolvedPhilosopher || undefined,
+        grade_philosopher: resolvedPhilosopher ? (b.gradePhilosopher !== false) : undefined,
+        philosopher_is_user: resolvedPhilosopher && b.philosopherIsUser ? true : undefined,
+      }
+    })
   }
 
   // Emit initial batches on mount
@@ -1222,6 +1450,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                         onChange={patch => handleBatchOverride(idx, patch)}
                         onClose={() => setOpenPopover(null)}
                         onApplyOverlayToAll={batches.length > 1 ? handleApplyOverlayToAll : undefined}
+                        userPhilosophers={userPhilosophers}
                       />
                     )}
                   </div>

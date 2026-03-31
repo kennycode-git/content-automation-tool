@@ -72,6 +72,14 @@ export interface TextOverlayConfig {
   font_size_pct?: number
 }
 
+export interface LayeredConfig {
+  background_video_urls: string[]
+  foreground_opacity: number
+  foreground_speed: number
+  grade_target: 'foreground' | 'background' | 'both'
+  crossfade_duration: number
+}
+
 export interface GenerateRequest {
   search_terms: string[]
   resolution?: string
@@ -90,7 +98,9 @@ export interface GenerateRequest {
   custom_grade_params?: CustomGradeParams
   philosopher?: string | null
   grade_philosopher?: boolean
+  philosopher_is_user?: boolean
   text_overlay?: TextOverlayConfig | null
+  layered_config?: LayeredConfig | null
 }
 
 export interface GenerateResponse {
@@ -486,4 +496,138 @@ export async function cancelScheduledPost(id: string): Promise<void> {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail ?? `HTTP ${res.status}`)
   }
+}
+
+// ── User philosophers ─────────────────────────────────────────────────────────
+
+export interface UserPhilosopher {
+  key: string
+  name: string
+  image_count: number
+  created_at: string
+}
+
+export async function listUserPhilosophers(): Promise<UserPhilosopher[]> {
+  if (DEV_BYPASS) return []
+  const res = await fetch(`${API_URL}/api/philosophers`, { headers: await authHeaders() })
+  return handleResponse<UserPhilosopher[]>(res)
+}
+
+export async function createUserPhilosopher(name: string): Promise<UserPhilosopher> {
+  const res = await fetch(`${API_URL}/api/philosophers`, {
+    method: 'POST',
+    headers: { ...await authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  return handleResponse<UserPhilosopher>(res)
+}
+
+export async function deleteUserPhilosopher(key: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/philosophers/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!res.ok && res.status !== 204) throw new Error(await res.text())
+}
+
+export async function uploadPhilosopherImages(key: string, files: File[]): Promise<{ uploaded: number }> {
+  const form = new FormData()
+  files.forEach(f => form.append('files', f))
+  const token = await getAccessToken()
+  const res = await fetch(`${API_URL}/api/philosophers/${encodeURIComponent(key)}/images`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  return handleResponse<{ uploaded: number }>(res)
+}
+
+// ─── Video Clips ──────────────────────────────────────────────────────────────
+
+export interface ClipSearchResult {
+  id: string
+  duration: number
+  thumbnail: string
+  preview_url: string
+  download_url: string
+  width: number
+  height: number
+}
+
+export interface SelectedClip {
+  id: string
+  download_url: string
+  preview_url: string
+  thumbnail: string
+  duration: number
+  trim_start: number
+  trim_end: number   // 0 = use full clip duration
+}
+
+export interface ClipGenerateRequest {
+  clips: Array<{
+    id: string
+    download_url: string
+    trim_start: number
+    trim_end: number
+    duration: number
+  }>
+  resolution?: string
+  fps?: number
+  color_theme?: string
+  transition?: 'cut' | 'fade_black' | 'crossfade'
+  transition_duration?: number
+  max_clip_duration?: number
+  batch_title?: string | null
+  text_overlay?: TextOverlayConfig | null
+}
+
+export async function fetchVideoClips(
+  terms: string[],
+  perTerm: number,
+  colorTheme: string,
+  signal?: AbortSignal,
+): Promise<{ clips: ClipSearchResult[] }> {
+  if (DEV_BYPASS) return { clips: [] }
+  const params = new URLSearchParams({
+    terms: terms.join(','),
+    per_term: String(perTerm),
+    color_theme: colorTheme,
+  })
+  const res = await fetch(`${API_URL}/api/clips/search?${params}`, {
+    headers: await authHeaders(),
+    signal,
+  })
+  return handleResponse<{ clips: ClipSearchResult[] }>(res)
+}
+
+export async function generateFromClips(req: ClipGenerateRequest): Promise<GenerateResponse> {
+  if (DEV_BYPASS) return { job_id: crypto.randomUUID(), status: 'queued' }
+  const res = await fetch(`${API_URL}/api/clips/generate`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<GenerateResponse>(res)
+}
+
+// ─── Layered rendering ────────────────────────────────────────────────────────
+
+export interface BgVideoResult {
+  id: string
+  duration: number
+  thumbnail: string
+  preview_url: string
+  download_url: string
+  width: number
+  height: number
+}
+
+export async function searchBgVideos(query: string, count = 9): Promise<BgVideoResult[]> {
+  if (DEV_BYPASS) return []
+  const params = new URLSearchParams({ query, count: String(count) })
+  const res = await fetch(`${API_URL}/api/layered/search-backgrounds?${params}`, {
+    headers: await authHeaders(),
+  })
+  return handleResponse<BgVideoResult[]>(res)
 }

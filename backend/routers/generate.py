@@ -124,6 +124,7 @@ async def generate(
         philosopher=body.philosopher or None,
         grade_philosopher=body.grade_philosopher,
         text_overlay=body.text_overlay.model_dump() if body.text_overlay else None,
+        layered_config=body.layered_config.model_dump() if body.layered_config else None,
     )
     job_id = await create_job(user_id, config, db)
 
