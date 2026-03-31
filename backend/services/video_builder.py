@@ -302,7 +302,8 @@ def build_ffmpeg_command(
         "-r", str(fps),
         "-pix_fmt", "yuv420p",
         "-threads", "2",
-        "-preset", "ultrafast",
+        "-preset", "veryfast",
+        "-crf", "18",
         "-movflags", "faststart",
         out_file,
     ]
