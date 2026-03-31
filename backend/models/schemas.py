@@ -99,6 +99,30 @@ class CustomGradeParams(BaseModel):
     hue_shift:  float = Field(default=0.0, ge=-180.0, le=180.0)
 
 
+class LayeredConfig(BaseModel):
+    """Config for layered rendering mode: background video + foreground image composite."""
+    background_video_urls: List[str] = Field(..., min_length=1, max_length=5)
+    foreground_opacity: float = Field(default=0.55, ge=0.0, le=1.0)
+    foreground_speed: float = Field(default=0.25, ge=0.05, le=0.5)
+    grade_target: str = Field(default="both")   # "foreground" | "background" | "both"
+    crossfade_duration: float = Field(default=0.5, ge=0.2, le=2.0)
+
+    @field_validator("background_video_urls")
+    @classmethod
+    def validate_bg_urls(cls, v: List[str]) -> List[str]:
+        for url in v:
+            if not url.startswith("https://videos.pexels.com/"):
+                raise ValueError("background_video_urls must start with https://videos.pexels.com/")
+        return v
+
+    @field_validator("grade_target")
+    @classmethod
+    def validate_grade_target(cls, v: str) -> str:
+        if v not in ("foreground", "background", "both"):
+            raise ValueError("grade_target must be 'foreground', 'background', or 'both'")
+        return v
+
+
 class GenerateRequest(BaseModel):
     search_terms: List[str] = Field(
         ...,
@@ -123,6 +147,7 @@ class GenerateRequest(BaseModel):
     philosopher: Optional[str] = Field(default=None)
     grade_philosopher: bool = False
     text_overlay: Optional[TextOverlayConfig] = None
+    layered_config: Optional["LayeredConfig"] = None
 
     @field_validator("search_terms")
     @classmethod

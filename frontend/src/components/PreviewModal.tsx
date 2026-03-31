@@ -353,7 +353,7 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
               Find more images
             </button>
             {findMoreOpen && (
-              <div className="absolute right-0 top-full mt-1.5 z-20 w-64 rounded-xl border border-stone-700 bg-stone-900 p-4 shadow-xl">
+              <div className="absolute left-0 top-full mt-1.5 z-20 w-64 rounded-xl border border-stone-700 bg-stone-900 p-4 shadow-xl">
                 <p className="mb-3 text-xs font-medium text-stone-300">Find more images</p>
                 <div className="mb-1 flex items-center justify-between text-xs text-stone-400">
                   <span>How many to find</span>

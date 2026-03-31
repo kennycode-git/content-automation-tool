@@ -5,24 +5,18 @@
  * image source, accent images, max images per query, allow repeats.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import PresetManager from './PresetManager'
 import type { VideoSettings } from './SettingsPanel'
+import { listUserPhilosophers, createUserPhilosopher, deleteUserPhilosopher, uploadPhilosopherImages } from '../lib/api'
+import type { UserPhilosopher } from '../lib/api'
 
 const ACCENT_OPTIONS = [
-  { value: null,   label: 'None', dot: 'bg-stone-600' },
-  { value: 'blue', label: 'Blue', dot: 'bg-blue-500' },
-  { value: 'red',  label: 'Red',  dot: 'bg-red-500' },
-  { value: 'gold', label: 'Gold', dot: 'bg-amber-400' },
-]
-
-const PHILOSOPHER_OPTIONS = [
-  { value: 'marcus_aurelius', label: 'Marcus Aurelius' },
-  { value: 'seneca',          label: 'Seneca' },
-  { value: 'epictetus',       label: 'Epictetus' },
-  { value: 'nietzsche',       label: 'Nietzsche' },
-  { value: 'socrates',        label: 'Socrates' },
-  { value: 'aristotle',       label: 'Aristotle' },
+  { value: null,     label: 'None',   dot: 'bg-stone-600' },
+  { value: 'blue',   label: 'Blue',   dot: 'bg-blue-500' },
+  { value: 'red',    label: 'Red',    dot: 'bg-red-500' },
+  { value: 'gold',   label: 'Gold',   dot: 'bg-amber-400' },
+  { value: 'purple', label: 'Purple', dot: 'bg-purple-500' },
 ]
 
 interface Props {
@@ -35,6 +29,115 @@ interface Props {
   onAccentFolderChange: (v: string | null) => void
   onPresetApplied: (name: string) => void
   onClose: () => void
+}
+
+function UserPhilosopherManager() {
+  const [philosophers, setPhilosophers] = useState<UserPhilosopher[]>([])
+  const [loading, setLoading] = useState(true)
+  const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState<Record<string, boolean>>({})
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  useEffect(() => {
+    listUserPhilosophers().then(data => { setPhilosophers(data); setLoading(false) }).catch(() => setLoading(false))
+  }, [])
+
+  async function handleCreate() {
+    if (!newName.trim()) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const created = await createUserPhilosopher(newName.trim())
+      setPhilosophers(prev => [...prev, created])
+      setNewName('')
+    } catch (e: unknown) {
+      setCreateError(e instanceof Error ? e.message : 'Failed to create')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleDelete(key: string) {
+    await deleteUserPhilosopher(key)
+    setPhilosophers(prev => prev.filter(p => p.key !== key))
+  }
+
+  async function handleUpload(key: string, files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploading(prev => ({ ...prev, [key]: true }))
+    try {
+      const result = await uploadPhilosopherImages(key, Array.from(files))
+      setPhilosophers(prev => prev.map(p => p.key === key ? { ...p, image_count: p.image_count + result.uploaded } : p))
+    } catch { /* ignore */ } finally {
+      setUploading(prev => ({ ...prev, [key]: false }))
+    }
+  }
+
+  return (
+    <div>
+      <p className="text-xs text-stone-400 mb-2">My philosophers</p>
+      {loading ? (
+        <p className="text-[10px] text-stone-600">Loading…</p>
+      ) : (
+        <div className="space-y-1.5">
+          {philosophers.map(p => (
+            <div key={p.key} className="flex items-center gap-2 bg-stone-800 rounded-lg px-2.5 py-2">
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] text-stone-200 truncate">{p.name}</p>
+                <p className="text-[9px] text-stone-500">{p.image_count} image{p.image_count !== 1 ? 's' : ''}</p>
+              </div>
+              <button
+                onClick={() => fileInputRefs.current[p.key]?.click()}
+                disabled={uploading[p.key]}
+                className="text-[10px] text-stone-400 hover:text-stone-200 transition disabled:opacity-40"
+                title="Upload images"
+              >
+                {uploading[p.key] ? '…' : '↑'}
+              </button>
+              <input
+                ref={el => { fileInputRefs.current[p.key] = el }}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={e => handleUpload(p.key, e.target.files)}
+              />
+              <button
+                onClick={() => handleDelete(p.key)}
+                className="text-[10px] text-stone-600 hover:text-red-400 transition"
+                title="Delete"
+              >✕</button>
+            </div>
+          ))}
+          {philosophers.length === 0 && (
+            <p className="text-[10px] text-stone-600 italic">No custom philosophers yet.</p>
+          )}
+          {/* Create new */}
+          <div className="flex gap-1.5 pt-1">
+            <input
+              type="text"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              placeholder="New philosopher name…"
+              maxLength={50}
+              className="flex-1 bg-stone-800 border border-stone-700 rounded-lg px-2 py-1.5 text-[11px] text-stone-200 focus:outline-none focus:border-stone-500"
+              onKeyDown={e => e.key === 'Enter' && handleCreate()}
+            />
+            <button
+              onClick={handleCreate}
+              disabled={creating || !newName.trim()}
+              className="px-2.5 py-1.5 rounded-lg bg-stone-700 text-[11px] text-stone-200 hover:bg-stone-600 transition disabled:opacity-40"
+            >
+              {creating ? '…' : 'Add'}
+            </button>
+          </div>
+          {createError && <p className="text-[10px] text-red-400">{createError}</p>}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function AdvancedModal({
@@ -98,7 +201,7 @@ export default function AdvancedModal({
             Accent images{' '}
             <span className="text-stone-600">(~20% of frames, ungraded)</span>
           </p>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-5 gap-2">
             {ACCENT_OPTIONS.map(opt => (
               <div
                 key={opt.value ?? 'none'}
@@ -175,25 +278,9 @@ export default function AdvancedModal({
 
         <hr className="border-stone-800" />
 
-        {/* Select Philosopher — coming soon */}
-        <div className="group/phil relative cursor-not-allowed select-none">
-          <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-60 rounded-lg border border-stone-600 bg-stone-900 px-3 py-2.5 shadow-xl opacity-0 group-hover/phil:opacity-100 transition-opacity z-50">
-            <p className="text-xs font-semibold text-white mb-1">Philosopher Image Inserts</p>
-            <p className="text-xs text-stone-300 leading-relaxed">Automatically inserts HD portrait images of your chosen philosopher into the video carousel alongside your search results.</p>
-          </div>
-          <div className="opacity-50">
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-xs text-stone-400">Select philosopher</p>
-              <span className="text-[9px] font-semibold tracking-wide bg-stone-800 text-stone-600 border border-stone-700/60 px-1.5 py-0.5 rounded-full">Soon</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 pointer-events-none">
-              {PHILOSOPHER_OPTIONS.map(opt => (
-                <div key={opt.value} className="flex items-center justify-center px-2 py-2 rounded-lg border border-stone-700 bg-stone-800/60 text-xs text-stone-500 text-center">
-                  {opt.label}
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* My Philosophers */}
+        <div>
+          <UserPhilosopherManager />
         </div>
       </div>
     </div>
