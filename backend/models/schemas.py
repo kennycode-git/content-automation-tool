@@ -51,6 +51,8 @@ class TextOverlayConfig(BaseModel):
     position: str = Field(default="bottom-center")
     alignment: str = Field(default="center")
     font_size_pct: float = Field(default=0.045, ge=0.01, le=0.2)
+    margin_pct: float = Field(default=0.05, ge=0.0, le=0.3)
+    outline: bool = False
 
     @field_validator("font")
     @classmethod

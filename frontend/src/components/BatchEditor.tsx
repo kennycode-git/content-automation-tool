@@ -129,6 +129,8 @@ const DEFAULT_OVERLAY: TextOverlayConfig = {
   alignment: 'center',
   position: 'bottom-center',
   font_size_pct: 0.045,
+  margin_pct: 0.05,
+  outline: false,
 }
 
 const OVERLAY_FONT_GROUPS: { category: string; fonts: { value: OverlayFont; label: string }[] }[] = [
@@ -229,18 +231,6 @@ const FONT_CSS_FAMILY: Record<OverlayFont, string> = {
   space_mono:  '"Courier New", Courier, monospace',
 }
 
-const POSITION_FLEX: Record<OverlayPosition, { items: string; justify: string; textAlign: string }> = {
-  'top-left':      { items: 'flex-start', justify: 'flex-start',  textAlign: 'left' },
-  'top-center':    { items: 'flex-start', justify: 'center',      textAlign: 'center' },
-  'top-right':     { items: 'flex-start', justify: 'flex-end',    textAlign: 'right' },
-  'middle-left':   { items: 'center',     justify: 'flex-start',  textAlign: 'left' },
-  'middle-center': { items: 'center',     justify: 'center',      textAlign: 'center' },
-  'middle-right':  { items: 'center',     justify: 'flex-end',    textAlign: 'right' },
-  'bottom-left':   { items: 'flex-end',   justify: 'flex-start',  textAlign: 'left' },
-  'bottom-center': { items: 'flex-end',   justify: 'center',      textAlign: 'center' },
-  'bottom-right':  { items: 'flex-end',   justify: 'flex-end',    textAlign: 'right' },
-}
-
 function overlayColorHex(ov: TextOverlayConfig): string {
   if (ov.color === 'custom') return ov.custom_color ?? '#ffffff'
   const map: Record<string, string> = { white: '#ffffff', cream: '#f5f0e8', gold: '#f5e317', black: '#000000' }
@@ -252,45 +242,71 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   const [previewH, setPreviewH] = useState(200)
   const dragStartRef = useRef<{ y: number; h: number } | null>(null)
 
-  const pos = POSITION_FLEX[ov.position as OverlayPosition] ?? POSITION_FLEX['bottom-center']
   const color = overlayColorHex(ov)
   const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
-  const displayText = ov.text.trim() || 'Preview text'
 
   function PreviewBox({ h, w }: { h: number; w: number }) {
     const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.045)))
-    const margin = Math.round(h * 0.05)
+    const marginPct = ov.margin_pct ?? 0.05
+    const marginX = Math.round(w * marginPct)
+    const marginY = Math.round(h * marginPct)
+    const usableW = Math.max(10, w - 2 * marginX)
+    const lineHeight = Math.max(1, Math.round(fontSize * 1.25))
+
+    // Mirror backend word-wrap: charsPerLine = usableW / (fontSize * 0.52)
+    const charsPerLine = Math.max(10, Math.floor(usableW / (fontSize * 0.52)))
+    const rawInput = ov.text.trim() || 'Preview text'
+    const previewLines: string[] = []
+    for (const seg of rawInput.replace(/\r\n/g, '\n').split('\n')) {
+      if (!seg.trim()) { previewLines.push(''); continue }
+      const words = seg.split(' ')
+      let cur = ''
+      for (const word of words) {
+        if (!cur) { cur = word }
+        else if (cur.length + 1 + word.length <= charsPerLine) { cur += ' ' + word }
+        else { previewLines.push(cur); cur = word }
+      }
+      if (cur) previewLines.push(cur)
+    }
+    if (!previewLines.some(l => l)) previewLines.push('Preview text')
+
+    // Measure actual pixel width using canvas — mirrors PIL in the backend
+    let maxLineWidthPx = 0
+    try {
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.font = `${fontSize}px ${fontFamily}`
+        maxLineWidthPx = previewLines.filter(l => l).reduce((max, l) => Math.max(max, ctx.measureText(l).width), 0)
+      }
+    } catch { /* ignore */ }
+    if (!maxLineWidthPx) {
+      const maxLineLen = previewLines.reduce((max, l) => Math.max(max, l.length), 5)
+      maxLineWidthPx = Math.min(maxLineLen / charsPerLine, 1.0) * usableW
+    }
+    const blockW = Math.max(20, Math.min(Math.round(maxLineWidthPx), usableW))
+
+    const [vertPart, horizPart] = (ov.position as OverlayPosition).split('-') as ['top' | 'middle' | 'bottom', 'left' | 'center' | 'right']
+    const blockLeft = horizPart === 'left' ? marginX : horizPart === 'right' ? w - marginX - blockW : Math.round((w - blockW) / 2)
+    const vertStyle: React.CSSProperties = vertPart === 'top' ? { top: marginY } : vertPart === 'bottom' ? { bottom: marginY } : { top: '50%', transform: 'translateY(-50%)' }
+
+    const textStyle: React.CSSProperties = {
+      color, fontFamily, fontSize,
+      lineHeight: `${lineHeight}px`,
+      height: lineHeight,
+      textAlign: (ov.alignment ?? 'center') as React.CSSProperties['textAlign'],
+      whiteSpace: 'pre',
+      overflow: 'hidden',
+      ...(ov.background_box ? { background: 'rgba(0,0,0,0.55)', padding: '0 3px', borderRadius: 2 } : {}),
+      ...(ov.outline ? { textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' } : {}),
+    }
+
     return (
-      <div
-        style={{
-          width: w, height: h,
-          background: '#0e0e0e',
-          borderRadius: 4,
-          overflow: 'hidden',
-          display: 'flex',
-          alignItems: pos.items,
-          justifyContent: pos.justify,
-          border: '1px solid #333',
-          flexShrink: 0,
-          padding: margin,
-          boxSizing: 'border-box',
-        }}
-      >
-        <div
-          style={{
-            color, fontFamily, fontSize,
-            lineHeight: 1.25,
-            textAlign: (ov.alignment ?? 'center') as CanvasTextAlign,
-            width: 'fit-content',
-            maxWidth: '100%',
-            wordBreak: 'break-word',
-            whiteSpace: 'pre-wrap',
-            ...(ov.background_box
-              ? { background: 'rgba(0,0,0,0.55)', padding: '1px 3px', borderRadius: 2 }
-              : {}),
-          }}
-        >
-          {displayText}
+      <div style={{ width: w, height: h, background: '#0e0e0e', borderRadius: 4, overflow: 'hidden', border: '1px solid #333', flexShrink: 0, position: 'relative', boxSizing: 'border-box' }}>
+        <div style={{ position: 'absolute', left: blockLeft, width: blockW, ...vertStyle }}>
+          {previewLines.map((line, i) =>
+            line ? <div key={i} style={textStyle}>{line}</div> : <div key={i} style={{ height: lineHeight }} />
+          )}
         </div>
       </div>
     )
@@ -778,16 +794,27 @@ function BatchStylePopover({
                     )}
                   </div>
 
-                  {/* Background box */}
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={ov.background_box}
-                      onChange={e => onChange({ textOverlay: { ...ov, background_box: e.target.checked } })}
-                      className="rounded border-stone-600 bg-stone-800 accent-brand-500"
-                    />
-                    <span className="text-[10px] text-stone-400">Background box</span>
-                  </label>
+                  {/* Background box + Outline */}
+                  <div className="flex gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ov.background_box}
+                        onChange={e => onChange({ textOverlay: { ...ov, background_box: e.target.checked } })}
+                        className="rounded border-stone-600 bg-stone-800 accent-brand-500"
+                      />
+                      <span className="text-[10px] text-stone-400">Background box</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ov.outline ?? false}
+                        onChange={e => onChange({ textOverlay: { ...ov, outline: e.target.checked } })}
+                        className="rounded border-stone-600 bg-stone-800 accent-brand-500"
+                      />
+                      <span className="text-[10px] text-stone-400">Outline</span>
+                    </label>
+                  </div>
 
                   {/* Position grid */}
                   <div>
@@ -844,6 +871,25 @@ function BatchStylePopover({
                       step={0.002}
                       value={ov.font_size_pct ?? 0.045}
                       onChange={e => onChange({ textOverlay: { ...ov, font_size_pct: parseFloat(e.target.value) } })}
+                      className="w-full accent-brand-500"
+                    />
+                  </div>
+
+                  {/* Margin */}
+                  <div>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <p className="text-[9px] font-semibold tracking-widest uppercase text-stone-600">Margin</p>
+                      <span className="text-[10px] font-mono text-stone-300">
+                        {Math.round((ov.margin_pct ?? 0.05) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={0.30}
+                      step={0.01}
+                      value={ov.margin_pct ?? 0.05}
+                      onChange={e => onChange({ textOverlay: { ...ov, margin_pct: parseFloat(e.target.value) } })}
                       className="w-full accent-brand-500"
                     />
                   </div>

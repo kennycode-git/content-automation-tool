@@ -16,6 +16,8 @@ from itertools import cycle
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from PIL import ImageFont
+
 logger = logging.getLogger(__name__)
 
 
@@ -126,17 +128,18 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
         hex_color = COLOR_MAP.get(color_key, "ffffff")
 
     fontsize = max(8, int(height * overlay.get("font_size_pct", 0.045)))
-    mx, my = int(width * 0.05), int(height * 0.05)
+    margin_pct = float(overlay.get("margin_pct", 0.05))
+    mx, my = int(width * margin_pct), int(height * margin_pct)
     position = overlay.get("position", "bottom-center")
     vert, horiz = position.split("-", 1)
-    x = {"left": str(mx), "center": "(w-tw)/2", "right": f"w-tw-{mx}"}.get(horiz, "(w-tw)/2")
+    alignment = overlay.get("alignment", "center")
     font_path_filter = os.path.basename(font_path)
 
     # Word-wrap text to fit the frame width, then split into individual lines.
     # Each line becomes its own drawtext filter so ffmpeg renders them at the
     # correct vertical positions — matching the preview's natural CSS word-wrap.
     # Approximate character width = 0.52 * fontsize (proportional serif/sans average).
-    usable_width = width * 0.88  # 6% margin each side
+    usable_width = width * (1.0 - 2 * margin_pct)
     chars_per_line = max(10, int(usable_width / (fontsize * 0.52)))
 
     raw = overlay.get("text", "").rstrip("\r\n")
@@ -149,6 +152,34 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
             lines.append("")  # preserve intentional blank lines as spacers
     line_height = max(1, int(fontsize * 1.25))
     n = len(lines)
+
+    # Measure actual pixel width of the widest line using PIL font metrics.
+    # This gives accurate block centering — widest line dead-centre on screen,
+    # others aligned within that block. Same approach as TikTok / CapCut.
+    try:
+        pil_font = ImageFont.truetype(font_path, fontsize)
+        measured_widths = [int(pil_font.getlength(ln)) for ln in lines if ln]
+        max_block_w = min(max(measured_widths, default=1), int(usable_width))
+    except Exception:
+        char_w = fontsize * 0.52
+        max_line_len = max((len(ln) for ln in lines if ln), default=10)
+        max_block_w = min(int(max_line_len * char_w), int(usable_width))
+
+    # block_left: position the text block horizontally based on position grid
+    if horiz == "left":
+        block_left = mx
+    elif horiz == "right":
+        block_left = width - mx - max_block_w
+    else:  # center
+        block_left = (width - max_block_w) // 2
+
+    # Per-line x: alignment justifies lines within the block
+    if alignment == "left":
+        x = str(block_left)
+    elif alignment == "right":
+        x = f"({block_left}+{max_block_w}-tw)"
+    else:  # center
+        x = f"({block_left}+({max_block_w}-tw)/2)"
 
     filters = []
     for i, line in enumerate(lines):
@@ -171,6 +202,8 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
         ]
         if overlay.get("background_box"):
             parts += ["box=1", "boxcolor=000000@0.55", "boxborderw=18"]
+        if overlay.get("outline"):
+            parts += ["borderw=2", "bordercolor=000000ff"]
         filters.append("drawtext=" + ":".join(parts))
 
     return ",".join(filters) if filters else None
