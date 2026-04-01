@@ -111,10 +111,10 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
         {onShowTour && (
           <button
             onClick={onShowTour}
-            className="text-xs text-stone-500 hover:text-stone-300 transition"
-            title="Show tour"
+            className="text-xs font-medium px-2.5 py-1 rounded-md border border-stone-700 text-stone-400 hover:text-stone-200 hover:border-stone-500 transition"
+            title="Show tutorial"
           >
-            ?
+            Tutorial
           </button>
         )}
 
