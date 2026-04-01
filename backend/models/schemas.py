@@ -124,7 +124,7 @@ class CustomGradeParams(BaseModel):
 class LayeredConfig(BaseModel):
     background_video_urls: List[str] = Field(..., min_length=1, max_length=5)
     foreground_opacity: float = Field(default=0.55, ge=0.0, le=1.0)
-    foreground_speed: float = Field(default=0.25, ge=0.05, le=0.5)
+    foreground_speed: float = Field(default=0.25, ge=0.05, le=5.0)
     grade_target: str = Field(default="both")
     crossfade_duration: float = Field(default=0.5, ge=0.2, le=2.0)
 
