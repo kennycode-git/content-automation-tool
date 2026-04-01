@@ -16,6 +16,7 @@ import type { UserPhilosopher } from '../lib/api'
 import type { CustomGradeParams } from './SettingsPanel'
 import { THEME_GRADE_DEFAULTS } from './SettingsPanel'
 import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, OverlayAlignment } from '../lib/api'
+import BackgroundVideoPicker from './BackgroundVideoPicker'
 
 export type { TextOverlayConfig }
 
@@ -102,6 +103,7 @@ export interface BatchOutput {
   custom_grade_params?: CustomGradeParams
   accent_folder_override?: string | null // undefined = inherit global, null = explicit none
   text_overlay?: TextOverlayConfig | null
+  layered_background_video_urls?: string[]
   philosopher?: string | null            // resolved philosopher key, null = none
   grade_philosopher?: boolean            // grade philosopher images with color theme
   philosopher_is_user?: boolean
@@ -114,6 +116,7 @@ interface VisualBatch {
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null           // undefined = inherit global, null = explicit none
   textOverlay?: TextOverlayConfig | null
+  layeredBackgroundVideoUrls?: string[]
   usePhilosopher?: boolean               // true = include philosopher images
   philosopherOverride?: string | null    // manual pick; undefined = use auto-detected
   gradePhilosopher?: boolean             // grade philosopher images (default true)
@@ -135,6 +138,7 @@ interface Props {
   pendingBundles?: PendingBundle[] | null
   onBundlesHandled?: () => void
   onOpenPrompt?: () => void
+  mode?: 'images' | 'clips' | 'layered'
 }
 
 // ── Style popover constants ────────────────────────────────────────────────────
@@ -504,12 +508,14 @@ function BatchStylePopover({
   onClose,
   onApplyOverlayToAll,
   userPhilosophers = [],
+  mode = 'images',
 }: {
   batch: VisualBatch
   onChange: (patch: Partial<VisualBatch>) => void
   onClose: () => void
   onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
   userPhilosophers?: UserPhilosopher[]
+  mode?: 'images' | 'clips' | 'layered'
 }) {
   const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
   const [fineTuneOpen, setFineTuneOpen] = useState(batch.colorTheme === 'custom')
@@ -769,40 +775,40 @@ function BatchStylePopover({
             )}
           </div>
 
-          <hr className="border-stone-800" />
+          {mode === 'images' && (
+            <>
+              <hr className="border-stone-800" />
 
-          {/* Accent */}
-          <div>
-            <p className="mb-2 text-[10px] font-semibold tracking-widest uppercase text-stone-500">Accent images</p>
-            <div className="flex flex-wrap gap-1.5">
-              {BATCH_ACCENT_OPTIONS.map(opt => {
-                const key = opt.value === undefined ? '_global' : opt.value === null ? '_none' : opt.value
-                const isSelected = batch.accentFolder === opt.value
-                const hasPreview = typeof opt.value === 'string'
-                return (
-                  <button
-                    key={key}
-                    onClick={() => onChange({ accentFolder: opt.value })}
-                    onMouseEnter={hasPreview ? () => setHoveredPreview({ type: 'accent', value: opt.value as string }) : undefined}
-                    onMouseLeave={hasPreview ? () => setHoveredPreview(null) : undefined}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition ${
-                      isSelected
-                        ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
-                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
-                    {opt.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+              <div>
+                <p className="mb-2 text-[10px] font-semibold tracking-widest uppercase text-stone-500">Accent images</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {BATCH_ACCENT_OPTIONS.map(opt => {
+                    const key = opt.value === undefined ? '_global' : opt.value === null ? '_none' : opt.value
+                    const isSelected = batch.accentFolder === opt.value
+                    const hasPreview = typeof opt.value === 'string'
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => onChange({ accentFolder: opt.value })}
+                        onMouseEnter={hasPreview ? () => setHoveredPreview({ type: 'accent', value: opt.value as string }) : undefined}
+                        onMouseLeave={hasPreview ? () => setHoveredPreview(null) : undefined}
+                        className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition ${
+                          isSelected
+                            ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
+                            : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
 
-          <hr className="border-stone-800" />
+              <hr className="border-stone-800" />
 
-          {/* Philosopher */}
-          {(() => {
+              {(() => {
             const detectedKey = detectPhilosopher(batch.title)
             const detectedDisplay = detectedKey ? PHILOSOPHER_LIST.find(p => p.key === detectedKey)?.display : null
             const resolvedKey = batch.philosopherOverride !== undefined ? batch.philosopherOverride : detectedKey
@@ -864,7 +870,9 @@ function BatchStylePopover({
             )
           })()}
 
-          <hr className="border-stone-800" />
+              <hr className="border-stone-800" />
+            </>
+          )}
 
           {/* Text overlay */}
           <div>
@@ -1186,7 +1194,7 @@ function parseClassicIntoBatches(text: string): BatchOutput[] {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHandled, pendingBundles, onBundlesHandled, onOpenPrompt }: Props) {
+export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHandled, pendingBundles, onBundlesHandled, onOpenPrompt, mode = 'images' }: Props) {
   const [classicMode, setClassicMode] = useState(false)
   const [classicText, setClassicText] = useState<string>(() => {
     try { return localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CLASSIC_TEXT }
@@ -1207,7 +1215,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
 
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
     return vBatches.map((b, i) => {
-      const resolvedPhilosopher = b.usePhilosopher
+      const resolvedPhilosopher = mode === 'images' && b.usePhilosopher
         ? (b.philosopherOverride !== undefined ? b.philosopherOverride : detectPhilosopher(b.title))
         : null
       const resolvedColorTheme = b.colorTheme?.startsWith('user:')
@@ -1216,14 +1224,15 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
       return {
         title: b.title.trim() || null,
         terms: parseBatchText(b.terms),
-        uploaded_image_paths: paths[i] ?? [],
+        uploaded_image_paths: mode === 'images' ? (paths[i] ?? []) : undefined,
         color_theme: resolvedColorTheme,
         custom_grade_params: b.customGradeParams,
-        accent_folder_override: b.accentFolder,
+        accent_folder_override: mode === 'images' ? b.accentFolder : undefined,
         text_overlay: b.textOverlay,
+        layered_background_video_urls: mode === 'layered' ? (b.layeredBackgroundVideoUrls ?? []) : undefined,
         philosopher: resolvedPhilosopher || undefined,
-        grade_philosopher: resolvedPhilosopher ? (b.gradePhilosopher !== false) : undefined,
-        philosopher_is_user: resolvedPhilosopher && b.philosopherIsUser ? true : undefined,
+        grade_philosopher: mode === 'images' && resolvedPhilosopher ? (b.gradePhilosopher !== false) : undefined,
+        philosopher_is_user: mode === 'images' && resolvedPhilosopher && b.philosopherIsUser ? true : undefined,
       }
     })
   }
@@ -1445,18 +1454,19 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
           {batches.map((batch, idx) => {
             const themeOpt = BATCH_THEME_OPTIONS.find(o => o.value === batch.colorTheme)
             const hasThemeOverride = batch.colorTheme !== undefined
-            const hasAccentOverride = batch.accentFolder !== undefined
+            const hasAccentOverride = mode === 'images' && batch.accentFolder !== undefined
             const hasTextOverlay = !!(batch.textOverlay?.enabled && batch.textOverlay.text.trim())
-            const hasOverride = hasThemeOverride || hasAccentOverride || hasTextOverlay
+            const hasLayeredBg = mode === 'layered' && (batch.layeredBackgroundVideoUrls?.length ?? 0) > 0
+            const hasOverride = hasThemeOverride || hasAccentOverride || hasTextOverlay || hasLayeredBg
 
             return (
               <div
                 key={idx}
-                className={`rounded-xl border bg-stone-800 p-3 transition-colors ${dragOverIdx === idx ? 'border-brand-500/60 bg-stone-800/80' : 'border-stone-700'}`}
-                onDragOver={e => { e.preventDefault(); setDragOverIdx(idx) }}
-                onDragEnter={e => { e.preventDefault(); setDragOverIdx(idx) }}
-                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverIdx(null) }}
-                onDrop={e => { e.preventDefault(); setDragOverIdx(null); handleFileUpload(idx, e.dataTransfer.files) }}
+                className={`rounded-xl border bg-stone-800 p-3 transition-colors ${mode === 'images' && dragOverIdx === idx ? 'border-brand-500/60 bg-stone-800/80' : 'border-stone-700'}`}
+                onDragOver={mode === 'images' ? (e => { e.preventDefault(); setDragOverIdx(idx) }) : undefined}
+                onDragEnter={mode === 'images' ? (e => { e.preventDefault(); setDragOverIdx(idx) }) : undefined}
+                onDragLeave={mode === 'images' ? (e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverIdx(null) }) : undefined}
+                onDrop={mode === 'images' ? (e => { e.preventDefault(); setDragOverIdx(null); handleFileUpload(idx, e.dataTransfer.files) }) : undefined}
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 flex-1 min-w-0 group">
@@ -1484,6 +1494,14 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                   placeholder="one search term per line"
                   className="w-full rounded-lg border border-stone-700 bg-stone-900 px-2 py-1.5 font-mono text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
                 />
+
+                {mode === 'layered' && (
+                  <BackgroundVideoPicker
+                    selectedUrls={batch.layeredBackgroundVideoUrls ?? []}
+                    onChange={urls => handleBatchOverride(idx, { layeredBackgroundVideoUrls: urls })}
+                    compact
+                  />
+                )}
 
                 {/* Bottom row: style override button + image upload */}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1526,24 +1544,26 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                         onClose={() => setOpenPopover(null)}
                         onApplyOverlayToAll={batches.length > 1 ? handleApplyOverlayToAll : undefined}
                         userPhilosophers={userPhilosophers}
+                        mode={mode}
                       />
                     )}
                   </div>
 
-                  {/* Image upload */}
-                  <label className="cursor-pointer rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200">
-                    {uploading[idx] ? 'Uploading…' : 'Upload photos'}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      multiple
-                      className="hidden"
-                      disabled={uploading[idx]}
-                      onChange={e => handleFileUpload(idx, e.target.files)}
-                    />
-                  </label>
+                  {mode === 'images' && (
+                    <label className="cursor-pointer rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200">
+                      {uploading[idx] ? 'Uploading…' : 'Upload photos'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        className="hidden"
+                        disabled={uploading[idx]}
+                        onChange={e => handleFileUpload(idx, e.target.files)}
+                      />
+                    </label>
+                  )}
 
-                  {(uploadedPaths[idx]?.length ?? 0) > 0 && (
+                  {mode === 'images' && (uploadedPaths[idx]?.length ?? 0) > 0 && (
                     uploadedPaths[idx].map((path, pi) => (
                       <span key={pi} className="flex items-center gap-1 rounded border border-stone-700 bg-stone-900 px-2 py-0.5 text-xs text-stone-400">
                         <span className="max-w-[120px] truncate">{path.split('/').pop()}</span>
