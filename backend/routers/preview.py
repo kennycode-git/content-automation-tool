@@ -79,6 +79,7 @@ def _stage_batch_sync(
     graded_dir: str,
     page_start: int = 1,
     philosopher: str | None = None,
+    philosopher_count: int = 3,
     grade_philosopher: bool = False,
     philosopher_is_user: bool = False,
     user_id: str = "",
@@ -172,14 +173,17 @@ def _stage_batch_sync(
     # --- Apply colour grading ---
     render_dir = apply_theme_grading(images_dir, graded_dir, color_theme, custom_params=custom_grade_params)
 
-    # --- Philosopher images (user-uploaded only; system philosophers are injected at render time) ---
+    # --- Philosopher images ---
     phil_out_dir: str | None = None
-    if philosopher and philosopher_is_user and user_id and phil_dir:
-        from services.storage import list_user_philosopher_images, download_user_philosopher_image
-        phil_paths = list_user_philosopher_images(user_id, philosopher)
-        if phil_paths:
-            os.makedirs(phil_dir, exist_ok=True)
-            for idx, path in enumerate(phil_paths, 1):
+    if philosopher and phil_dir:
+        import random
+        os.makedirs(phil_dir, exist_ok=True)
+
+        if philosopher_is_user and user_id:
+            from services.storage import list_user_philosopher_images, download_user_philosopher_image
+            phil_paths = list_user_philosopher_images(user_id, philosopher)
+            selected = random.sample(phil_paths, min(philosopher_count, len(phil_paths))) if phil_paths else []
+            for idx, path in enumerate(selected, 1):
                 try:
                     data = download_user_philosopher_image(path)
                     img = PilImage.open(io.BytesIO(data)).convert("RGB")
@@ -187,19 +191,35 @@ def _stage_batch_sync(
                     scale = max(width / iw, height / ih)
                     nw, nh = int(iw * scale), int(ih * scale)
                     img = img.resize((nw, nh), PilImage.LANCZOS)
-                    left = (nw - width) // 2
-                    top = (nh - height) // 2
+                    left, top = (nw - width) // 2, (nh - height) // 2
+                    img = img.crop((left, top, left + width, top + height))
+                    img.save(os.path.join(phil_dir, f"phil_{idx:03d}.jpg"), "JPEG", quality=92)
+                except Exception as e:
+                    logger.warning("Preview: failed to download user philosopher image %s: %s", path, e)
+        else:
+            from services.storage import list_accent_images, download_accent_image
+            phil_paths = list_accent_images(f"philosopher/{philosopher}")
+            selected = random.sample(phil_paths, min(philosopher_count, len(phil_paths))) if phil_paths else []
+            for idx, path in enumerate(selected, 1):
+                try:
+                    data = download_accent_image(path)
+                    img = PilImage.open(io.BytesIO(data)).convert("RGB")
+                    iw, ih = img.size
+                    scale = max(width / iw, height / ih)
+                    nw, nh = int(iw * scale), int(ih * scale)
+                    img = img.resize((nw, nh), PilImage.LANCZOS)
+                    left, top = (nw - width) // 2, (nh - height) // 2
                     img = img.crop((left, top, left + width, top + height))
                     img.save(os.path.join(phil_dir, f"phil_{idx:03d}.jpg"), "JPEG", quality=92)
                 except Exception as e:
                     logger.warning("Preview: failed to download philosopher image %s: %s", path, e)
 
-            if os.listdir(phil_dir):
-                if grade_philosopher and color_theme and color_theme != "none":
-                    phil_graded = phil_dir + "_graded"
-                    phil_out_dir = apply_theme_grading(phil_dir, phil_graded, color_theme)
-                else:
-                    phil_out_dir = phil_dir
+        if os.listdir(phil_dir):
+            if grade_philosopher and color_theme and color_theme != "none":
+                phil_graded = phil_dir + "_graded"
+                phil_out_dir = apply_theme_grading(phil_dir, phil_graded, color_theme, custom_params=custom_grade_params)
+            else:
+                phil_out_dir = phil_dir
 
     return render_dir, phil_out_dir, pexels_fallback
 
@@ -260,6 +280,7 @@ async def preview_stage(
                     images_dir=images_dir,
                     graded_dir=graded_dir,
                     philosopher=batch.philosopher or None,
+                    philosopher_count=batch.philosopher_count,
                     grade_philosopher=batch.grade_philosopher,
                     philosopher_is_user=batch.philosopher_is_user,
                     user_id=user_id,

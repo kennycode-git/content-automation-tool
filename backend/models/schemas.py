@@ -334,7 +334,8 @@ class PreviewBatchRequest(BaseModel):
     uploaded_image_paths: Optional[List[str]] = None
     color_theme: Optional[str] = None
     custom_grade_params: Optional[CustomGradeParams] = None
-    philosopher: Optional[str] = None
+    philosopher: Optional[str] = Field(default=None)
+    philosopher_count: int = Field(default=3, ge=1, le=5)
     grade_philosopher: bool = False
     philosopher_is_user: bool = False
 
