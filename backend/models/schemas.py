@@ -274,6 +274,9 @@ class PreviewBatchRequest(BaseModel):
     uploaded_image_paths: Optional[List[str]] = None
     color_theme: Optional[str] = None
     custom_grade_params: Optional[CustomGradeParams] = None
+    philosopher: Optional[str] = None
+    grade_philosopher: bool = False
+    philosopher_is_user: bool = False
 
     @field_validator("search_terms")
     @classmethod
@@ -320,6 +323,7 @@ class PreviewStageRequest(BaseModel):
 class PreviewImageItem(BaseModel):
     storage_path: str
     signed_url: str
+    is_philosopher: bool = False
 
 
 class PreviewBatchResult(BaseModel):
