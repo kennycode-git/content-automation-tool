@@ -74,6 +74,23 @@ export interface TextOverlayConfig {
   outline?: boolean
 }
 
+export type VoiceoverProvider = 'elevenlabs'
+export type VoiceoverModel = 'eleven_v3' | 'eleven_multilingual_v2' | 'eleven_flash_v2_5' | 'eleven_turbo_v2_5'
+export type VoiceoverScriptMode = 'auto_from_batch' | 'custom'
+export type SubtitleFormat = 'burned' | 'srt'
+
+export interface AiVoiceoverConfig {
+  enabled: boolean
+  provider: VoiceoverProvider
+  model_id: VoiceoverModel
+  voice_id?: string | null
+  voice_label?: string | null
+  script_mode: VoiceoverScriptMode
+  script_text?: string | null
+  subtitles_enabled: boolean
+  subtitle_format: SubtitleFormat
+}
+
 export interface LayeredConfig {
   background_video_urls: string[]
   foreground_opacity: number
@@ -99,9 +116,11 @@ export interface GenerateRequest {
   image_source?: 'unsplash' | 'pexels' | 'both'
   custom_grade_params?: CustomGradeParams
   philosopher?: string | null
+  philosopher_count?: number
   grade_philosopher?: boolean
   philosopher_is_user?: boolean
   text_overlay?: TextOverlayConfig | null
+  ai_voiceover?: AiVoiceoverConfig | null
   layered_config?: LayeredConfig | null
 }
 
@@ -129,6 +148,7 @@ export interface JobStatus {
   preset_name?: string | null
   preview_images?: string[] | null
   custom_grade_params?: CustomGradeParams | null
+  ai_voiceover?: AiVoiceoverConfig | null
   images_cached?: boolean | null
   created_at: string
   completed_at: string | null
@@ -586,6 +606,7 @@ export interface ClipGenerateRequest {
   max_clip_duration?: number
   batch_title?: string | null
   text_overlay?: TextOverlayConfig | null
+  ai_voiceover?: AiVoiceoverConfig | null
 }
 
 export async function fetchVideoClips(

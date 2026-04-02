@@ -122,9 +122,11 @@ async def generate(
         image_source=body.image_source,
         custom_grade_params=body.custom_grade_params.model_dump() if body.custom_grade_params else None,
         philosopher=body.philosopher or None,
+        philosopher_count=body.philosopher_count,
         grade_philosopher=body.grade_philosopher,
         philosopher_is_user=body.philosopher_is_user,
         text_overlay=body.text_overlay.model_dump() if body.text_overlay else None,
+        ai_voiceover=body.ai_voiceover.model_dump() if body.ai_voiceover else None,
         layered_config=body.layered_config.model_dump() if body.layered_config else None,
     )
     job_id = await create_job(user_id, config, db)

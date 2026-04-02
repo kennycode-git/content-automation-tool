@@ -271,10 +271,12 @@ export default function Dashboard({ session }: Props) {
           preset_name: appliedPresetName ?? undefined,
           accent_folder: effectiveAccent ?? undefined,
           philosopher: batch.philosopher ?? undefined,
+          philosopher_count: batch.philosopher_count,
           grade_philosopher: batch.grade_philosopher || undefined,
           philosopher_is_user: batch.philosopher_is_user || undefined,
           image_source: resolvedSource,
           text_overlay: batch.text_overlay ?? undefined,
+          ai_voiceover: batch.ai_voiceover ?? undefined,
         })
         submitted.push({ jobId: res.job_id, title: batch.title })
       }
@@ -422,11 +424,13 @@ export default function Dashboard({ session }: Props) {
           uploaded_only: true,
           accent_folder: effectiveAccent ?? undefined,
           philosopher: originalBatch?.philosopher ?? undefined,
+          philosopher_count: originalBatch?.philosopher_count,
           grade_philosopher: originalBatch?.grade_philosopher || undefined,
           philosopher_is_user: originalBatch?.philosopher_is_user || undefined,
           preset_name: appliedPresetName ?? undefined,
           image_source: resolvedSource,
           text_overlay: originalBatch?.text_overlay ?? undefined,
+          ai_voiceover: originalBatch?.ai_voiceover ?? undefined,
         })
         submitted.push({ jobId: res.job_id, title: batch.batch_title })
       }
@@ -483,6 +487,7 @@ export default function Dashboard({ session }: Props) {
         batch_title: job.batch_title ?? undefined,
         preset_name: job.preset_name ?? undefined,
         custom_grade_params: job.custom_grade_params ?? undefined,
+        ai_voiceover: job.ai_voiceover ?? undefined,
       })
       setPendingCount(prev => prev + 1)
       setActiveJobs(prev => [{ jobId: res.job_id, title: job.batch_title ?? null }, ...prev])
@@ -548,6 +553,7 @@ export default function Dashboard({ session }: Props) {
         ...merged,
         batch_title: batchTitle ? `${batchTitle} · ${theme}` : theme,
         image_source: resolvedSource,
+        ai_voiceover: undefined,
       })
       setActiveJobs(prev => [{ jobId: res.job_id, title: batchTitle ? `${batchTitle} · ${theme}` : theme }, ...prev])
     } catch (e: unknown) {
@@ -639,6 +645,7 @@ export default function Dashboard({ session }: Props) {
         max_clip_duration: clipsSettings.max_clip_duration,
         batch_title: batchTitle,
         text_overlay: getClipBatchOverlay(clipPreviewBatch),
+        ai_voiceover: clipPreviewBatch.ai_voiceover ?? undefined,
       })
       setActiveJobs(prev => [{ jobId: res.job_id, title: batchTitle }, ...prev])
       setFetchedClips(null)
@@ -689,6 +696,7 @@ export default function Dashboard({ session }: Props) {
           max_clip_duration: clipsSettings.max_clip_duration,
           batch_title: title,
           text_overlay: getClipBatchOverlay(batch),
+          ai_voiceover: batch.ai_voiceover ?? undefined,
         })
         submitted.push({ jobId: job.job_id, title: batch.title })
       }
@@ -746,6 +754,7 @@ export default function Dashboard({ session }: Props) {
           batch_title: batch.title,
           image_source: resolvedSource,
           text_overlay: batch.text_overlay ?? undefined,
+          ai_voiceover: batch.ai_voiceover ?? undefined,
           layered_config: lc,
         })
         submitted.push({ jobId: res.job_id, title: batch.title })

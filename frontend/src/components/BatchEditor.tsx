@@ -15,8 +15,9 @@ import { uploadImages, listUserPhilosophers } from '../lib/api'
 import type { UserPhilosopher } from '../lib/api'
 import type { CustomGradeParams } from './SettingsPanel'
 import { THEME_GRADE_DEFAULTS } from './SettingsPanel'
-import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, OverlayAlignment } from '../lib/api'
+import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, OverlayAlignment, AiVoiceoverConfig } from '../lib/api'
 import BackgroundVideoPicker from './BackgroundVideoPicker'
+import VoiceoverPanel, { DEFAULT_AI_VOICEOVER } from './VoiceoverPanel'
 
 export type { TextOverlayConfig }
 
@@ -103,8 +104,10 @@ export interface BatchOutput {
   custom_grade_params?: CustomGradeParams
   accent_folder_override?: string | null // undefined = inherit global, null = explicit none
   text_overlay?: TextOverlayConfig | null
+  ai_voiceover?: AiVoiceoverConfig | null
   layered_background_video_urls?: string[]
   philosopher?: string | null            // resolved philosopher key, null = none
+  philosopher_count?: number             // 1–5 images to inject
   grade_philosopher?: boolean            // grade philosopher images with color theme
   philosopher_is_user?: boolean
 }
@@ -116,9 +119,11 @@ interface VisualBatch {
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null           // undefined = inherit global, null = explicit none
   textOverlay?: TextOverlayConfig | null
+  aiVoiceover?: AiVoiceoverConfig | null
   layeredBackgroundVideoUrls?: string[]
   usePhilosopher?: boolean               // true = include philosopher images
   philosopherOverride?: string | null    // manual pick; undefined = use auto-detected
+  philosopherCount?: number              // 1–5 images to inject (default 3)
   gradePhilosopher?: boolean             // grade philosopher images (default true)
   philosopherIsUser?: boolean            // true = user's own philosopher (not system)
 }
@@ -502,11 +507,21 @@ function AdjustIcon() {
   )
 }
 
+function NewFeatureBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-amber-300">
+      <span aria-hidden="true">✦</span>
+      <span>New</span>
+    </span>
+  )
+}
+
 function BatchStylePopover({
   batch,
   onChange,
   onClose,
   onApplyOverlayToAll,
+  onApplyVoiceoverToAll,
   userPhilosophers = [],
   mode = 'images',
 }: {
@@ -514,6 +529,7 @@ function BatchStylePopover({
   onChange: (patch: Partial<VisualBatch>) => void
   onClose: () => void
   onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
+  onApplyVoiceoverToAll?: (voiceover: AiVoiceoverConfig) => void
   userPhilosophers?: UserPhilosopher[]
   mode?: 'images' | 'clips' | 'layered'
 }) {
@@ -856,6 +872,21 @@ function BatchStylePopover({
                       )}
                     </select>
                     <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-stone-500">Images to inject</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={1}
+                          max={5}
+                          step={1}
+                          value={batch.philosopherCount ?? 3}
+                          onChange={e => onChange({ philosopherCount: Number(e.target.value) })}
+                          className="w-20 accent-amber-500"
+                        />
+                        <span className="text-[10px] text-stone-300 w-3 text-right">{batch.philosopherCount ?? 3}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
                       <span className="text-[10px] text-stone-500">Grade images with theme</span>
                       <button
                         onClick={() => onChange({ gradePhilosopher: batch.gradePhilosopher === false })}
@@ -1157,6 +1188,52 @@ function BatchStylePopover({
             })()}
           </div>
 
+          <hr className="border-stone-800" />
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <NewFeatureBadge />
+                <span className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Voice + subtitles</span>
+              </div>
+              <button
+                onClick={() => {
+                  const current = batch.aiVoiceover
+                  if (!current) {
+                    onChange({ aiVoiceover: { ...DEFAULT_AI_VOICEOVER, enabled: true } })
+                  } else {
+                    onChange({ aiVoiceover: { ...current, enabled: !current.enabled } })
+                  }
+                }}
+                className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+                  batch.aiVoiceover?.enabled ? 'bg-brand-500' : 'bg-stone-700'
+                }`}
+              >
+                <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                  batch.aiVoiceover?.enabled ? 'translate-x-3.5' : 'translate-x-0.5'
+                }`} />
+              </button>
+            </div>
+
+            {batch.aiVoiceover?.enabled && (
+              <div className="space-y-2.5">
+                <VoiceoverPanel
+                  value={batch.aiVoiceover}
+                  onChange={next => onChange({ aiVoiceover: next })}
+                />
+
+                {onApplyVoiceoverToAll && (
+                  <button
+                    onClick={() => onApplyVoiceoverToAll(batch.aiVoiceover ?? { ...DEFAULT_AI_VOICEOVER, enabled: true })}
+                    className="w-full rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-200 hover:border-amber-400/40 hover:bg-amber-500/10 transition"
+                  >
+                    Apply voiceover shell to all batches
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
     </>
@@ -1229,8 +1306,10 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
         custom_grade_params: b.customGradeParams,
         accent_folder_override: mode === 'images' ? b.accentFolder : undefined,
         text_overlay: b.textOverlay,
+        ai_voiceover: b.aiVoiceover,
         layered_background_video_urls: mode === 'layered' ? (b.layeredBackgroundVideoUrls ?? []) : undefined,
         philosopher: resolvedPhilosopher || undefined,
+        philosopher_count: mode === 'images' && resolvedPhilosopher ? (b.philosopherCount ?? 3) : undefined,
         grade_philosopher: mode === 'images' && resolvedPhilosopher ? (b.gradePhilosopher !== false) : undefined,
         philosopher_is_user: mode === 'images' && resolvedPhilosopher && b.philosopherIsUser ? true : undefined,
       }
@@ -1326,6 +1405,12 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
 
   function handleApplyOverlayToAll(overlay: TextOverlayConfig) {
     const updated = batches.map(b => ({ ...b, textOverlay: overlay }))
+    setBatches(updated)
+    onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
+  }
+
+  function handleApplyVoiceoverToAll(voiceover: AiVoiceoverConfig) {
+    const updated = batches.map(b => ({ ...b, aiVoiceover: voiceover }))
     setBatches(updated)
     onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
   }
@@ -1456,8 +1541,9 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
             const hasThemeOverride = batch.colorTheme !== undefined
             const hasAccentOverride = mode === 'images' && batch.accentFolder !== undefined
             const hasTextOverlay = !!(batch.textOverlay?.enabled && batch.textOverlay.text.trim())
+            const hasVoiceover = !!(batch.aiVoiceover?.enabled && (batch.aiVoiceover.voice_id ?? '').trim())
             const hasLayeredBg = mode === 'layered' && (batch.layeredBackgroundVideoUrls?.length ?? 0) > 0
-            const hasOverride = hasThemeOverride || hasAccentOverride || hasTextOverlay || hasLayeredBg
+            const hasOverride = hasThemeOverride || hasAccentOverride || hasTextOverlay || hasVoiceover || hasLayeredBg
 
             return (
               <div
@@ -1534,7 +1620,11 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                         {hasTextOverlay && (
                           <span className="text-stone-500 ml-1">· Text</span>
                         )}
+                        {hasVoiceover && (
+                          <span className="text-amber-300 ml-1">· Voice</span>
+                        )}
                       </span>
+                      {!hasVoiceover && <NewFeatureBadge />}
                     </button>
 
                     {openPopover === idx && (
@@ -1543,6 +1633,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                         onChange={patch => handleBatchOverride(idx, patch)}
                         onClose={() => setOpenPopover(null)}
                         onApplyOverlayToAll={batches.length > 1 ? handleApplyOverlayToAll : undefined}
+                        onApplyVoiceoverToAll={batches.length > 1 ? handleApplyVoiceoverToAll : undefined}
                         userPhilosophers={userPhilosophers}
                         mode={mode}
                       />

@@ -72,9 +72,11 @@ class JobConfig:
     image_source: str = "unsplash"
     custom_grade_params: Optional[Dict] = None
     philosopher: Optional[str] = None
+    philosopher_count: int = 3
     grade_philosopher: bool = False
     philosopher_is_user: bool = False
     text_overlay: Optional[Dict] = None
+    ai_voiceover: Optional[Dict] = None
     layered_config: Optional[Dict] = None
 
     def to_dict(self) -> dict:
@@ -95,6 +97,8 @@ class JobConfig:
             d["custom_grade_params"] = self.custom_grade_params
         if self.text_overlay:
             d["text_overlay"] = self.text_overlay
+        if self.ai_voiceover:
+            d["ai_voiceover"] = self.ai_voiceover
         return d
 
     def parse_resolution(self):
@@ -511,7 +515,7 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
         # --- Step 2.8: Inject philosopher images (optionally graded) ---
         if config.philosopher:
             await update_job_status(job_id, user_id, "running", db, progress_message="Adding philosopher images…")
-            max_phil = max(1, needed_frames // 5)  # ~20% of frames
+            max_phil = config.philosopher_count
             phil_staging = os.path.join(tmp_root, "phil_staging")
             if config.philosopher_is_user:
                 await asyncio.to_thread(

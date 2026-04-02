@@ -58,6 +58,14 @@ ALLOWED_OVERLAY_POSITIONS = {
     "bottom-left", "bottom-center", "bottom-right",
 }
 ALLOWED_OVERLAY_ALIGNMENTS = {"left", "center", "right"}
+ALLOWED_VOICEOVER_MODELS = {
+    "eleven_v3",
+    "eleven_multilingual_v2",
+    "eleven_flash_v2_5",
+    "eleven_turbo_v2_5",
+}
+ALLOWED_VOICEOVER_SCRIPT_MODES = {"auto_from_batch", "custom"}
+ALLOWED_SUBTITLE_FORMATS = {"burned", "srt"}
 
 
 class TextOverlayConfig(BaseModel):
@@ -110,6 +118,54 @@ class TextOverlayConfig(BaseModel):
         return v
 
 
+class AiVoiceoverConfig(BaseModel):
+    enabled: bool = False
+    provider: str = Field(default="elevenlabs")
+    model_id: str = Field(default="eleven_multilingual_v2")
+    voice_id: Optional[str] = Field(default=None, max_length=120)
+    voice_label: Optional[str] = Field(default=None, max_length=80)
+    script_mode: str = Field(default="auto_from_batch")
+    script_text: Optional[str] = Field(default=None, max_length=2000)
+    subtitles_enabled: bool = True
+    subtitle_format: str = Field(default="burned")
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        if v != "elevenlabs":
+            raise ValueError("provider must be 'elevenlabs'")
+        return v
+
+    @field_validator("model_id")
+    @classmethod
+    def validate_model_id(cls, v: str) -> str:
+        if v not in ALLOWED_VOICEOVER_MODELS:
+            raise ValueError(f"model_id must be one of: {', '.join(sorted(ALLOWED_VOICEOVER_MODELS))}")
+        return v
+
+    @field_validator("script_mode")
+    @classmethod
+    def validate_script_mode(cls, v: str) -> str:
+        if v not in ALLOWED_VOICEOVER_SCRIPT_MODES:
+            raise ValueError(f"script_mode must be one of: {', '.join(sorted(ALLOWED_VOICEOVER_SCRIPT_MODES))}")
+        return v
+
+    @field_validator("subtitle_format")
+    @classmethod
+    def validate_subtitle_format(cls, v: str) -> str:
+        if v not in ALLOWED_SUBTITLE_FORMATS:
+            raise ValueError(f"subtitle_format must be one of: {', '.join(sorted(ALLOWED_SUBTITLE_FORMATS))}")
+        return v
+
+    @model_validator(mode="after")
+    def validate_post_init(self) -> "AiVoiceoverConfig":
+        if self.enabled and not (self.voice_id or "").strip():
+            raise ValueError("voice_id is required when ai_voiceover is enabled")
+        if self.script_mode == "custom" and not (self.script_text or "").strip():
+            raise ValueError("script_text is required when script_mode is 'custom'")
+        return self
+
+
 class CustomGradeParams(BaseModel):
     """User-defined parametric colour grade applied via grade_custom() in image_grader.py."""
     brightness: float = Field(default=1.0, ge=0.0, le=2.0)
@@ -151,9 +207,11 @@ class GenerateRequest(BaseModel):
     image_source: str = Field(default="unsplash")
     custom_grade_params: Optional[CustomGradeParams] = None
     philosopher: Optional[str] = Field(default=None)
+    philosopher_count: int = Field(default=3, ge=1, le=5)
     grade_philosopher: bool = False
     philosopher_is_user: bool = False
     text_overlay: Optional[TextOverlayConfig] = None
+    ai_voiceover: Optional[AiVoiceoverConfig] = None
     layered_config: Optional[LayeredConfig] = None
 
     @field_validator("search_terms")
@@ -221,6 +279,7 @@ class JobStatusResponse(BaseModel):
     max_per_query: Optional[int] = None
     preset_name: Optional[str] = None
     preview_images: Optional[List[str]] = None
+    ai_voiceover: Optional[AiVoiceoverConfig] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 
@@ -241,6 +300,7 @@ class JobListItem(BaseModel):
     color_theme: Optional[str] = None
     max_per_query: Optional[int] = None
     preset_name: Optional[str] = None
+    ai_voiceover: Optional[AiVoiceoverConfig] = None
     images_cached: Optional[bool] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
@@ -395,6 +455,7 @@ class ClipGenerateRequest(BaseModel):
     max_clip_duration: int = Field(default=5, ge=3, le=10)
     batch_title: Optional[str] = Field(default=None, max_length=120)
     text_overlay: Optional[TextOverlayConfig] = None
+    ai_voiceover: Optional[AiVoiceoverConfig] = None
 
     @field_validator("resolution")
     @classmethod
