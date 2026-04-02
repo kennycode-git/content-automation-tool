@@ -380,6 +380,9 @@ export default function Dashboard({ session }: Props) {
             uploaded_image_paths: b.uploaded_image_paths?.length ? b.uploaded_image_paths : undefined,
             color_theme: effectiveTheme,
             custom_grade_params: effectiveGradeParams as Record<string, number> | undefined,
+            philosopher: b.philosopher ?? undefined,
+            grade_philosopher: b.grade_philosopher,
+            philosopher_is_user: b.philosopher_is_user,
           }
         }),
         resolution: settings.resolution,

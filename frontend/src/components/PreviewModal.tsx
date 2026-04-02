@@ -25,6 +25,7 @@ interface CuratedImage {
   display_url: string     // objectURL (user-added) or signed_url (staged)
   uploading?: boolean
   upload_failed?: boolean
+  is_philosopher?: boolean
 }
 
 interface CuratedBatch {
@@ -51,6 +52,7 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
         id: crypto.randomUUID(),
         storage_path: img.storage_path,
         display_url: img.signed_url,
+        is_philosopher: img.is_philosopher,
       })),
     }))
   )
@@ -444,6 +446,12 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
                     className={`h-full w-full object-cover transition ${isSelected ? 'brightness-75' : ''}`}
                     loading="lazy"
                   />
+                  {/* Philosopher badge */}
+                  {img.is_philosopher && !isSelected && (
+                    <span className="absolute left-1 top-1 rounded bg-amber-900/80 px-1 py-0.5 text-[9px] font-bold text-amber-300 leading-none pointer-events-none">
+                      P
+                    </span>
+                  )}
                   {/* Selection checkmark */}
                   {isSelected && (
                     <div className="absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand-500">

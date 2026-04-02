@@ -307,6 +307,9 @@ export interface PreviewBatchRequest {
   uploaded_image_paths?: string[]
   color_theme?: string
   custom_grade_params?: Record<string, number>
+  philosopher?: string | null
+  grade_philosopher?: boolean
+  philosopher_is_user?: boolean
 }
 
 export interface PreviewStageRequest {
@@ -322,6 +325,7 @@ export interface PreviewStageRequest {
 export interface PreviewImageItem {
   storage_path: string
   signed_url: string
+  is_philosopher?: boolean
 }
 
 export interface PreviewBatchResult {
