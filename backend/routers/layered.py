@@ -36,10 +36,18 @@ class BgVideoResult(BaseModel):
     height: int
 
 
-@router.get("/layered/search-backgrounds", response_model=List[BgVideoResult])
+class BgVideoSearchResponse(BaseModel):
+    page: int
+    per_page: int
+    has_more: bool
+    items: List[BgVideoResult]
+
+
+@router.get("/layered/search-backgrounds", response_model=BgVideoSearchResponse)
 async def search_background_videos(
     query: str = Query(..., min_length=1, max_length=100),
     count: int = Query(default=9, ge=1, le=20),
+    page: int = Query(default=1, ge=1, le=50),
     user_id: str = Depends(get_current_user_id),
 ):
     """
@@ -57,6 +65,7 @@ async def search_background_videos(
             params={
                 "query": query,
                 "per_page": min(count * 2, 40),  # fetch extra, filter to portrait
+                "page": page,
                 "orientation": "portrait",
                 "size": "large",
             },
@@ -101,4 +110,9 @@ async def search_background_videos(
         if len(results) >= count:
             break
 
-    return results
+    return BgVideoSearchResponse(
+        page=page,
+        per_page=count,
+        has_more=len(results) >= count,
+        items=results,
+    )

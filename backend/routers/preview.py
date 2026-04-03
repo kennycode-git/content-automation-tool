@@ -63,6 +63,33 @@ def _preview_thumbnail(fpath: Path) -> bytes:
         return buf.getvalue()
 
 
+def _list_system_philosopher_images(key: str) -> list[str]:
+    """
+    Try a few likely storage prefixes for bundled philosopher images.
+    This keeps preview staging resilient if the accent bucket structure differs
+    slightly between environments.
+    """
+    from services.storage import list_accent_images
+
+    prefixes = [
+        f"philosopher/{key}",
+        f"philosophers/{key}",
+        key,
+    ]
+    for prefix in prefixes:
+        try:
+            paths = list_accent_images(prefix)
+        except Exception as exc:
+            logger.warning("Preview: failed to list accent images for %s: %s", prefix, exc)
+            continue
+        if paths:
+            logger.info("Preview: found %d system philosopher images under accent/%s", len(paths), prefix)
+            return paths
+
+    logger.warning("Preview: no system philosopher images found for key=%s", key)
+    return []
+
+
 def _stage_batch_sync(
     *,
     search_terms: List[str],
@@ -197,8 +224,8 @@ def _stage_batch_sync(
                 except Exception as e:
                     logger.warning("Preview: failed to download user philosopher image %s: %s", path, e)
         else:
-            from services.storage import list_accent_images, download_accent_image
-            phil_paths = list_accent_images(f"philosopher/{philosopher}")
+            from services.storage import download_accent_image
+            phil_paths = _list_system_philosopher_images(philosopher)
             selected = random.sample(phil_paths, min(philosopher_count, len(phil_paths))) if phil_paths else []
             for idx, path in enumerate(selected, 1):
                 try:

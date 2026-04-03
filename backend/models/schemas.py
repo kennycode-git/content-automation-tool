@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 ALLOWED_RESOLUTIONS = {"1080x1920", "1920x1080", "1080x1080"}
 ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp", "custom", "mocha", "noir", "midnight", "dusk"}
-ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold"}
+ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold", "purple"}
 ALLOWED_IMAGE_SOURCES = {"unsplash", "pexels", "both"}
 ALLOWED_PHILOSOPHERS = {
     "marcus_aurelius", "seneca", "epictetus", "nietzsche", "socrates", "aristotle",
@@ -270,16 +270,31 @@ class JobStatusResponse(BaseModel):
     thumbnail_url: Optional[str] = None
     error_message: Optional[str] = None
     batch_title: Optional[str] = None
+    mode: Optional[str] = None
     # Config fields extracted from JSONB for display
     search_terms: Optional[List[str]] = None
+    fps: Optional[int] = None
+    allow_repeats: Optional[bool] = None
     color_theme: Optional[str] = None
     resolution: Optional[str] = None
     seconds_per_image: Optional[float] = None
     total_seconds: Optional[float] = None
     max_per_query: Optional[int] = None
+    image_source: Optional[str] = None
+    accent_folder: Optional[str] = None
+    philosopher: Optional[str] = None
+    philosopher_count: Optional[int] = None
+    grade_philosopher: Optional[bool] = None
+    philosopher_is_user: Optional[bool] = None
+    transition: Optional[str] = None
+    transition_duration: Optional[float] = None
+    max_clip_duration: Optional[int] = None
+    clip_count: Optional[int] = None
+    layered_config: Optional[LayeredConfig] = None
     preset_name: Optional[str] = None
     preview_images: Optional[List[str]] = None
     ai_voiceover: Optional[AiVoiceoverConfig] = None
+    images_cached: Optional[bool] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 
@@ -291,6 +306,7 @@ class JobListItem(BaseModel):
     output_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     batch_title: Optional[str] = None
+    mode: Optional[str] = None
     search_terms: Optional[List[str]] = None
     resolution: Optional[str] = None
     seconds_per_image: Optional[float] = None
@@ -299,6 +315,15 @@ class JobListItem(BaseModel):
     allow_repeats: Optional[bool] = None
     color_theme: Optional[str] = None
     max_per_query: Optional[int] = None
+    image_source: Optional[str] = None
+    accent_folder: Optional[str] = None
+    philosopher: Optional[str] = None
+    philosopher_count: Optional[int] = None
+    transition: Optional[str] = None
+    transition_duration: Optional[float] = None
+    max_clip_duration: Optional[int] = None
+    clip_count: Optional[int] = None
+    layered_config: Optional[LayeredConfig] = None
     preset_name: Optional[str] = None
     ai_voiceover: Optional[AiVoiceoverConfig] = None
     images_cached: Optional[bool] = None

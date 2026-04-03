@@ -60,6 +60,19 @@ const THEME_DOT: Record<string, string> = {
   custom:  'bg-fuchsia-500',
 }
 
+const ACCENT_LABEL: Record<string, string> = {
+  blue: 'Blue accent',
+  red: 'Red accent',
+  gold: 'Gold accent',
+  purple: 'Purple accent',
+}
+
+const GRADE_TARGET_LABEL: Record<string, string> = {
+  foreground: 'Grade FG',
+  background: 'Grade BG',
+  both: 'Grade both',
+}
+
 interface Props {
   onReuse?: (title: string | null, terms: string[], settings: Partial<VideoSettings> | null) => void
   onEditImages?: (terms: string[], batchTitle: string | null) => void
@@ -77,6 +90,22 @@ function extractSettings(job: JobStatus): Partial<VideoSettings> | null {
   if (job.color_theme) s.color_theme = job.color_theme
   if (job.max_per_query != null) s.max_per_query = job.max_per_query
   return Object.keys(s).length > 0 ? s : null
+}
+
+function buildJobMeta(job: JobStatus): string[] {
+  const chips: string[] = []
+  if (job.total_seconds != null) chips.push(`${job.total_seconds}s`)
+  if (job.mode === 'clips') {
+    if (job.transition) chips.push(job.transition.replace('_', ' '))
+    if (job.clip_count != null) chips.push(`${job.clip_count} clips`)
+  }
+  if (job.mode === 'layered' && job.layered_config) {
+    chips.push(`Opacity ${Math.round(job.layered_config.foreground_opacity * 100)}%`)
+    chips.push(GRADE_TARGET_LABEL[job.layered_config.grade_target] ?? job.layered_config.grade_target)
+  }
+  if (job.accent_folder) chips.push(ACCENT_LABEL[job.accent_folder] ?? `${job.accent_folder} accent`)
+  if (job.ai_voiceover?.enabled) chips.push('Voiceover')
+  return chips
 }
 
 /** Returns 'ok' | 'warning' (< 4h left) | 'expired' based on completed_at or a manual resign time */
@@ -184,7 +213,8 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
     <div className="space-y-2">
       {jobs.map(job => {
         const expiry = expiryStatus(job, resignedAt[job.job_id])
-        const meta = job.preset_name ?? (job.total_seconds != null ? `${job.total_seconds}s` : null)
+        const meta = job.preset_name ?? null
+        const detailChips = buildJobMeta(job)
 
         return (
           <div
@@ -207,6 +237,9 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
                     {new Date(job.created_at).toLocaleString()}
                   </span>
                   {meta && <span className="text-xs text-stone-700 shrink-0">· {meta}</span>}
+                  {detailChips.length > 0 && (
+                    <span className="text-xs text-stone-700 truncate">· {detailChips.join(' · ')}</span>
+                  )}
                   {job.color_theme && job.color_theme !== 'none' && (
                     <span
                       className={`inline-block w-2 h-2 rounded-full shrink-0 ${THEME_DOT[job.color_theme] ?? 'bg-stone-500'}`}

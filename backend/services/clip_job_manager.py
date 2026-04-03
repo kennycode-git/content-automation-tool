@@ -54,13 +54,14 @@ class ClipJobConfig:
     max_clip_duration: int = 10
     batch_title: Optional[str] = None
     text_overlay: Optional[Dict] = None
+    ai_voiceover: Optional[Dict] = None
 
     def parse_resolution(self):
         w, h = self.resolution.lower().split("x")
         return int(w), int(h)
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "mode": "clips",
             "clip_count": len(self.clip_specs),
             "resolution": self.resolution,
@@ -68,8 +69,13 @@ class ClipJobConfig:
             "color_theme": self.color_theme,
             "transition": self.transition,
             "transition_duration": self.transition_duration,
+            "max_clip_duration": self.max_clip_duration,
         }
-
+        if self.text_overlay:
+            data["text_overlay"] = self.text_overlay
+        if self.ai_voiceover:
+            data["ai_voiceover"] = self.ai_voiceover
+        return data
 
 def _download_clip(download_url: str, dest_path: str) -> bool:
     """Download a single video clip to dest_path. Returns True on success."""

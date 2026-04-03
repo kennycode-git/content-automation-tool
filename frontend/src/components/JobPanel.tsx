@@ -45,6 +45,19 @@ const RE_EDIT_THEME_DOT: Record<string, string> = {
   dusk:     'bg-purple-900 ring-1 ring-purple-700',
 }
 
+const ACCENT_LABEL: Record<string, string> = {
+  blue: 'Blue accent',
+  red: 'Red accent',
+  gold: 'Gold accent',
+  purple: 'Purple accent',
+}
+
+const GRADE_TARGET_LABEL: Record<string, string> = {
+  foreground: 'Grade FG',
+  background: 'Grade BG',
+  both: 'Grade both',
+}
+
 // ─── Pipeline progress overlay ───────────────────────────────────────────────
 
 const PIPELINE_STEPS = [
@@ -296,6 +309,48 @@ function formatEta(secs: number): string {
   return s > 0 ? `~${m}m ${s}s` : `~${m}m`
 }
 
+function themeLabel(theme: string | null | undefined): string | null {
+  if (!theme || theme === 'none') return null
+  return {
+    dark: 'Dark Tones',
+    sepia: 'Sepia',
+    warm: 'Amber',
+    grey: 'Silver',
+    blue: 'Cobalt',
+    red: 'Crimson',
+    bw: 'Mono',
+    low_exp: 'Low Exposure',
+    mocha: 'Mocha',
+    noir: 'Noir',
+    midnight: 'Midnight',
+    dusk: 'Dusk',
+    custom: 'Custom',
+  }[theme] ?? theme
+}
+
+function buildJobMeta(job: JobStatus): string[] {
+  const chips: string[] = []
+  const theme = themeLabel(job.color_theme)
+  if (theme) chips.push(theme)
+  if (job.resolution) chips.push(job.resolution)
+  if (job.total_seconds != null) chips.push(`${job.total_seconds}s`)
+  if (job.mode === 'clips') {
+    if (job.transition) chips.push(`Transition: ${job.transition.replace('_', ' ')}`)
+    if (job.max_clip_duration != null) chips.push(`Clip cap: ${job.max_clip_duration}s`)
+    if (job.clip_count != null) chips.push(`${job.clip_count} clips`)
+  }
+  if (job.mode === 'layered' && job.layered_config) {
+    chips.push(`Opacity ${Math.round(job.layered_config.foreground_opacity * 100)}%`)
+    chips.push(GRADE_TARGET_LABEL[job.layered_config.grade_target] ?? job.layered_config.grade_target)
+    chips.push(`${job.layered_config.background_video_urls.length} BG video${job.layered_config.background_video_urls.length === 1 ? '' : 's'}`)
+  }
+  if (job.accent_folder) chips.push(ACCENT_LABEL[job.accent_folder] ?? `${job.accent_folder} accent`)
+  if (job.philosopher) chips.push(`${job.philosopher_count ?? 3} philosopher`)
+  if (job.ai_voiceover?.enabled) chips.push('Voiceover')
+  if (job.preset_name) chips.push(job.preset_name)
+  return chips
+}
+
 interface Props {
   jobId: string
   title?: string | null
@@ -369,6 +424,19 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.status])
 
+  useEffect(() => {
+    if (!job || job.status !== 'done' || !job.completed_at || !onDismiss) return
+    const completedAt = new Date(job.completed_at).getTime()
+    const ageMs = Date.now() - completedAt
+    const thresholdMs = 2 * 60 * 60 * 1000
+    if (ageMs >= thresholdMs) {
+      onDismiss()
+      return
+    }
+    const timeout = window.setTimeout(() => onDismiss(), thresholdMs - ageMs)
+    return () => window.clearTimeout(timeout)
+  }, [job?.status, job?.completed_at, onDismiss])
+
   // Persist image count + source so they remain visible after message changes
   useEffect(() => {
     const msg = job?.progress_message ?? ''
@@ -395,6 +463,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   const isTerminal = job.status === 'done' || job.status === 'failed'
   const pct = stepProgress(job.status, job.progress_message)
   const displayTitle = title ?? job.batch_title
+  const metaChips = buildJobMeta(job)
 
   async function handleDownload(url: string) {
     setDownloading(true)
@@ -516,25 +585,13 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
       </div>
 
       {/* Metadata strip */}
-      {!minimized && (job.color_theme || job.resolution || job.total_seconds) && (
+      {!minimized && metaChips.length > 0 && (
         <div className="flex flex-wrap gap-1.5 px-3 pb-2">
-          {job.color_theme && job.color_theme !== 'none' && (
-            <span className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-400 capitalize">
-              {{
-                dark: 'Dark Tones', sepia: 'Sepia', warm: 'Amber', grey: 'Silver',
-                blue: 'Cobalt', red: 'Crimson', bw: 'Mono', low_exp: 'Low Exposure',
-              }[job.color_theme] ?? job.color_theme}
+          {metaChips.map(chip => (
+            <span key={chip} className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-400">
+              {chip}
             </span>
-          )}
-          {job.resolution && (
-            <span className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-400">{job.resolution}</span>
-          )}
-          {job.total_seconds != null && (
-            <span className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-400">{job.total_seconds}s</span>
-          )}
-          {job.preset_name && (
-            <span className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-500 italic">{job.preset_name}</span>
-          )}
+          ))}
         </div>
       )}
 

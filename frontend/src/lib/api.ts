@@ -137,6 +137,7 @@ export interface JobStatus {
   thumbnail_url?: string | null
   error_message: string | null
   batch_title?: string | null
+  mode?: string | null
   search_terms?: string[] | null
   resolution?: string | null
   seconds_per_image?: number | null
@@ -145,6 +146,17 @@ export interface JobStatus {
   allow_repeats?: boolean | null
   color_theme?: string | null
   max_per_query?: number | null
+  image_source?: string | null
+  accent_folder?: string | null
+  philosopher?: string | null
+  philosopher_count?: number | null
+  grade_philosopher?: boolean | null
+  philosopher_is_user?: boolean | null
+  transition?: string | null
+  transition_duration?: number | null
+  max_clip_duration?: number | null
+  clip_count?: number | null
+  layered_config?: LayeredConfig | null
   preset_name?: string | null
   preview_images?: string[] | null
   custom_grade_params?: CustomGradeParams | null
@@ -308,6 +320,7 @@ export interface PreviewBatchRequest {
   color_theme?: string
   custom_grade_params?: Record<string, number>
   philosopher?: string | null
+  philosopher_count?: number
   grade_philosopher?: boolean
   philosopher_is_user?: boolean
 }
@@ -654,11 +667,18 @@ export interface BgVideoResult {
   height: number
 }
 
-export async function searchBgVideos(query: string, count = 9): Promise<BgVideoResult[]> {
-  if (DEV_BYPASS) return []
-  const params = new URLSearchParams({ query, count: String(count) })
+export interface BgVideoSearchResponse {
+  page: number
+  per_page: number
+  has_more: boolean
+  items: BgVideoResult[]
+}
+
+export async function searchBgVideos(query: string, count = 9, page = 1): Promise<BgVideoSearchResponse> {
+  if (DEV_BYPASS) return { page, per_page: count, has_more: false, items: [] }
+  const params = new URLSearchParams({ query, count: String(count), page: String(page) })
   const res = await fetch(`${API_URL}/api/layered/search-backgrounds?${params}`, {
     headers: await authHeaders(),
   })
-  return handleResponse<BgVideoResult[]>(res)
+  return handleResponse<BgVideoSearchResponse>(res)
 }

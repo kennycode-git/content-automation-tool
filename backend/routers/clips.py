@@ -145,6 +145,7 @@ async def generate_from_clips(
         max_clip_duration=body.max_clip_duration,
         batch_title=body.batch_title,
         text_overlay=body.text_overlay.model_dump() if body.text_overlay else None,
+        ai_voiceover=body.ai_voiceover.model_dump() if body.ai_voiceover else None,
     )
 
     # Reuse create_job by wrapping ClipJobConfig into a compatible minimal JobConfig

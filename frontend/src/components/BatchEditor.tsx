@@ -177,7 +177,15 @@ const BATCH_ACCENT_OPTIONS: { value: string | null | undefined; label: string; d
   { value: 'blue',    label: 'Blue',   dot: 'bg-blue-500' },
   { value: 'red',     label: 'Red',    dot: 'bg-red-500' },
   { value: 'gold',    label: 'Gold',   dot: 'bg-amber-400' },
+  { value: 'purple',  label: 'Purple', dot: 'bg-purple-500' },
 ]
+
+const ACCENT_PREVIEW_PATH: Record<string, string> = {
+  blue: '/accent-previews/blue.mp4',
+  red: '/accent-previews/red.mp4',
+  gold: '/accent-previews/gold.mp4',
+  purple: '/accent-previews/purple.mp4',
+}
 
 const DEFAULT_GRADE: CustomGradeParams = {
   brightness: 1.0, contrast: 1.0, saturation: 1.0,
@@ -598,7 +606,7 @@ function BatchStylePopover({
                 key={`${hoveredPreview.type}-${hoveredPreview.value}`}
                 src={hoveredPreview.type === 'theme'
                   ? `/theme-previews/${hoveredPreview.value}.mp4`
-                  : `/accent-previews/${hoveredPreview.value}.mp4`}
+                  : (ACCENT_PREVIEW_PATH[hoveredPreview.value] ?? `/accent-previews/${hoveredPreview.value}.mp4`)}
                 autoPlay
                 muted
                 loop
@@ -791,7 +799,7 @@ function BatchStylePopover({
             )}
           </div>
 
-          {mode === 'images' && (
+          {mode !== 'clips' && (
             <>
               <hr className="border-stone-800" />
 
@@ -1304,7 +1312,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
         uploaded_image_paths: mode === 'images' ? (paths[i] ?? []) : undefined,
         color_theme: resolvedColorTheme,
         custom_grade_params: b.customGradeParams,
-        accent_folder_override: mode === 'images' ? b.accentFolder : undefined,
+        accent_folder_override: mode !== 'clips' ? b.accentFolder : undefined,
         text_overlay: b.textOverlay,
         ai_voiceover: b.aiVoiceover,
         layered_background_video_urls: mode === 'layered' ? (b.layeredBackgroundVideoUrls ?? []) : undefined,
@@ -1539,7 +1547,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
           {batches.map((batch, idx) => {
             const themeOpt = BATCH_THEME_OPTIONS.find(o => o.value === batch.colorTheme)
             const hasThemeOverride = batch.colorTheme !== undefined
-            const hasAccentOverride = mode === 'images' && batch.accentFolder !== undefined
+            const hasAccentOverride = mode !== 'clips' && batch.accentFolder !== undefined
             const hasTextOverlay = !!(batch.textOverlay?.enabled && batch.textOverlay.text.trim())
             const hasVoiceover = !!(batch.aiVoiceover?.enabled && (batch.aiVoiceover.voice_id ?? '').trim())
             const hasLayeredBg = mode === 'layered' && (batch.layeredBackgroundVideoUrls?.length ?? 0) > 0

@@ -52,8 +52,8 @@ export default function LayeredPanel({ config, onChange }: Props) {
     setSearching(true)
     try {
       const res = await searchBgVideos(q, 9)
-      setResults(res)
-      if (res.length === 0) setSearchError('No videos found. Try a different search term.')
+      setResults(res.items)
+      if (res.items.length === 0) setSearchError('No videos found. Try a different search term.')
     } catch (e) {
       setSearchError(e instanceof Error ? e.message : 'Search failed')
     } finally {

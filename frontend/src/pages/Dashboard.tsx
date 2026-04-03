@@ -358,10 +358,12 @@ export default function Dashboard({ session }: Props) {
   const handleStagePreview = useCallback(async () => {
     const validBatches = batches.filter(b => b.terms.length > 0)
     if (validBatches.length === 0) {
-      setError('Enter at least one search term.')
+      if (contentMode === 'layered') setLayeredError('Enter at least one search term.')
+      else setError('Enter at least one search term.')
       return
     }
     setError(null)
+    setLayeredError(null)
     setStagingError(null)
     setStagingUsedPexels(false)
     setStaging(true)
@@ -402,13 +404,24 @@ export default function Dashboard({ session }: Props) {
       stagingAbortRef.current = null
       setStaging(false)
     }
-  }, [batches, settings, resolvedSource])
+  }, [batches, settings, resolvedSource, contentMode])
 
   const handlePreviewConfirm = useCallback(async (confirmedBatches: ConfirmedBatch[]) => {
     setPreviewData(null)
     const eligible = confirmedBatches.filter(b => b.images.length > 0)
     if (eligible.length === 0) return
-    setError(null)
+    if (contentMode === 'layered') {
+      const missingBg = eligible.find(b => {
+        const originalBatch = batches.find(ob => ob.title === b.batch_title)
+        return !(originalBatch?.layered_background_video_urls?.length)
+      })
+      if (missingBg) {
+        setLayeredError(`Select at least one background video for ${missingBg.batch_title?.trim() || 'each layered batch'}.`)
+        return
+      }
+    }
+    if (contentMode === 'layered') setLayeredError(null)
+    else setError(null)
     setSubmitting(true)
     setPendingCount(prev => prev + eligible.length)
     try {
@@ -418,10 +431,10 @@ export default function Dashboard({ session }: Props) {
         const effectiveAccent = originalBatch?.accent_folder_override !== undefined
           ? originalBatch.accent_folder_override
           : accentFolder
-        const res = await generateVideo({
+        const reqBase = {
           search_terms: batch.search_terms,
           ...settings,
-          color_theme: 'none',  // already graded at staging time
+          color_theme: 'none' as const,
           batch_title: batch.batch_title,
           uploaded_image_paths: batch.images.map(img => img.storage_path),
           uploaded_only: true,
@@ -434,17 +447,30 @@ export default function Dashboard({ session }: Props) {
           image_source: resolvedSource,
           text_overlay: originalBatch?.text_overlay ?? undefined,
           ai_voiceover: originalBatch?.ai_voiceover ?? undefined,
-        })
+        }
+        const res = contentMode === 'layered'
+          ? await generateVideo({
+              ...reqBase,
+              layered_config: {
+                background_video_urls: originalBatch?.layered_background_video_urls ?? [],
+                foreground_opacity: layeredConfig.opacity,
+                foreground_speed: settings.seconds_per_image,
+                grade_target: layeredConfig.gradeTarget,
+                crossfade_duration: layeredConfig.crossfadeDuration,
+              },
+            })
+          : await generateVideo(reqBase)
         submitted.push({ jobId: res.job_id, title: batch.batch_title })
       }
       setActiveJobs(prev => [...submitted, ...prev])
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      if (contentMode === 'layered') setLayeredError(e instanceof Error ? e.message : 'Unknown error')
+      else setError(e instanceof Error ? e.message : 'Unknown error')
       setPendingCount(0)
     } finally {
       setSubmitting(false)
     }
-  }, [settings, batches, accentFolder, appliedPresetName, resolvedSource])
+  }, [settings, batches, accentFolder, appliedPresetName, resolvedSource, contentMode, layeredConfig])
 
   // Ctrl/Cmd+Enter to generate
   useEffect(() => {
@@ -742,6 +768,9 @@ export default function Dashboard({ session }: Props) {
         const effectiveGradeParams = effectiveTheme === 'custom'
           ? (batch.custom_grade_params ?? settings.custom_grade_params)
           : undefined
+        const effectiveAccent = batch.accent_folder_override !== undefined
+          ? batch.accent_folder_override
+          : accentFolder
         const lc: LayeredConfig = {
           background_video_urls: batch.layered_background_video_urls ?? [],
           foreground_opacity: layeredConfig.opacity,
@@ -755,6 +784,7 @@ export default function Dashboard({ session }: Props) {
           color_theme: effectiveTheme,
           custom_grade_params: effectiveGradeParams,
           batch_title: batch.title,
+          accent_folder: effectiveAccent ?? undefined,
           image_source: resolvedSource,
           text_overlay: batch.text_overlay ?? undefined,
           ai_voiceover: batch.ai_voiceover ?? undefined,
@@ -1035,13 +1065,21 @@ export default function Dashboard({ session }: Props) {
               <span className="text-xs text-stone-500">Generate</span>
             </div>
 
-            {(contentMode === 'images' ? (error || stagingError) : contentMode === 'layered' ? layeredError : clipsError) && (
+            {(contentMode === 'images'
+              ? (error || stagingError)
+              : contentMode === 'layered'
+                ? (layeredError || stagingError)
+                : clipsError) && (
               <div className="rounded-xl bg-red-950 px-4 py-3 text-sm text-red-400 mb-3">
-                {contentMode === 'images' ? (error ?? stagingError) : contentMode === 'layered' ? layeredError : clipsError}
+                {contentMode === 'images'
+                  ? (error ?? stagingError)
+                  : contentMode === 'layered'
+                    ? (layeredError ?? stagingError)
+                    : clipsError}
               </div>
             )}
 
-            {contentMode === 'images' && stagingUsedPexels && !stagingError && (
+            {(contentMode === 'images' || contentMode === 'layered') && stagingUsedPexels && !stagingError && (
               <div className="rounded-xl bg-amber-950/60 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3 flex items-center gap-2">
                 <span>⚡</span>
                 <span>Unsplash rate limit hit. Switched to Pexels for this preview.</span>
@@ -1050,13 +1088,20 @@ export default function Dashboard({ session }: Props) {
 
             {/* Action row */}
             {contentMode === 'layered' ? (
-              <div data-tour="layered-generate">
+              <div data-tour="layered-generate" className="flex gap-2">
+                <button
+                  onClick={handleStagePreview}
+                  disabled={submitting || staging || trialExpired}
+                  className="flex-1 rounded-xl border border-stone-700 py-3 text-sm font-medium text-stone-300 hover:border-stone-500 hover:text-stone-100 disabled:opacity-50 transition"
+                >
+                  {staging ? 'Fetching images…' : 'Preview images →'}
+                </button>
                 <button
                   onClick={handleGenerateLayered}
-                  disabled={layeredSubmitting || batchCount === 0 || trialExpired}
-                  className="w-full rounded-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
+                  disabled={layeredSubmitting || submitting || staging || batchCount === 0 || trialExpired}
+                  className="flex-1 rounded-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
                 >
-                  {layeredSubmitting ? 'Submitting…'
+                  {layeredSubmitting || submitting ? 'Submitting…'
                     : batchCount === 0 ? 'Add a layered batch first'
                     : batchCount > 1 ? `Generate Layered ×${batchCount}` : 'Generate Layered'}
                 </button>

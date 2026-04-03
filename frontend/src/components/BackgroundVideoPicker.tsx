@@ -14,21 +14,29 @@ export default function BackgroundVideoPicker({ selectedUrls, onChange, compact 
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
 
-  async function handleSearch() {
+  async function runSearch(nextPage: number) {
     const q = query.trim()
     if (!q) return
     setSearchError(null)
     setSearching(true)
     try {
-      const res = await searchBgVideos(q, 9)
-      setResults(res)
-      if (res.length === 0) setSearchError('No videos found. Try a different search term.')
+      const res = await searchBgVideos(q, 9, nextPage)
+      setResults(res.items)
+      setPage(res.page)
+      setHasMore(res.has_more)
+      if (res.items.length === 0) setSearchError('No videos found. Try a different search term.')
     } catch (e) {
       setSearchError(e instanceof Error ? e.message : 'Search failed')
     } finally {
       setSearching(false)
     }
+  }
+
+  async function handleSearch() {
+    await runSearch(1)
   }
 
   function toggleVideo(url: string) {
@@ -71,57 +79,92 @@ export default function BackgroundVideoPicker({ selectedUrls, onChange, compact 
       {searchError && <p className="text-xs text-red-400 mt-2">{searchError}</p>}
 
       {results.length > 0 && (
-        <div className={`grid gap-2 mt-3 ${compact ? 'grid-cols-3' : 'grid-cols-3'}`}>
-          {results.map(v => {
-            const isSelected = selectedUrls.includes(v.download_url)
-            const isHovered = hoveredId === v.id
-            const maxReached = selectedUrls.length >= 5 && !isSelected
-            return (
-              <button
-                key={v.id}
-                onClick={() => toggleVideo(v.download_url)}
-                onMouseEnter={() => setHoveredId(v.id)}
-                onMouseLeave={() => setHoveredId(null)}
-                disabled={maxReached}
-                title={maxReached ? 'Maximum 5 videos selected' : undefined}
-                className={`relative rounded-lg overflow-hidden aspect-[9/16] border-2 transition ${
-                  isSelected
-                    ? 'border-brand-500'
-                    : maxReached
-                      ? 'border-stone-800 opacity-40 cursor-not-allowed'
-                      : 'border-stone-700 hover:border-stone-500'
-                }`}
-              >
-                {isHovered && !maxReached ? (
-                  <video
-                    src={v.preview_url}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                ) : (
-                  <img
-                    src={v.thumbnail}
-                    alt=""
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                )}
-                {isSelected && (
-                  <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-brand-500 flex items-center justify-center shadow-md">
-                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+        <>
+          <div className={`grid gap-2 mt-3 ${compact ? 'grid-cols-3' : 'grid-cols-3'}`}>
+            {results.map(v => {
+              const isSelected = selectedUrls.includes(v.download_url)
+              const isHovered = hoveredId === v.id
+              const maxReached = selectedUrls.length >= 5 && !isSelected
+              return (
+                <button
+                  key={v.id}
+                  onClick={() => toggleVideo(v.download_url)}
+                  onMouseEnter={() => setHoveredId(v.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                  disabled={maxReached}
+                  title={maxReached ? 'Maximum 5 videos selected' : undefined}
+                  className={`relative rounded-lg overflow-hidden aspect-[9/16] border-2 transition ${
+                    isSelected
+                      ? 'border-brand-500'
+                      : maxReached
+                        ? 'border-stone-800 opacity-40 cursor-not-allowed'
+                        : 'border-stone-700 hover:border-stone-500'
+                  }`}
+                >
+                  {isHovered && !maxReached ? (
+                    <video
+                      src={v.preview_url}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  ) : (
+                    <img
+                      src={v.thumbnail}
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  )}
+                  {isSelected && (
+                    <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-brand-500 flex items-center justify-center shadow-md">
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pointer-events-none">
+                    <span className="text-[9px] text-white/80">{v.duration}s</span>
                   </div>
-                )}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pointer-events-none">
-                  <span className="text-[9px] text-white/80">{v.duration}s</span>
-                </div>
-              </button>
-            )
-          })}
-        </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <button
+              onClick={() => runSearch(page - 1)}
+              disabled={searching || page <= 1}
+              className="rounded-lg border border-stone-700 px-3 py-1.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200 disabled:opacity-40 transition"
+            >
+              Prev
+            </button>
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: 5 }, (_, i) => i + 1).map(pageNum => (
+                <button
+                  key={pageNum}
+                  onClick={() => runSearch(pageNum)}
+                  disabled={searching}
+                  className={`rounded-md px-2.5 py-1 text-xs transition ${
+                    pageNum === page
+                      ? 'bg-brand-500 text-white'
+                      : 'border border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => runSearch(page + 1)}
+              disabled={searching || !hasMore}
+              className="rounded-lg border border-stone-700 px-3 py-1.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200 disabled:opacity-40 transition"
+            >
+              Next
+            </button>
+          </div>
+        </>
       )}
 
       {results.length === 0 && !searching && !searchError && (

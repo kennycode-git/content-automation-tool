@@ -81,6 +81,7 @@ class JobConfig:
 
     def to_dict(self) -> dict:
         d = {
+            "mode": "layered" if self.layered_config else "images",
             "search_terms": self.search_terms,
             "resolution": self.resolution,
             "seconds_per_image": self.seconds_per_image,
@@ -93,12 +94,21 @@ class JobConfig:
         if self.preset_name:
             d["preset_name"] = self.preset_name
         d["image_source"] = self.image_source
+        if self.accent_folder:
+            d["accent_folder"] = self.accent_folder
         if self.custom_grade_params:
             d["custom_grade_params"] = self.custom_grade_params
+        if self.philosopher:
+            d["philosopher"] = self.philosopher
+            d["philosopher_count"] = self.philosopher_count
+            d["grade_philosopher"] = self.grade_philosopher
+            d["philosopher_is_user"] = self.philosopher_is_user
         if self.text_overlay:
             d["text_overlay"] = self.text_overlay
         if self.ai_voiceover:
             d["ai_voiceover"] = self.ai_voiceover
+        if self.layered_config:
+            d["layered_config"] = self.layered_config
         return d
 
     def parse_resolution(self):
