@@ -218,6 +218,8 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   const [enlarged, setEnlarged] = useState(false)
   const [previewH, setPreviewH] = useState(200)
   const dragStartRef = useRef<{ y: number; h: number } | null>(null)
+  const BASE_H = 540
+  const BASE_W = 304
 
   function PreviewBox({ h, w }: { h: number; w: number }) {
     const layout = buildOverlayPreviewLayout(ov, w, h)
@@ -258,7 +260,18 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   return (
     <div className="flex justify-center my-2">
       <div className="relative group">
-        <PreviewBox h={previewH} w={113} />
+        <div style={{ width: Math.round((BASE_W * previewH) / BASE_H), height: previewH, overflow: 'hidden' }}>
+          <div
+            style={{
+              width: BASE_W,
+              height: BASE_H,
+              transform: `scale(${previewH / BASE_H})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            <PreviewBox h={BASE_H} w={BASE_W} />
+          </div>
+        </div>
         {/* Magnify button */}
         <button
           onClick={() => setEnlarged(true)}
@@ -289,7 +302,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           onClick={() => setEnlarged(false)}
         >
           <div className="relative" onClick={e => e.stopPropagation()}>
-            <PreviewBox h={540} w={304} />
+            <PreviewBox h={BASE_H} w={BASE_W} />
             <button
               onClick={() => setEnlarged(false)}
               className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center
