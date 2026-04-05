@@ -184,6 +184,7 @@ def _composite(
     fg_path: str,
     output_file: str,
     opacity: float,
+    bg_opacity: float,
     width: int,
     height: int,
     fps: int,
@@ -193,13 +194,24 @@ def _composite(
 ) -> None:
     """Overlay fg on bg with opacity, apply background grade, burn text overlay."""
     alpha = max(0.0, min(1.0, opacity))
+    bg_alpha = max(0.0, min(1.0, bg_opacity))
     parts: List[str] = []
 
     if bg_grade_params:
         gf = _grade_vf(bg_grade_params)
-        parts.append(f"[0:v]{gf}[bg]")
+        if bg_alpha < 0.999:
+            parts.append(f"[0:v]{gf},format=rgba,colorchannelmixer=aa={bg_alpha:.3f}[bgsrc]")
+        else:
+            parts.append(f"[0:v]{gf}[bg]")
     else:
-        parts.append("[0:v]copy[bg]")
+        if bg_alpha < 0.999:
+            parts.append(f"[0:v]format=rgba,colorchannelmixer=aa={bg_alpha:.3f}[bgsrc]")
+        else:
+            parts.append("[0:v]copy[bg]")
+
+    if bg_alpha < 0.999:
+        parts.append(f"color=c=black:s={width}x{height}:r={fps}:d={total_seconds},format=rgba[canvas]")
+        parts.append("[canvas][bgsrc]overlay=0:0:shortest=1[bg]")
 
     parts.append(f"[1:v]format=rgba,colorchannelmixer=aa={alpha:.3f}[fg]")
 
@@ -242,6 +254,7 @@ def render_layered_sync(
     output_file: str,
     bg_urls: List[str],
     opacity: float,
+    bg_opacity: float,
     fg_speed: float,
     color_theme: str,
     custom_grade_params: Optional[Dict],
@@ -295,12 +308,13 @@ def render_layered_sync(
                 bg_grade = _resolve_bg_grade(color_theme, custom_grade_params)
 
             # 5. Composite
-            log.append(f"Compositing (fg opacity {opacity:.0%}, grade_target={grade_target})…")
+            log.append(f"Compositing (fg opacity {opacity:.0%}, bg opacity {bg_opacity:.0%}, grade_target={grade_target})…")
             _composite(
                 bg_path=bg_track,
                 fg_path=fg_slideshow,
                 output_file=output_file,
                 opacity=opacity,
+                bg_opacity=bg_opacity,
                 width=width,
                 height=height,
                 fps=fps,

@@ -8,6 +8,8 @@
 import { useRef, useState } from 'react'
 import { BUNDLES } from './TermBundles'
 
+export type TemplateTargetMode = 'images' | 'clips' | 'layered'
+
 interface CustomGradeParams {
   brightness: number; contrast: number; saturation: number
   exposure: number; warmth: number; tint: number; hue_shift: number
@@ -19,6 +21,7 @@ interface Preset {
   theme: string
   bundleLabel: string
   gradient: string
+  targetMode: TemplateTargetMode
   accentFolder?: string | null
   customGradeParams?: CustomGradeParams
 }
@@ -30,6 +33,7 @@ const PRESETS: Preset[] = [
     theme: 'custom',
     bundleLabel: 'Buddhism',
     gradient: 'from-amber-950 via-stone-900 to-amber-950',
+    targetMode: 'images',
     customGradeParams: {
       brightness: 0.80, contrast: 1.50, saturation: 0.20,
       exposure: 0.70, warmth: -0.10, tint: 0.05, hue_shift: 180,
@@ -41,6 +45,7 @@ const PRESETS: Preset[] = [
     theme: 'dark',
     bundleLabel: 'Dark Academia',
     gradient: 'from-stone-900 via-amber-950 to-stone-950',
+    targetMode: 'images',
   },
   {
     id: 'stoic-philosophy',
@@ -48,6 +53,7 @@ const PRESETS: Preset[] = [
     theme: 'bw',
     bundleLabel: 'Stoic Philosophy',
     gradient: 'from-stone-950 via-stone-800 to-stone-950',
+    targetMode: 'images',
     accentFolder: 'gold',
   },
   {
@@ -56,6 +62,7 @@ const PRESETS: Preset[] = [
     theme: 'dark',
     bundleLabel: 'Gothic',
     gradient: 'from-slate-950 via-blue-950 to-stone-950',
+    targetMode: 'images',
     accentFolder: 'blue',
   },
   {
@@ -64,6 +71,7 @@ const PRESETS: Preset[] = [
     theme: 'dark',
     bundleLabel: 'The Abyss',
     gradient: 'from-stone-950 via-red-950 to-stone-950',
+    targetMode: 'images',
     accentFolder: 'red',
   },
   {
@@ -72,6 +80,7 @@ const PRESETS: Preset[] = [
     theme: 'none',
     bundleLabel: 'Eastern Philosophy',
     gradient: 'from-stone-950 via-emerald-950 to-stone-900',
+    targetMode: 'images',
   },
   {
     id: 'existentialism',
@@ -79,6 +88,7 @@ const PRESETS: Preset[] = [
     theme: 'low_exp',
     bundleLabel: 'Existentialism',
     gradient: 'from-stone-950 via-slate-950 to-stone-900',
+    targetMode: 'images',
   },
   {
     id: 'psychology',
@@ -86,6 +96,7 @@ const PRESETS: Preset[] = [
     theme: 'blue',
     bundleLabel: 'Psychology',
     gradient: 'from-blue-950 via-stone-950 to-blue-950',
+    targetMode: 'images',
   },
   {
     id: 'surrealism',
@@ -93,6 +104,7 @@ const PRESETS: Preset[] = [
     theme: 'custom',
     bundleLabel: 'Surrealism',
     gradient: 'from-violet-950 via-indigo-950 to-stone-950',
+    targetMode: 'images',
     customGradeParams: {
       brightness: 1.00, contrast: 1.65, saturation: 1.75,
       exposure: 0.70, warmth: 0.15, tint: 0.25, hue_shift: 180,
@@ -104,6 +116,7 @@ const PRESETS: Preset[] = [
     theme: 'dark',
     bundleLabel: 'Shadow',
     gradient: 'from-stone-950 via-slate-900 to-stone-950',
+    targetMode: 'images',
   },
   {
     id: 'nature-philosophy',
@@ -111,11 +124,18 @@ const PRESETS: Preset[] = [
     theme: 'sepia',
     bundleLabel: 'Nature as Philosophy',
     gradient: 'from-stone-900 via-stone-800 to-stone-950',
+    targetMode: 'images',
   },
 ]
 
 interface Props {
-  onApply: (theme: string, bundles: { title: string | null; terms: string[] }[], accentFolder?: string | null, customGradeParams?: CustomGradeParams) => void
+  onApply: (
+    targetMode: TemplateTargetMode,
+    theme: string,
+    bundles: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string }[],
+    accentFolder?: string | null,
+    customGradeParams?: CustomGradeParams,
+  ) => void
   onHide?: () => void
 }
 
@@ -132,7 +152,13 @@ export default function InspirationCarousel({ onApply, onHide }: Props) {
 
   function handleApply(preset: Preset) {
     const bundle = BUNDLES.find(b => b.label === preset.bundleLabel)
-    onApply(preset.theme, bundle ? [{ title: bundle.label, terms: bundle.terms }] : [], preset.accentFolder ?? null, preset.customGradeParams)
+    onApply(
+      preset.targetMode,
+      preset.theme,
+      bundle ? [{ title: bundle.label, terms: bundle.terms, layeredBackgroundVideoQuery: bundle.layeredBackgroundVideoQuery }] : [],
+      preset.accentFolder ?? null,
+      preset.customGradeParams,
+    )
   }
 
   function scroll(dir: 'left' | 'right') {

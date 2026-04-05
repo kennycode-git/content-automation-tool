@@ -94,6 +94,7 @@ export interface AiVoiceoverConfig {
 export interface LayeredConfig {
   background_video_urls: string[]
   foreground_opacity: number
+  background_opacity: number
   foreground_speed: number
   grade_target: 'foreground' | 'background' | 'both'
   crossfade_duration: number
@@ -160,6 +161,7 @@ export interface JobStatus {
   preset_name?: string | null
   preview_images?: string[] | null
   custom_grade_params?: CustomGradeParams | null
+  text_overlay?: TextOverlayConfig | null
   ai_voiceover?: AiVoiceoverConfig | null
   images_cached?: boolean | null
   created_at: string
@@ -254,6 +256,9 @@ export interface RegradeRequest {
   seconds_per_image?: number
   total_seconds?: number
   selected_paths?: string[]
+  custom_grade_params?: CustomGradeParams | null
+  accent_folder?: string | null
+  layered_config?: LayeredConfig | null
 }
 
 export async function regradeJob(jobId: string, req: RegradeRequest): Promise<GenerateResponse> {

@@ -9,9 +9,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJobStatus, regradeJob, getRawImages } from '../lib/api'
-import type { JobStatus, PreviewBatchResult } from '../lib/api'
+import type { JobStatus, PreviewBatchResult, LayeredConfig } from '../lib/api'
 import PreviewModal from './PreviewModal'
 import type { ConfirmedBatch } from './PreviewModal'
+import JobMetaPopover from './JobMetaPopover'
 
 const RE_EDIT_THEMES = [
   { value: 'none',     label: 'Natural' },
@@ -29,20 +30,11 @@ const RE_EDIT_THEMES = [
   { value: 'dusk',     label: 'Dusk' },
 ]
 
-const RE_EDIT_THEME_DOT: Record<string, string> = {
-  none:     'bg-stone-400',
-  warm:     'bg-amber-500',
-  dark:     'bg-stone-900 ring-1 ring-stone-600',
-  grey:     'bg-slate-400',
-  blue:     'bg-blue-500',
-  red:      'bg-red-500',
-  bw:       'bg-white ring-1 ring-stone-500',
-  sepia:    'bg-amber-800',
-  low_exp:  'bg-stone-950 ring-1 ring-stone-700',
-  mocha:    'bg-amber-950',
-  noir:     'bg-stone-900 ring-1 ring-amber-900',
-  midnight: 'bg-blue-950 ring-1 ring-cyan-900',
-  dusk:     'bg-purple-900 ring-1 ring-purple-700',
+function getReEditThemes(job: JobStatus) {
+  if (job.custom_grade_params || job.color_theme === 'custom') {
+    return [...RE_EDIT_THEMES, { value: 'custom', label: 'Saved Custom' }]
+  }
+  return RE_EDIT_THEMES
 }
 
 const ACCENT_LABEL: Record<string, string> = {
@@ -52,11 +44,42 @@ const ACCENT_LABEL: Record<string, string> = {
   purple: 'Purple accent',
 }
 
+const THEME_DOT: Record<string, string> = {
+  none: 'bg-stone-400',
+  warm: 'bg-amber-500',
+  dark: 'bg-stone-900 ring-1 ring-stone-600',
+  grey: 'bg-slate-400',
+  blue: 'bg-blue-500',
+  red: 'bg-red-500',
+  bw: 'bg-white ring-1 ring-stone-500',
+  sepia: 'bg-amber-800',
+  low_exp: 'bg-stone-950 ring-1 ring-stone-700',
+  mocha: 'bg-amber-950',
+  noir: 'bg-stone-900 ring-1 ring-amber-900',
+  midnight: 'bg-blue-950 ring-1 ring-cyan-900',
+  dusk: 'bg-purple-900 ring-1 ring-purple-700',
+  custom: 'bg-fuchsia-500',
+}
+
+const RE_EDIT_ACCENTS = [
+  { value: 'none', label: 'None' },
+  { value: 'blue', label: 'Blue accent' },
+  { value: 'red', label: 'Red accent' },
+  { value: 'gold', label: 'Gold accent' },
+  { value: 'purple', label: 'Purple accent' },
+]
+
 const GRADE_TARGET_LABEL: Record<string, string> = {
   foreground: 'Grade FG',
   background: 'Grade BG',
   both: 'Grade both',
 }
+
+const THEME_SUFFIXES = [
+  'natural', 'dark tones', 'sepia', 'amber', 'low exposure', 'silver', 'cobalt',
+  'crimson', 'monochrome', 'mocha', 'noir', 'midnight', 'dusk', 'custom',
+  'none', 'dark', 'warm', 'low_exp', 'grey', 'blue', 'red', 'bw',
+]
 
 // ─── Pipeline progress overlay ───────────────────────────────────────────────
 
@@ -309,29 +332,26 @@ function formatEta(secs: number): string {
   return s > 0 ? `~${m}m ${s}s` : `~${m}m`
 }
 
-function themeLabel(theme: string | null | undefined): string | null {
-  if (!theme || theme === 'none') return null
-  return {
-    dark: 'Dark Tones',
-    sepia: 'Sepia',
-    warm: 'Amber',
-    grey: 'Silver',
-    blue: 'Cobalt',
-    red: 'Crimson',
-    bw: 'Mono',
-    low_exp: 'Low Exposure',
-    mocha: 'Mocha',
-    noir: 'Noir',
-    midnight: 'Midnight',
-    dusk: 'Dusk',
-    custom: 'Custom',
-  }[theme] ?? theme
+function formatPhilosopherLabel(philosopher: string | null | undefined): string | null {
+  if (!philosopher) return null
+  return philosopher
+    .split('_')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function stripThemeSuffix(title: string | null | undefined): string | null | undefined {
+  if (!title) return title
+  const parts = title.split(' · ')
+  if (parts.length < 2) return title
+  const last = parts[parts.length - 1]?.trim().toLowerCase()
+  if (!last || !THEME_SUFFIXES.includes(last)) return title
+  return parts.slice(0, -1).join(' · ')
 }
 
 function buildJobMeta(job: JobStatus): string[] {
   const chips: string[] = []
-  const theme = themeLabel(job.color_theme)
-  if (theme) chips.push(theme)
   if (job.resolution) chips.push(job.resolution)
   if (job.total_seconds != null) chips.push(`${job.total_seconds}s`)
   if (job.mode === 'clips') {
@@ -341,11 +361,16 @@ function buildJobMeta(job: JobStatus): string[] {
   }
   if (job.mode === 'layered' && job.layered_config) {
     chips.push(`Opacity ${Math.round(job.layered_config.foreground_opacity * 100)}%`)
+    chips.push(`BG ${Math.round((job.layered_config.background_opacity ?? 1) * 100)}%`)
     chips.push(GRADE_TARGET_LABEL[job.layered_config.grade_target] ?? job.layered_config.grade_target)
     chips.push(`${job.layered_config.background_video_urls.length} BG video${job.layered_config.background_video_urls.length === 1 ? '' : 's'}`)
   }
   if (job.accent_folder) chips.push(ACCENT_LABEL[job.accent_folder] ?? `${job.accent_folder} accent`)
-  if (job.philosopher) chips.push(`${job.philosopher_count ?? 3} philosopher`)
+  const philosopherLabel = formatPhilosopherLabel(job.philosopher)
+  if (philosopherLabel) chips.push(philosopherLabel)
+  if (job.text_overlay?.enabled && job.text_overlay.font) {
+    chips.push(`Font: ${job.text_overlay.font.replace(/_/g, ' ')}`)
+  }
   if (job.ai_voiceover?.enabled) chips.push('Voiceover')
   if (job.preset_name) chips.push(job.preset_name)
   return chips
@@ -362,7 +387,20 @@ interface Props {
   onEstimate?: (secs: number) => void
   onRetry?: (job: JobStatus) => void
   onRegraded?: (newJobId: string, title: string | null) => void
-  onColourGrade?: (terms: string[], batchTitle: string | null, settings: { color_theme: string; seconds_per_image?: number; total_seconds?: number } | null, theme: string) => void
+  onColourGrade?: (terms: string[], batchTitle: string | null, settings: ({
+    color_theme: string
+    seconds_per_image?: number
+    total_seconds?: number
+    custom_grade_params?: JobStatus['custom_grade_params']
+    accent_folder?: string | null
+    philosopher?: string | null
+    philosopher_count?: number | null
+    grade_philosopher?: boolean | null
+    philosopher_is_user?: boolean | null
+    preset_name?: string | null
+    text_overlay?: JobStatus['text_overlay']
+    ai_voiceover?: JobStatus['ai_voiceover']
+  } & { layered_config?: LayeredConfig | null }) | null, theme: string) => void
 }
 
 export default function JobPanel({ jobId, title, minimized, onToggleMinimize, onDismiss, onDone, onCancel, onEstimate, onRetry, onRegraded, onColourGrade }: Props) {
@@ -371,8 +409,12 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   const [downloading, setDownloading] = useState(false)
   const [reEditOpen, setReEditOpen] = useState(false)
   const [reEditTheme, setReEditTheme] = useState('none')
+  const [reEditAccent, setReEditAccent] = useState<string>('none')
   const [reEditSpi, setReEditSpi] = useState<number | null>(null)
   const [reEditTotal, setReEditTotal] = useState<number | null>(null)
+  const [reEditFgOpacity, setReEditFgOpacity] = useState<number | null>(null)
+  const [reEditBgOpacity, setReEditBgOpacity] = useState<number | null>(null)
+  const [reEditGradeTarget, setReEditGradeTarget] = useState<'foreground' | 'background' | 'both'>('both')
   const [reEditing, setReEditing] = useState(false)
   const [reviewImages, setReviewImages] = useState(false)
   const [reviewData, setReviewData] = useState<PreviewBatchResult | null>(null)
@@ -395,7 +437,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
     queryFn: () => getJobStatus(jobId),
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return status === 'done' || status === 'failed' ? false : 3000
+      return status === 'done' || status === 'failed' || status === 'deleted' ? false : 3000
     },
   })
 
@@ -460,10 +502,11 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   )
   if (!job) return null
 
-  const isTerminal = job.status === 'done' || job.status === 'failed'
+  const isTerminal = job.status === 'done' || job.status === 'failed' || job.status === 'deleted'
   const pct = stepProgress(job.status, job.progress_message)
-  const displayTitle = title ?? job.batch_title
+  const displayTitle = stripThemeSuffix(title ?? job.batch_title)
   const metaChips = buildJobMeta(job)
+  const headerMeta = [...metaChips, `Created ${new Date(job.created_at).toLocaleString()}`]
 
   async function handleDownload(url: string) {
     setDownloading(true)
@@ -526,7 +569,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
 
       {/* Header row */}
       <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <span className="text-sm font-medium text-stone-200">
             {STATUS_LABELS[job.status] ?? job.status}
           </span>
@@ -545,10 +588,32 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
             </button>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-stone-500 truncate max-w-32">
-            {displayTitle ?? jobId.slice(0, 8) + '…'}
-          </span>
+        <div className="flex items-center gap-1.5">
+          {isTerminal && onToggleMinimize ? (
+            <button
+              onClick={onToggleMinimize}
+              className="flex min-w-0 items-center gap-2 rounded-lg border border-stone-700/80 px-2.5 py-1.5 text-left transition hover:border-stone-500 hover:bg-stone-800"
+              title={minimized ? 'Expand' : 'Minimise'}
+            >
+              {job.color_theme && (
+                <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${THEME_DOT[job.color_theme] ?? 'bg-stone-500'}`} />
+              )}
+              <span className="font-mono text-xs text-stone-500 truncate max-w-32">
+                {displayTitle ?? jobId.slice(0, 8) + '…'}
+              </span>
+              <span className="text-sm leading-none text-stone-400">{minimized ? '▼' : '▲'}</span>
+            </button>
+          ) : (
+            <>
+              {job.color_theme && (
+                <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${THEME_DOT[job.color_theme] ?? 'bg-stone-500'}`} />
+              )}
+              <span className="font-mono text-xs text-stone-500 truncate max-w-32">
+                {displayTitle ?? jobId.slice(0, 8) + '…'}
+              </span>
+            </>
+          )}
+          <JobMetaPopover items={headerMeta} align="left" />
           {!isTerminal && onCancel && (
             <button
               onClick={async () => {
@@ -563,19 +628,10 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
               {cancelling ? '…' : '✕'}
             </button>
           )}
-          {isTerminal && onToggleMinimize && (
-            <button
-              onClick={onToggleMinimize}
-              className="text-xs text-stone-500 hover:text-stone-300 leading-none"
-              title={minimized ? 'Expand' : 'Minimise'}
-            >
-              {minimized ? '▼' : '▲'}
-            </button>
-          )}
           {isTerminal && onDismiss && (
             <button
               onClick={onDismiss}
-              className="text-xs text-stone-600 hover:text-red-400 leading-none"
+              className="rounded-lg p-2 text-sm text-stone-600 transition hover:bg-stone-800 hover:text-red-400 leading-none"
               title="Dismiss"
             >
               ✕
@@ -583,17 +639,6 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
           )}
         </div>
       </div>
-
-      {/* Metadata strip */}
-      {!minimized && metaChips.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-3 pb-2">
-          {metaChips.map(chip => (
-            <span key={chip} className="rounded-md bg-stone-800 px-2 py-0.5 text-xs text-stone-400">
-              {chip}
-            </span>
-          ))}
-        </div>
-      )}
 
       {/* Collapsed content when minimised */}
       {minimized ? null : (
@@ -652,7 +697,7 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                 controls
                 playsInline
                 controlsList="nodownload"
-                className="w-full max-h-96 rounded-lg object-contain bg-black"
+                className="mx-auto aspect-[9/16] w-full max-w-[360px] rounded-lg bg-black object-contain"
               />
               <button
                 onClick={() => handleDownload(job.output_url!)}
@@ -667,8 +712,12 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                     setReEditOpen(o => !o)
                     if (!reEditOpen) {
                       setReEditTheme(job.color_theme ?? 'none')
+                      setReEditAccent(job.accent_folder ?? 'none')
                       setReEditSpi(job.seconds_per_image ?? null)
                       setReEditTotal(job.total_seconds ?? null)
+                      setReEditFgOpacity(job.layered_config?.foreground_opacity ?? null)
+                      setReEditBgOpacity(job.layered_config?.background_opacity ?? 1)
+                      setReEditGradeTarget(job.layered_config?.grade_target ?? 'both')
                     }
                   }}
                   className={`w-full rounded-lg border py-1.5 text-xs font-medium transition ${
@@ -683,25 +732,31 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
               {reEditOpen && job.status === 'done' && onRegraded && (
                 <div className="rounded-lg border border-stone-700 bg-stone-900 p-3 space-y-3">
                   {/* Theme picker */}
-                  <div>
-                    <p className="text-[10px] text-stone-600 mb-1.5">Colour theme:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {RE_EDIT_THEMES.map(t => (
-                        <button
-                          key={t.value}
-                          onClick={() => setReEditTheme(t.value)}
-                          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition ${
-                            reEditTheme === t.value
-                              ? 'border-brand-500 text-brand-400 bg-brand-500/10'
-                              : 'border-stone-700 bg-stone-800 text-stone-300 hover:border-stone-500'
-                          }`}
-                        >
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${RE_EDIT_THEME_DOT[t.value] ?? 'bg-stone-500'}`} />
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                <div>
+                  <p className="text-[10px] text-stone-600 mb-1.5">Colour theme:</p>
+                  <select
+                    value={reEditTheme}
+                    onChange={e => setReEditTheme(e.target.value)}
+                    className="w-full rounded-lg border border-stone-700 bg-stone-800 px-2.5 py-2 text-xs text-stone-200 focus:border-brand-500 focus:outline-none"
+                  >
+                    {getReEditThemes(job).map(t => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-stone-600 mb-1.5">Accent images:</p>
+                  <select
+                    value={reEditAccent}
+                    onChange={e => setReEditAccent(e.target.value)}
+                    className="w-full rounded-lg border border-stone-700 bg-stone-800 px-2.5 py-2 text-xs text-stone-200 focus:border-brand-500 focus:outline-none"
+                  >
+                    {RE_EDIT_ACCENTS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
 
                   {/* Seconds per image */}
                   <div>
@@ -741,12 +796,70 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                     />
                   </div>
 
+                  {job.mode === 'layered' && job.layered_config && (
+                    <>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[10px] text-stone-600">Foreground image opacity</p>
+                          <span className="text-[10px] text-stone-400 font-mono">{Math.round((reEditFgOpacity ?? job.layered_config.foreground_opacity) * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={reEditFgOpacity ?? job.layered_config.foreground_opacity}
+                          onChange={e => setReEditFgOpacity(parseFloat(e.target.value))}
+                          className="w-full accent-brand-500"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[10px] text-stone-600">Background video opacity</p>
+                          <span className="text-[10px] text-stone-400 font-mono">{Math.round((reEditBgOpacity ?? job.layered_config.background_opacity ?? 1) * 100)}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={reEditBgOpacity ?? job.layered_config.background_opacity ?? 1}
+                          onChange={e => setReEditBgOpacity(parseFloat(e.target.value))}
+                          className="w-full accent-brand-500"
+                        />
+                      </div>
+
+                      <div>
+                        <p className="text-[10px] text-stone-600 mb-1.5">Apply colour grade to</p>
+                        <select
+                          value={reEditGradeTarget}
+                          onChange={e => setReEditGradeTarget(e.target.value as 'foreground' | 'background' | 'both')}
+                          className="w-full rounded-lg border border-stone-700 bg-stone-800 px-2.5 py-2 text-xs text-stone-200 focus:border-brand-500 focus:outline-none"
+                        >
+                          <option value="foreground">Foreground only</option>
+                          <option value="background">Background only</option>
+                          <option value="both">Both</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
                   <button
                     onClick={async () => {
                       const newTitle = job.batch_title
                         ? `${job.batch_title} · ${reEditTheme}`
                         : reEditTheme
 
+                      const layeredConfig = job.mode === 'layered' && job.layered_config
+                        ? {
+                            ...job.layered_config,
+                            foreground_opacity: reEditFgOpacity ?? job.layered_config.foreground_opacity,
+                            background_opacity: reEditBgOpacity ?? (job.layered_config.background_opacity ?? 1),
+                            foreground_speed: reEditSpi ?? job.layered_config.foreground_speed,
+                            grade_target: reEditGradeTarget,
+                          }
+                        : undefined
                       // If review images checked, fetch cached images + show PreviewModal
                       if (reviewImages) {
                         setLoadingReview(true)
@@ -767,15 +880,28 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                         if (job.images_cached) {
                           const res = await regradeJob(job.job_id, {
                             color_theme: reEditTheme,
+                            accent_folder: reEditAccent === 'none' ? null : reEditAccent,
                             ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
                             ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
+                            ...(reEditTheme === 'custom' && job.custom_grade_params ? { custom_grade_params: job.custom_grade_params } : {}),
+                            ...(layeredConfig ? { layered_config: layeredConfig } : {}),
                           })
                           onRegraded(res.job_id, newTitle)
                         } else if (onColourGrade && job.search_terms?.length) {
                           onColourGrade(job.search_terms, job.batch_title ?? null, {
                             color_theme: reEditTheme,
+                            accent_folder: reEditAccent === 'none' ? null : reEditAccent,
                             ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
                             ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
+                            ...(reEditTheme === 'custom' && job.custom_grade_params ? { custom_grade_params: job.custom_grade_params } : {}),
+                            ...(job.philosopher ? { philosopher: job.philosopher } : {}),
+                            ...(job.philosopher_count != null ? { philosopher_count: job.philosopher_count } : {}),
+                            ...(job.grade_philosopher != null ? { grade_philosopher: job.grade_philosopher } : {}),
+                            ...(job.philosopher_is_user != null ? { philosopher_is_user: job.philosopher_is_user } : {}),
+                            ...(job.preset_name ? { preset_name: job.preset_name } : {}),
+                            ...(job.text_overlay ? { text_overlay: job.text_overlay } : {}),
+                            ...(job.ai_voiceover ? { ai_voiceover: job.ai_voiceover } : {}),
+                            ...(layeredConfig ? { layered_config: layeredConfig } : {}),
                           }, reEditTheme)
                         } else {
                           alert('Images not yet cached — try again in a few seconds.')
@@ -808,11 +934,16 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
             </div>
           )}
 
-          {job.status === 'failed' && (
+          {(job.status === 'failed' || job.status === 'deleted') && (
             <div className="mt-3 space-y-2">
-              {job.error_message && (
+              {job.status === 'failed' && job.error_message && (
                 <p className="rounded-lg bg-red-950 px-3 py-2 text-xs text-red-400">
                   {friendlyError(job.error_message)}
+                </p>
+              )}
+              {job.status === 'deleted' && (
+                <p className="rounded-lg bg-stone-900 px-3 py-2 text-xs text-stone-400">
+                  This job was removed from the current queue. You can re-run it from here if you want to start it again.
                 </p>
               )}
               {onRetry && job.search_terms?.length ? (
@@ -839,11 +970,23 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
           setReEditing(true)
           try {
             const selectedPaths = confirmed[0]?.images.map(i => i.storage_path) ?? []
+            const layeredConfig = job!.mode === 'layered' && job!.layered_config
+              ? {
+                  ...job!.layered_config,
+                  foreground_opacity: reEditFgOpacity ?? job!.layered_config.foreground_opacity,
+                  background_opacity: reEditBgOpacity ?? (job!.layered_config.background_opacity ?? 1),
+                  foreground_speed: pending.spi ?? job!.layered_config.foreground_speed,
+                  grade_target: reEditGradeTarget,
+                }
+              : undefined
             const res = await regradeJob(job!.job_id, {
               color_theme: pending.theme,
+              accent_folder: reEditAccent === 'none' ? null : reEditAccent,
               ...(pending.spi != null ? { seconds_per_image: pending.spi } : {}),
               ...(pending.total != null ? { total_seconds: pending.total } : {}),
               ...(selectedPaths.length ? { selected_paths: selectedPaths } : {}),
+              ...(pending.theme === 'custom' && job!.custom_grade_params ? { custom_grade_params: job!.custom_grade_params } : {}),
+              ...(layeredConfig ? { layered_config: layeredConfig } : {}),
             })
             const newTitle = job!.batch_title
               ? `${job!.batch_title} · ${pending.theme}`
@@ -863,3 +1006,11 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
     </>
   )
 }
+
+
+
+
+
+
+
+

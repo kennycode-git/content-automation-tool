@@ -180,6 +180,7 @@ class CustomGradeParams(BaseModel):
 class LayeredConfig(BaseModel):
     background_video_urls: List[str] = Field(..., min_length=1, max_length=5)
     foreground_opacity: float = Field(default=0.55, ge=0.0, le=1.0)
+    background_opacity: float = Field(default=1.0, ge=0.0, le=1.0)
     foreground_speed: float = Field(default=0.25, ge=0.05, le=5.0)
     grade_target: str = Field(default="both")
     crossfade_duration: float = Field(default=0.5, ge=0.2, le=2.0)
@@ -293,6 +294,8 @@ class JobStatusResponse(BaseModel):
     layered_config: Optional[LayeredConfig] = None
     preset_name: Optional[str] = None
     preview_images: Optional[List[str]] = None
+    custom_grade_params: Optional[CustomGradeParams] = None
+    text_overlay: Optional[TextOverlayConfig] = None
     ai_voiceover: Optional[AiVoiceoverConfig] = None
     images_cached: Optional[bool] = None
     created_at: datetime
@@ -319,12 +322,16 @@ class JobListItem(BaseModel):
     accent_folder: Optional[str] = None
     philosopher: Optional[str] = None
     philosopher_count: Optional[int] = None
+    grade_philosopher: Optional[bool] = None
+    philosopher_is_user: Optional[bool] = None
     transition: Optional[str] = None
     transition_duration: Optional[float] = None
     max_clip_duration: Optional[int] = None
     clip_count: Optional[int] = None
     layered_config: Optional[LayeredConfig] = None
     preset_name: Optional[str] = None
+    custom_grade_params: Optional[CustomGradeParams] = None
+    text_overlay: Optional[TextOverlayConfig] = None
     ai_voiceover: Optional[AiVoiceoverConfig] = None
     images_cached: Optional[bool] = None
     created_at: datetime
@@ -337,14 +344,22 @@ class RegradeRequest(BaseModel):
     seconds_per_image: Optional[float] = Field(default=None, ge=0.05, le=5.0)
     total_seconds: Optional[float] = Field(default=None, ge=1.0, le=120.0)
     selected_paths: Optional[List[str]] = None  # subset of cached image paths; None = use all
+    custom_grade_params: Optional[CustomGradeParams] = None
+    accent_folder: Optional[str] = Field(default=None)
+    layered_config: Optional[LayeredConfig] = None
 
     @field_validator("color_theme")
     @classmethod
     def validate_color_theme(cls, v: str) -> str:
-        # 'custom' not supported for re-grade (requires PIL grade params not cached)
-        allowed = ALLOWED_COLOR_THEMES - {"custom"}
-        if v not in allowed:
-            raise ValueError(f"color_theme must be one of: {', '.join(sorted(allowed))}")
+        if v not in ALLOWED_COLOR_THEMES:
+            raise ValueError(f"color_theme must be one of: {', '.join(sorted(ALLOWED_COLOR_THEMES))}")
+        return v
+
+    @field_validator("accent_folder")
+    @classmethod
+    def validate_accent_folder(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ALLOWED_ACCENT_FOLDERS:
+            raise ValueError(f"accent_folder must be one of: {', '.join(sorted(ALLOWED_ACCENT_FOLDERS))}")
         return v
 
 

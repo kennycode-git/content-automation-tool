@@ -15,13 +15,15 @@ import type { BgVideoResult } from '../lib/api'
 export interface LayeredPanelConfig {
   bgVideoUrls: string[]
   opacity: number
+  backgroundOpacity: number
   gradeTarget: 'foreground' | 'background' | 'both'
   crossfadeDuration: number
 }
 
 export const DEFAULT_LAYERED_CONFIG: LayeredPanelConfig = {
   bgVideoUrls: [],
-  opacity: 0.55,
+  opacity: 0.5,
+  backgroundOpacity: 0.5,
   gradeTarget: 'both',
   crossfadeDuration: 0.5,
 }
@@ -71,7 +73,7 @@ export default function LayeredPanel({ config, onChange }: Props) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-tour="layered-bg-panel">
       {/* Section header */}
       <div className="flex items-center gap-2">
         <span className="text-sm font-bold text-stone-200">Background Videos</span>

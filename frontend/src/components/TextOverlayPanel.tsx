@@ -80,21 +80,21 @@ const OVERLAY_ALIGNMENTS: { value: OverlayAlignment; label: string }[] = [
 ]
 
 const FONT_CSS_FAMILY: Record<OverlayFont, string> = {
-  garamond:    'Georgia, "Times New Roman", serif',
-  cormorant:   '"Palatino Linotype", Georgia, serif',
-  playfair:    '"Palatino Linotype", Georgia, serif',
-  crimson:     'Georgia, serif',
-  philosopher: 'Georgia, serif',
-  lora:        'Georgia, serif',
-  outfit:      'system-ui, -apple-system, sans-serif',
-  raleway:     'system-ui, -apple-system, sans-serif',
-  josefin:     'system-ui, -apple-system, sans-serif',
-  inter:       'system-ui, -apple-system, sans-serif',
-  cinzel:      '"Times New Roman", serif',
-  cinzel_deco: '"Times New Roman", serif',
-  uncial:      'Georgia, serif',
-  jetbrains:   '"Courier New", Courier, monospace',
-  space_mono:  '"Courier New", Courier, monospace',
+  garamond:    '"Overlay Garamond", Georgia, "Times New Roman", serif',
+  cormorant:   '"Overlay Cormorant", "Palatino Linotype", Georgia, serif',
+  playfair:    '"Overlay Playfair", "Palatino Linotype", Georgia, serif',
+  crimson:     '"Overlay Crimson", Georgia, serif',
+  philosopher: '"Overlay Philosopher", Georgia, serif',
+  lora:        '"Overlay Lora", Georgia, serif',
+  outfit:      '"Overlay Outfit", system-ui, -apple-system, sans-serif',
+  raleway:     '"Overlay Raleway", system-ui, -apple-system, sans-serif',
+  josefin:     '"Overlay Josefin", system-ui, -apple-system, sans-serif',
+  inter:       '"Overlay Inter", system-ui, -apple-system, sans-serif',
+  cinzel:      '"Overlay Cinzel", "Times New Roman", serif',
+  cinzel_deco: '"Overlay Cinzel Deco", "Times New Roman", serif',
+  uncial:      '"Overlay Uncial", Georgia, serif',
+  jetbrains:   '"Overlay JetBrains Mono", "Courier New", Courier, monospace',
+  space_mono:  '"Overlay Space Mono", "Courier New", Courier, monospace',
 }
 
 const COLOR_HEX_MAP: Record<string, string> = {
@@ -123,12 +123,16 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   const [enlarged, setEnlarged] = useState(false)
   const [previewH, setPreviewH] = useState(200)
   const dragStartRef = useRef<{ y: number; h: number } | null>(null)
+  const BASE_H = 540
+  const BASE_W = 304
 
   const color = overlayColorHex(ov)
   const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
 
-  function PreviewBox({ h, w }: { h: number; w: number }) {
-    const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.045)))
+  function PreviewBox() {
+    const h = BASE_H
+    const w = BASE_W
+    const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.015)))
     const marginPct = ov.margin_pct ?? 0.05
     const marginX = Math.round(w * marginPct)
     const marginY = Math.round(h * marginPct)
@@ -245,7 +249,18 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   return (
     <div className="flex justify-center my-2">
       <div className="relative group">
-        <PreviewBox h={previewH} w={113} />
+        <div style={{ width: Math.round((BASE_W * previewH) / BASE_H), height: previewH, overflow: 'hidden' }}>
+          <div
+            style={{
+              width: BASE_W,
+              height: BASE_H,
+              transform: `scale(${previewH / BASE_H})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            <PreviewBox />
+          </div>
+        </div>
         <button
           onClick={() => setEnlarged(true)}
           className="absolute bottom-6 right-1.5 w-6 h-6 rounded bg-black/60 flex items-center justify-center
@@ -273,7 +288,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           onClick={() => setEnlarged(false)}
         >
           <div className="relative" onClick={e => e.stopPropagation()}>
-            <PreviewBox h={540} w={304} />
+            <PreviewBox />
             <button
               onClick={() => setEnlarged(false)}
               className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center
@@ -301,7 +316,7 @@ export const DEFAULT_TEXT_OVERLAY: TextOverlayConfig = {
   background_box: false,
   position: 'bottom-center',
   alignment: 'center',
-  font_size_pct: 0.045,
+  font_size_pct: 0.015,
   margin_pct: 0.05,
   outline: false,
 }
@@ -562,15 +577,15 @@ export default function TextOverlayPanel({ value: ov, onChange }: Props) {
             <div className="flex items-center justify-between mb-0.5">
               <p className="text-[9px] font-semibold tracking-widest uppercase text-stone-600">Size</p>
               <span className="text-[10px] font-mono text-stone-300">
-                {Math.round((ov.font_size_pct ?? 0.045) * 1000) / 10}%
+                {Math.round((ov.font_size_pct ?? 0.015) * 1000) / 10}%
               </span>
             </div>
             <input
               type="range"
-              min={0.01}
-              max={0.12}
-              step={0.002}
-              value={ov.font_size_pct ?? 0.045}
+              min={0.005}
+              max={0.05}
+              step={0.001}
+              value={ov.font_size_pct ?? 0.015}
               onChange={e => patch({ font_size_pct: parseFloat(e.target.value) })}
               className="w-full accent-brand-500"
             />

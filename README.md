@@ -27,6 +27,30 @@ A SaaS platform that generates branded video slideshows from curated stock image
 - **AI prompt tool** — copy-paste prompt template for generating batch lists with ChatGPT/Claude
 - **Subscription gating** — Creator (30 renders/month) and Pro (unlimited) plans via Stripe
 
+## Current Product Scope
+
+- Image carousel mode now supports visual batches, colour variants, template loading, and per-batch style overrides.
+- Video clips mode now supports stock-footage search, paged preview browsing, trim-based selection, and a 60-second total selection cap.
+- Layered mode now supports background-video search, favorites, presets, grade targeting, and separate foreground/background opacity controls.
+- Re-edit flows preserve more metadata, including accent choices, philosopher assets, and custom theme-related settings.
+- The dashboard now includes stronger template feedback, cleaner job metadata popovers, and guided tours for Images, Video Clips, and Layered.
+
+## Project Tracking
+
+Use these root markdown files to track sprint work in a structured way:
+
+- [CURRENT_SPRINT.md](c:/Documents/Cogito/saas/markdown/CURRENT_SPRINT.md) — the active sprint board and current priorities
+- [RELEASE_NOTES.md](c:/Documents/Cogito/saas/markdown/RELEASE_NOTES.md) — dated user-facing change log
+- [AI_WORKFLOW.md](c:/Documents/Cogito/saas/markdown/AI_WORKFLOW.md) — instructions for how Codex/AI should update sprint docs after each change
+- [TEMPLATE.md](c:/Documents/Cogito/saas/markdown/TEMPLATE.md) — reusable sprint template for future cycles
+
+Recommended categorization inside each sprint:
+
+- Broadcast updates
+- General edits and bug fixes
+- Enhancements
+- QA / risks
+
 ## Project Structure
 
 ```

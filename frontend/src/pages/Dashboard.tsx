@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 
@@ -24,7 +25,6 @@ import ClipBundles from '../components/ClipBundles'
 import ClipPreviewGrid from '../components/ClipPreviewGrid'
 import { DEFAULT_LAYERED_CONFIG, OPACITY_PRESETS } from '../components/LayeredPanel'
 import type { LayeredPanelConfig } from '../components/LayeredPanel'
-import LayeredTour, { LAYERED_TOUR_KEY } from '../components/LayeredTour'
 import JobPanel from '../components/JobPanel'
 import RecentJobs from '../components/RecentJobs'
 import TermBundles from '../components/TermBundles'
@@ -33,12 +33,35 @@ import type { ToastItem } from '../components/Toast'
 import PreviewModal from '../components/PreviewModal'
 import type { ConfirmedBatch } from '../components/PreviewModal'
 import AdvancedModal from '../components/AdvancedModal'
-import OnboardingTour, { TOUR_STORAGE_KEY } from '../components/OnboardingTour'
+import VideoTutorial, { TOUR_STORAGE_KEY } from '../components/VideoTutorial'
+import type { TutorialPath, TutorialMode } from '../components/VideoTutorial'
 import PromptModal from '../components/PromptModal'
 import AppNavbar from '../components/AppNavbar'
 import InspirationCarousel from '../components/InspirationCarousel'
+import type { TemplateTargetMode } from '../components/InspirationCarousel'
 
 type ContentMode = 'images' | 'clips' | 'layered'
+type ReEditRestoreSettings = Omit<Partial<VideoSettings>, 'custom_grade_params'> & {
+  layered_config?: LayeredConfig | null
+  custom_grade_params?: CustomGradeParams | null
+  accent_folder?: string | null
+  philosopher?: string | null
+  philosopher_count?: number | null
+  grade_philosopher?: boolean | null
+  philosopher_is_user?: boolean | null
+  preset_name?: string | null
+  text_overlay?: JobStatus['text_overlay']
+  ai_voiceover?: JobStatus['ai_voiceover']
+}
+
+interface PendingBundleSelection {
+  title: string | null
+  terms: string[]
+  colorTheme?: string
+  customGradeParams?: CustomGradeParams
+  accentFolder?: string | null
+  layeredBackgroundVideoQuery?: string
+}
 
 interface Props {
   session: Session
@@ -70,6 +93,11 @@ const VARIANT_THEMES = [
   { value: 'dusk',    label: 'Dusk',        dot: 'bg-purple-900 ring-1 ring-purple-700' },
 ]
 
+const BACKGROUND_OPACITY_PRESETS = [
+  ...OPACITY_PRESETS,
+  { label: 'Full', value: 1.0 },
+]
+
 export default function Dashboard({ session }: Props) {
   const [batches, setBatches] = useState<BatchOutput[]>([])
   const [settings, setSettings] = useState<VideoSettings>(DEFAULT_SETTINGS)
@@ -85,7 +113,7 @@ export default function Dashboard({ session }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [pendingReuse, setPendingReuse] = useState<{ title: string | null; terms: string[] } | null>(null)
-  const [pendingBundles, setPendingBundles] = useState<{ title: string | null; terms: string[]; colorTheme?: string; customGradeParams?: CustomGradeParams; accentFolder?: string | null }[] | null>(null)
+  const [pendingBundles, setPendingBundles] = useState<PendingBundleSelection[] | null>(null)
   const [appliedPresetName, setAppliedPresetName] = useState<string | null>(null)
   const [showVariants, setShowVariants] = useState(false)
   const [showVariantsConfirm, setShowVariantsConfirm] = useState(false)
@@ -104,22 +132,27 @@ export default function Dashboard({ session }: Props) {
   const [clipsSearching, setClipsSearching] = useState(false)
   const [clipsGenerating, setClipsGenerating] = useState(false)
   const [clipsError, setClipsError] = useState<string | null>(null)
+  const [clipPreviewPerTerm, setClipPreviewPerTerm] = useState(4)
   const [layeredConfig, setLayeredConfig] = useState<LayeredPanelConfig>(DEFAULT_LAYERED_CONFIG)
   const [layeredError, setLayeredError] = useState<string | null>(null)
   const [layeredSubmitting, setLayeredSubmitting] = useState(false)
-  const [showLayeredTour, setShowLayeredTour] = useState(false)
   const [staging, setStaging] = useState(false)
   const [stagingError, setStagingError] = useState<string | null>(null)
   const [stagingUsedPexels, setStagingUsedPexels] = useState(false)
   const [previewData, setPreviewData] = useState<PreviewBatchResult[] | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showTour, setShowTour] = useState(false)
+  const [tourPath, setTourPath] = useState<TutorialPath>('selector')
   const [carouselKey, setCarouselKey] = useState(0)
   const [carouselVisible, setCarouselVisible] = useState(true)
+  const [templateLoadedLabel, setTemplateLoadedLabel] = useState<string | null>(null)
   const [imageSource, setImageSource] = useState<'auto' | 'unsplash' | 'pexels' | 'both'>('auto')
   const [showStagingOverlay, setShowStagingOverlay] = useState(false)
   const stagingAbortRef = useRef<AbortController | null>(null)
   const stagingOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const step1Ref = useRef<HTMLDivElement>(null)
+  const step2Ref = useRef<HTMLDivElement>(null)
+  const templateFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Usage query
   const { data: usageInfo } = useQuery<UsageInfo>({
@@ -140,14 +173,6 @@ export default function Dashboard({ session }: Props) {
       return () => clearTimeout(t)
     }
   }, [])
-
-  // Auto-show layered tour on first visit to the Layered tab
-  useEffect(() => {
-    if (contentMode === 'layered' && !localStorage.getItem(LAYERED_TOUR_KEY)) {
-      const t = setTimeout(() => setShowLayeredTour(true), 400)
-      return () => clearTimeout(t)
-    }
-  }, [contentMode])
 
   // Browser tab title: show pending job count while running
   useEffect(() => {
@@ -189,6 +214,12 @@ export default function Dashboard({ session }: Props) {
     try { localStorage.setItem('cogito_minimized_jobs', JSON.stringify([...minimizedJobs])) } catch { /* ignore */ }
   }, [minimizedJobs])
 
+  useEffect(() => {
+    return () => {
+      if (templateFeedbackTimerRef.current) clearTimeout(templateFeedbackTimerRef.current)
+    }
+  }, [])
+
   // Auto-compute max_per_query so at least 75% of the target image count is reachable.
   // Only updates when the user hasn't manually overridden (tracked via autoMaxPerQuery ref).
   const autoMaxPerQueryRef = useRef<number>(DEFAULT_SETTINGS.max_per_query)
@@ -218,6 +249,13 @@ export default function Dashboard({ session }: Props) {
   function dismissJob(jobId: string) {
     setActiveJobs(prev => prev.filter(j => j.jobId !== jobId))
     setMinimizedJobs(prev => { const next = new Set(prev); next.delete(jobId); return next })
+  }
+
+  function dismissAllJobs() {
+    setActiveJobs([])
+    setMinimizedJobs(new Set())
+    setJobEstimates({})
+    setCompletedJobIds(new Set())
   }
 
   async function cancelJob(jobId: string) {
@@ -383,6 +421,7 @@ export default function Dashboard({ session }: Props) {
             color_theme: effectiveTheme,
             custom_grade_params: effectiveGradeParams as Record<string, number> | undefined,
             philosopher: b.philosopher ?? undefined,
+            philosopher_count: b.philosopher_count,
             grade_philosopher: b.grade_philosopher,
             philosopher_is_user: b.philosopher_is_user,
           }
@@ -454,6 +493,7 @@ export default function Dashboard({ session }: Props) {
               layered_config: {
                 background_video_urls: originalBatch?.layered_background_video_urls ?? [],
                 foreground_opacity: layeredConfig.opacity,
+                background_opacity: layeredConfig.backgroundOpacity,
                 foreground_speed: settings.seconds_per_image,
                 grade_target: layeredConfig.gradeTarget,
                 crossfade_duration: layeredConfig.crossfadeDuration,
@@ -515,8 +555,16 @@ export default function Dashboard({ session }: Props) {
         max_per_query: job.max_per_query ?? undefined,
         batch_title: job.batch_title ?? undefined,
         preset_name: job.preset_name ?? undefined,
+        accent_folder: job.accent_folder ?? undefined,
+        image_source: (job.image_source as 'unsplash' | 'pexels' | 'both' | null) ?? undefined,
+        philosopher: job.philosopher ?? undefined,
+        philosopher_count: job.philosopher_count ?? undefined,
+        grade_philosopher: job.grade_philosopher ?? undefined,
+        philosopher_is_user: job.philosopher_is_user ?? undefined,
+        text_overlay: job.text_overlay ?? undefined,
         custom_grade_params: job.custom_grade_params ?? undefined,
         ai_voiceover: job.ai_voiceover ?? undefined,
+        layered_config: job.layered_config ?? undefined,
       })
       setPendingCount(prev => prev + 1)
       setActiveJobs(prev => [{ jobId: res.job_id, title: job.batch_title ?? null }, ...prev])
@@ -567,7 +615,7 @@ export default function Dashboard({ session }: Props) {
   const handleColourGrade = useCallback(async (
     terms: string[],
     batchTitle: string | null,
-    restoredSettings: Partial<VideoSettings> | null,
+    restoredSettings: ReEditRestoreSettings | null,
     theme: string,
   ) => {
     if (trialExpired) { setError('Your trial has ended. Upgrade to continue generating.'); return }
@@ -577,12 +625,24 @@ export default function Dashboard({ session }: Props) {
     setPendingCount(prev => prev + 1)
     try {
       const merged = { ...settings, ...(restoredSettings ?? {}), color_theme: theme }
+      const effectiveCustomGradeParams = theme === 'custom'
+        ? (restoredSettings?.custom_grade_params ?? settings.custom_grade_params)
+        : undefined
       const res = await generateVideo({
         search_terms: terms,
         ...merged,
         batch_title: batchTitle ? `${batchTitle} · ${theme}` : theme,
         image_source: resolvedSource,
-        ai_voiceover: undefined,
+        custom_grade_params: effectiveCustomGradeParams,
+        accent_folder: restoredSettings?.accent_folder ?? undefined,
+        philosopher: restoredSettings?.philosopher ?? undefined,
+        philosopher_count: restoredSettings?.philosopher_count ?? undefined,
+        grade_philosopher: restoredSettings?.grade_philosopher ?? undefined,
+        philosopher_is_user: restoredSettings?.philosopher_is_user ?? undefined,
+        preset_name: restoredSettings?.preset_name ?? undefined,
+        text_overlay: restoredSettings?.text_overlay ?? undefined,
+        ai_voiceover: restoredSettings?.ai_voiceover ?? undefined,
+        layered_config: restoredSettings?.layered_config ?? undefined,
       })
       setActiveJobs(prev => [{ jobId: res.job_id, title: batchTitle ? `${batchTitle} · ${theme}` : theme }, ...prev])
     } catch (e: unknown) {
@@ -603,6 +663,63 @@ export default function Dashboard({ session }: Props) {
     return batches.filter(b => b.terms.length > 0)
   }
 
+  function setModeAndResetPreview(nextMode: ContentMode) {
+    setContentMode(nextMode)
+    setFetchedClips(null)
+    setSelectedClips([])
+    setClipPreviewBatch(null)
+    setClipsError(null)
+  }
+
+  function openTutorial(path: TutorialPath) {
+    setTourPath(path)
+    setShowTour(true)
+  }
+
+  function scrollToStep(ref: RefObject<HTMLDivElement | null>) {
+    window.requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  function handleTemplateApply(
+    targetMode: TemplateTargetMode,
+    theme: string,
+    bundles: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string }[],
+    appliedAccent?: string | null,
+    customGradeParams?: CustomGradeParams,
+  ) {
+    const effectiveTargetMode: ContentMode = targetMode
+    setModeAndResetPreview(effectiveTargetMode)
+    const templateLabel = bundles[0]?.title ?? 'Template'
+    setTemplateLoadedLabel(templateLabel)
+    if (templateFeedbackTimerRef.current) clearTimeout(templateFeedbackTimerRef.current)
+    templateFeedbackTimerRef.current = setTimeout(() => {
+      setTemplateLoadedLabel(null)
+    }, 2600)
+
+    if (effectiveTargetMode === 'clips') {
+      setClipsSettings(prev => ({ ...prev, color_theme: theme }))
+    } else {
+      setSettings(prev => ({ ...prev, color_theme: theme, custom_grade_params: customGradeParams ?? undefined }))
+      setAccentFolder(appliedAccent ?? null)
+    }
+
+    if (bundles.length > 0) {
+      setPendingBundles(bundles.map(b => ({
+        ...b,
+        colorTheme: theme,
+        customGradeParams: customGradeParams ?? undefined,
+        accentFolder: appliedAccent ?? null,
+        layeredBackgroundVideoQuery: effectiveTargetMode === 'layered' ? b.layeredBackgroundVideoQuery : undefined,
+      })))
+      scrollToStep(step1Ref)
+      return
+    }
+
+    scrollToStep(step2Ref)
+  }
+
   function getClipBatchTitle(batch: BatchOutput) {
     return batch.title?.trim() || batch.terms.join(', ') || 'Video Clips'
   }
@@ -611,12 +728,36 @@ export default function Dashboard({ session }: Props) {
     return batch.color_theme ?? clipsSettings.color_theme
   }
 
+  function getCurrentClipPreviewBatch() {
+    if (!clipPreviewBatch) return null
+    const validBatches = getValidClipBatches()
+    if (validBatches.length === 1) return validBatches[0]
+    return validBatches.find(b =>
+      (b.title ?? '') === (clipPreviewBatch.title ?? '')
+      && b.terms.join('\n') === clipPreviewBatch.terms.join('\n'),
+    ) ?? clipPreviewBatch
+  }
+
+  useEffect(() => {
+    if (contentMode !== 'clips' || !clipPreviewBatch) return
+    const validBatches = getValidClipBatches()
+    const matchingBatch = validBatches.find(b =>
+      (b.title ?? '') === (clipPreviewBatch.title ?? '')
+      && b.terms.join('\n') === clipPreviewBatch.terms.join('\n'),
+    )
+    if (!matchingBatch) {
+      setFetchedClips(null)
+      setSelectedClips([])
+      setClipPreviewBatch(null)
+    }
+  }, [batches, clipPreviewBatch, contentMode])
+
   function getClipBatchOverlay(batch: BatchOutput) {
     const overlay = batch.text_overlay
     return overlay?.enabled && overlay.text.trim() ? overlay : null
   }
 
-  async function handleSearchClips() {
+  async function handleSearchClips(perTerm = 4, append = false) {
     const validBatches = getValidClipBatches()
     if (validBatches.length === 0) { setClipsError('Enter at least one search term.'); return }
     if (validBatches.length > 1) {
@@ -626,21 +767,30 @@ export default function Dashboard({ session }: Props) {
     const batch = validBatches[0]
     setClipsError(null)
     setClipsSearching(true)
-    setFetchedClips(null)
-    setSelectedClips([])
+    if (!append) {
+      setFetchedClips(null)
+      setSelectedClips([])
+    }
     setClipPreviewBatch(batch)
+    setClipPreviewPerTerm(perTerm)
     try {
-      const res = await fetchVideoClips(batch.terms, clipsSettings.clips_per_term, getClipBatchTheme(batch))
+      const res = await fetchVideoClips(batch.terms, perTerm, getClipBatchTheme(batch))
       setFetchedClips(res.clips)
-      setSelectedClips(res.clips.map(c => ({
-        id: c.id,
-        download_url: c.download_url,
-        preview_url: c.preview_url,
-        thumbnail: c.thumbnail,
-        duration: c.duration,
-        trim_start: 0,
-        trim_end: 0,
-      })))
+      setSelectedClips(prev => {
+        const existing = new Map(prev.map(c => [c.id, c]))
+        const initialSelectionCount = batch.terms.length * clipsSettings.clips_per_term
+        return res.clips
+          .filter((clip, idx) => existing.has(clip.id) || idx < initialSelectionCount)
+          .map(c => existing.get(c.id) ?? ({
+            id: c.id,
+            download_url: c.download_url,
+            preview_url: c.preview_url,
+            thumbnail: c.thumbnail,
+            duration: c.duration,
+            trim_start: 0,
+            trim_end: 0,
+          }))
+      })
     } catch (e: unknown) {
       setClipPreviewBatch(null)
       setClipsError(e instanceof Error ? e.message : 'Clip search failed')
@@ -652,12 +802,13 @@ export default function Dashboard({ session }: Props) {
   async function handleGenerateClips(clips: SelectedClip[]) {
     if (clips.length === 0) { setClipsError('Select at least one clip.'); return }
     if (trialExpired) { setClipsError('Your trial has ended. Upgrade to continue generating.'); return }
-    if (!clipPreviewBatch) { setClipsError('No clip batch selected for generation.'); return }
+    const currentBatch = getCurrentClipPreviewBatch()
+    if (!currentBatch) { setClipsError('No clip batch selected for generation.'); return }
     setClipsError(null)
     setClipsGenerating(true)
     setPendingCount(prev => prev + 1)
     try {
-      const batchTitle = getClipBatchTitle(clipPreviewBatch)
+      const batchTitle = getClipBatchTitle(currentBatch)
       const res = await generateFromClips({
         clips: clips.map(c => ({
           id: c.id,
@@ -668,13 +819,13 @@ export default function Dashboard({ session }: Props) {
         })),
         resolution: clipsSettings.resolution,
         fps: clipsSettings.fps,
-        color_theme: getClipBatchTheme(clipPreviewBatch),
+        color_theme: getClipBatchTheme(currentBatch),
         transition: clipsSettings.transition,
         transition_duration: clipsSettings.transition_duration,
         max_clip_duration: clipsSettings.max_clip_duration,
         batch_title: batchTitle,
-        text_overlay: getClipBatchOverlay(clipPreviewBatch),
-        ai_voiceover: clipPreviewBatch.ai_voiceover ?? undefined,
+        text_overlay: getClipBatchOverlay(currentBatch),
+        ai_voiceover: currentBatch.ai_voiceover ?? undefined,
       })
       setActiveJobs(prev => [{ jobId: res.job_id, title: batchTitle }, ...prev])
       setFetchedClips(null)
@@ -774,6 +925,7 @@ export default function Dashboard({ session }: Props) {
         const lc: LayeredConfig = {
           background_video_urls: batch.layered_background_video_urls ?? [],
           foreground_opacity: layeredConfig.opacity,
+          background_opacity: layeredConfig.backgroundOpacity,
           foreground_speed: settings.seconds_per_image,
           grade_target: layeredConfig.gradeTarget,
           crossfade_duration: layeredConfig.crossfadeDuration,
@@ -785,6 +937,10 @@ export default function Dashboard({ session }: Props) {
           custom_grade_params: effectiveGradeParams,
           batch_title: batch.title,
           accent_folder: effectiveAccent ?? undefined,
+          philosopher: batch.philosopher ?? undefined,
+          philosopher_count: batch.philosopher_count,
+          grade_philosopher: batch.grade_philosopher || undefined,
+          philosopher_is_user: batch.philosopher_is_user || undefined,
           image_source: resolvedSource,
           text_overlay: batch.text_overlay ?? undefined,
           ai_voiceover: batch.ai_voiceover ?? undefined,
@@ -826,26 +982,12 @@ export default function Dashboard({ session }: Props) {
         </div>
       )}
 
-      <AppNavbar session={session} activeTool="video" onShowTour={() => setShowTour(true)} />
+      <AppNavbar session={session} activeTool="video" onShowTour={() => openTutorial('selector')} />
 
       {carouselVisible ? (
         <InspirationCarousel
           key={carouselKey}
-          onApply={(theme, bundles, appliedAccent, customGradeParams) => {
-            if (bundles.length > 0) {
-              // Embed theme/accent as per-batch overrides on the new cards
-              setPendingBundles(bundles.map(b => ({
-                ...b,
-                colorTheme: theme,
-                customGradeParams: customGradeParams ?? undefined,
-                accentFolder: appliedAccent ?? null,
-              })))
-            } else {
-              // No bundle (e.g. Gothic) — apply globally as fallback
-              setSettings(prev => ({ ...prev, color_theme: theme, custom_grade_params: customGradeParams ?? undefined }))
-              setAccentFolder(appliedAccent ?? null)
-            }
-          }}
+          onApply={handleTemplateApply}
           onHide={() => setCarouselVisible(false)}
         />
       ) : (
@@ -877,7 +1019,8 @@ export default function Dashboard({ session }: Props) {
             {/* Mode tabs */}
             <div className="flex gap-1 mb-5 border-b border-stone-800">
               <button
-                onClick={() => setContentMode('images')}
+                onClick={() => setModeAndResetPreview('images')}
+                data-tour="mode-images"
                 className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-px ${
                   contentMode === 'images'
                     ? 'border-brand-500 text-brand-400'
@@ -886,7 +1029,8 @@ export default function Dashboard({ session }: Props) {
                 Images
               </button>
               <button
-                onClick={() => setContentMode('clips')}
+                onClick={() => setModeAndResetPreview('clips')}
+                data-tour="mode-clips"
                 className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-px ${
                   contentMode === 'clips'
                     ? 'border-brand-500 text-brand-400'
@@ -895,7 +1039,8 @@ export default function Dashboard({ session }: Props) {
                 Video Clips
               </button>
               <button
-                onClick={() => setContentMode('layered')}
+                onClick={() => setModeAndResetPreview('layered')}
+                data-tour="mode-layered"
                 className={`px-4 py-2 text-sm font-bold transition border-b-2 -mb-px flex items-center gap-1.5 ${
                   contentMode === 'layered'
                     ? 'border-brand-500 text-brand-400'
@@ -906,37 +1051,47 @@ export default function Dashboard({ session }: Props) {
               </button>
             </div>
 
-            {/* Layered tour banner — always visible when in layered mode */}
-            {contentMode === 'layered' && (
-              <div className="rounded-xl border border-brand-500/20 bg-brand-500/5 px-4 py-3 mb-4 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-stone-200">Layered rendering</p>
-                  <p className="text-[11px] text-stone-500 mt-0.5">Composite your images over a looping background video</p>
-                </div>
-                <button
-                  onClick={() => setShowLayeredTour(true)}
-                  className="flex items-center gap-1.5 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-400 hover:bg-brand-500/20 hover:border-brand-500/50 transition shrink-0"
-                >
-                  <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
-                    <path d="M2 2l8 4-8 4z"/>
-                  </svg>
-                  Take a tour
-                </button>
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-brand-500/20 bg-brand-500/5 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-stone-200">
+                  {contentMode === 'images' ? 'Image videos' : contentMode === 'clips' ? 'Video clips' : 'Layered rendering'}
+                </p>
+                <p className="mt-0.5 text-[11px] text-stone-500">
+                  {contentMode === 'images'
+                    ? 'Build short-form videos from search terms and styled image sequences.'
+                    : contentMode === 'clips'
+                      ? 'Search stock footage, preview clips, and render a polished edit.'
+                      : 'Composite animated images over one or more looping background videos.'}
+                </p>
               </div>
-            )}
+              <button
+                onClick={() => openTutorial(contentMode as TutorialMode)}
+                className="shrink-0 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-400 transition hover:border-brand-500/50 hover:bg-brand-500/20"
+              >
+                Take a tour
+              </button>
+            </div>
 
             {/* Step 1 */}
-            <div className="flex items-center gap-2 mb-2">
+            <div ref={step1Ref} className="flex items-center gap-2 mb-2">
               <span className="rounded bg-brand-500/20 px-2 py-0.5 text-[10px] font-bold text-brand-400 tracking-wider">STEP 1</span>
               <span className="text-xs text-stone-500">Search terms</span>
             </div>
 
             {(contentMode === 'images' || contentMode === 'layered' || contentMode === 'clips') && (
-              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="batch-editor">
+              <div
+                className="rounded-2xl border border-stone-800 bg-stone-900 p-6"
+                data-tour="batch-editor"
+              >
+                {templateLoadedLabel && (
+                  <div className="mb-4 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-200">
+                    <span>Template loaded: <span className="font-semibold text-brand-100">{templateLoadedLabel}</span></span>
+                  </div>
+                )}
                 {contentMode === 'clips' ? (
                   <>
                     <ClipBundles
-                      onLoad={terms => setPendingBundles([{ title: null, terms }])}
+                      onLoad={bundle => setPendingBundles([{ title: bundle.label, terms: bundle.terms }])}
                       disabled={clipsSearching || clipsGenerating}
                     />
                     <p className="text-xs text-stone-500 mb-3">
@@ -956,6 +1111,7 @@ export default function Dashboard({ session }: Props) {
                   pendingBundles={pendingBundles}
                   onBundlesHandled={() => setPendingBundles(null)}
                   onOpenPrompt={() => setShowPromptModal(true)}
+                  highlightedBatchTitle={templateLoadedLabel}
                   mode={contentMode}
                 />
               </div>
@@ -963,10 +1119,10 @@ export default function Dashboard({ session }: Props) {
 
             {/* Clip preview grid — shown between Step 1 and Step 2 in clips mode */}
             {contentMode === 'clips' && fetchedClips && (
-              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-4 mt-4">
-                {clipPreviewBatch && (
+              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-4 mt-4" data-tour="clips-preview-grid">
+                {getCurrentClipPreviewBatch() && (
                   <p className="text-xs text-stone-500 mb-3">
-                    Previewing clips for <span className="text-stone-300">{getClipBatchTitle(clipPreviewBatch)}</span>.
+                    Previewing clips for <span className="text-stone-300">{getClipBatchTitle(getCurrentClipPreviewBatch()!)}</span>.
                   </p>
                 )}
                 <ClipPreviewGrid
@@ -976,12 +1132,15 @@ export default function Dashboard({ session }: Props) {
                   onGenerate={handleGenerateClips}
                   generating={clipsGenerating}
                   maxClipDuration={clipsSettings.max_clip_duration}
+                  hasMoreOptions={clipPreviewPerTerm < 10}
+                  loadingMore={clipsSearching}
+                  onLoadMore={() => handleSearchClips(Math.min(10, clipPreviewPerTerm + 3), true)}
                 />
               </div>
             )}
 
             {/* Step 2 */}
-            <div className="flex items-center gap-2 mb-2 mt-6">
+            <div ref={step2Ref} className="flex items-center gap-2 mb-2 mt-6">
               <span className="rounded bg-brand-500/20 px-2 py-0.5 text-[10px] font-bold text-brand-400 tracking-wider">STEP 2</span>
               <span className="text-xs text-stone-500">Video settings</span>
             </div>
@@ -997,6 +1156,33 @@ export default function Dashboard({ session }: Props) {
                     settings={settings}
                     onChange={s => { setSettings(s); setAppliedPresetName(null) }}
                     onPresetApplied={setAppliedPresetName}
+                    presetSettings={(contentMode === 'layered'
+                      ? {
+                          ...settings,
+                          layered_config: {
+                            foreground_opacity: layeredConfig.opacity,
+                            background_opacity: layeredConfig.backgroundOpacity,
+                            grade_target: layeredConfig.gradeTarget,
+                            crossfade_duration: layeredConfig.crossfadeDuration,
+                          },
+                        }
+                      : settings) as unknown as Record<string, unknown>}
+                    onPresetSettingsApplied={(rawSettings, name) => {
+                      const { layered_config, ...videoSettings } = rawSettings as Partial<VideoSettings> & {
+                        layered_config?: Partial<LayeredConfig> | null
+                      }
+                      setSettings(prev => ({ ...prev, ...videoSettings }))
+                      if (contentMode === 'layered' && layered_config) {
+                        setLayeredConfig(prev => ({
+                          ...prev,
+                          opacity: layered_config.foreground_opacity ?? prev.opacity,
+                          backgroundOpacity: layered_config.background_opacity ?? prev.backgroundOpacity,
+                          gradeTarget: layered_config.grade_target ?? prev.gradeTarget,
+                          crossfadeDuration: layered_config.crossfade_duration ?? prev.crossfadeDuration,
+                        }))
+                      }
+                      setAppliedPresetName(name)
+                    }}
                     themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
                   />
                   {contentMode === 'layered' && (
@@ -1005,7 +1191,7 @@ export default function Dashboard({ session }: Props) {
                         <span className="text-xs font-medium text-stone-300">Foreground image opacity</span>
                         <span className="text-xs tabular-nums text-stone-400">{Math.round(layeredConfig.opacity * 100)}%</span>
                       </div>
-                      <div className="flex gap-1.5 mb-3">
+                      <div className="flex flex-wrap gap-1.5 mb-3">
                         {OPACITY_PRESETS.map(p => (
                           <button
                             key={p.label}
@@ -1027,7 +1213,38 @@ export default function Dashboard({ session }: Props) {
                         onChange={e => setLayeredConfig(c => ({ ...c, opacity: parseFloat(e.target.value) }))}
                         className="w-full accent-amber-500"
                       />
-                      <div className="mt-4">
+                      <div className="mt-4" data-tour="layered-bg-opacity">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-stone-300">Background video opacity</span>
+                          <span className="text-xs tabular-nums text-stone-400">{Math.round(layeredConfig.backgroundOpacity * 100)}%</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {BACKGROUND_OPACITY_PRESETS.map(p => (
+                            <button
+                              key={`bg-${p.label}`}
+                              onClick={() => setLayeredConfig(c => ({ ...c, backgroundOpacity: p.value }))}
+                              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition ${
+                                Math.abs(layeredConfig.backgroundOpacity - p.value) < 0.01
+                                  ? 'bg-brand-500/20 border border-brand-500/50 text-brand-300'
+                                  : 'bg-stone-800 border border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'
+                              }`}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                        <input
+                          type="range"
+                          min={0} max={1} step={0.05}
+                          value={layeredConfig.backgroundOpacity}
+                          onChange={e => setLayeredConfig(c => ({ ...c, backgroundOpacity: parseFloat(e.target.value) }))}
+                          className="w-full accent-amber-500"
+                        />
+                        <p className="mt-1.5 text-[10px] text-stone-600">
+                          Lower percentages fade the background video more. Higher percentages make the video more dominant behind the images.
+                        </p>
+                      </div>
+                      <div className="mt-4" data-tour="layered-grade-target">
                         <span className="text-xs font-medium text-stone-300 block mb-2">Apply colour grade to</span>
                         <div className="grid grid-cols-3 gap-1.5">
                           {(['foreground', 'background', 'both'] as const).map(t => (
@@ -1050,9 +1267,6 @@ export default function Dashboard({ session }: Props) {
                           {layeredConfig.gradeTarget === 'both' && 'Both foreground images and background video are graded.'}
                         </p>
                       </div>
-                      <p className="text-[10px] text-stone-600 mt-4">
-                        Background videos are now selected per batch in Step 1.
-                      </p>
                     </div>
                   )}
                 </>
@@ -1107,7 +1321,7 @@ export default function Dashboard({ session }: Props) {
                 </button>
               </div>
             ) : contentMode === 'clips' ? (
-              <div className="flex gap-2">
+              <div className="flex flex-row-reverse gap-2" data-tour="clips-generate">
                 <button
                   onClick={handleAutoGenerateClips}
                   disabled={clipsSearching || clipsGenerating || trialExpired}
@@ -1116,7 +1330,7 @@ export default function Dashboard({ session }: Props) {
                   {clipsSearching ? 'Searching…' : clipsGenerating ? 'Generating…' : 'Generate directly'}
                 </button>
                 <button
-                  onClick={handleSearchClips}
+                  onClick={() => handleSearchClips()}
                   disabled={clipsSearching || clipsGenerating || batchCount !== 1}
                   className="flex-1 rounded-xl border border-stone-700 py-3 text-sm font-medium text-stone-300 hover:border-stone-500 hover:text-stone-100 disabled:opacity-50 transition"
                   title={batchCount !== 1 ? 'Preview & select supports one clip batch at a time' : undefined}
@@ -1335,22 +1549,31 @@ export default function Dashboard({ session }: Props) {
 
             {activeJobs.length > 0 && (
               <div>
-                <div className="flex items-baseline gap-2 mb-3">
-                  <h2 className="text-sm font-semibold text-stone-300">
-                    {activeJobs.length > 1 ? `Current jobs (${activeJobs.length})` : 'Current job'}
-                  </h2>
-                  {activeJobs.length > 1 && (() => {
-                    const doneCount = activeJobs.filter(j => completedJobIds.has(j.jobId)).length
-                    const maxSecs = Math.max(...activeJobs.map(j => jobEstimates[j.jobId] ?? 0))
-                    if (doneCount > 0) {
-                      return <span className="text-xs text-stone-500">{doneCount} / {activeJobs.length} done</span>
-                    }
-                    if (maxSecs > 0) {
-                      const label = maxSecs < 60 ? `~${maxSecs}s` : `~${Math.ceil(maxSecs / 60)}m`
-                      return <span className="text-xs text-stone-600">{label} remaining</span>
-                    }
-                    return null
-                  })()}
+                <div className="mb-3 flex items-baseline justify-between gap-3">
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="text-sm font-semibold text-stone-300">
+                      {activeJobs.length > 1 ? `Current jobs (${activeJobs.length})` : 'Current job'}
+                    </h2>
+                    {activeJobs.length > 1 && (() => {
+                      const doneCount = activeJobs.filter(j => completedJobIds.has(j.jobId)).length
+                      const maxSecs = Math.max(...activeJobs.map(j => jobEstimates[j.jobId] ?? 0))
+                      if (doneCount > 0) {
+                        return <span className="text-xs text-stone-500">{doneCount} / {activeJobs.length} done</span>
+                      }
+                      if (maxSecs > 0) {
+                        const label = maxSecs < 60 ? `~${maxSecs}s` : `~${Math.ceil(maxSecs / 60)}m`
+                        return <span className="text-xs text-stone-600">{label} remaining</span>
+                      }
+                      return null
+                    })()}
+                  </div>
+                  <button
+                    onClick={dismissAllJobs}
+                    className="text-xs text-stone-500 hover:text-stone-300 transition"
+                    title="Dismiss all current jobs from this panel"
+                  >
+                    Dismiss all
+                  </button>
                 </div>
                 <div className="space-y-3">
                   {activeJobs.map(({ jobId, title }) => (
@@ -1374,7 +1597,9 @@ export default function Dashboard({ session }: Props) {
             )}
 
             <div>
-              <h2 className="mb-3 text-sm font-semibold text-stone-300">Recent jobs</h2>
+              <div className="mb-3 flex items-baseline justify-between gap-3">
+                <h2 className="text-sm font-semibold text-stone-300">Recent jobs</h2>
+              </div>
               <RecentJobs onReuse={handleReuse} onEditImages={handleEditImages} onColourGrade={handleColourGrade} onRegrade={handleRegrade} />
               <p className="mt-3 text-xs text-stone-600">
                 Videos are removed after 48 hours to save space — download any you want to keep.
@@ -1409,17 +1634,21 @@ export default function Dashboard({ session }: Props) {
         />
       )}
 
-      <OnboardingTour
+      <VideoTutorial
         active={showTour}
         isFirstVisit={!localStorage.getItem(TOUR_STORAGE_KEY)}
+        startPath={tourPath}
         onClose={() => setShowTour(false)}
         onOpenPrompt={() => setShowPromptModal(true)}
         onOpenVariants={() => setShowVariants(true)}
+        onModeChange={mode => setModeAndResetPreview(mode)}
       />
-      <LayeredTour active={showLayeredTour} onClose={() => setShowLayeredTour(false)} />
-      {showPromptModal && <PromptModal fromTour={showTour} onClose={() => setShowPromptModal(false)} />}
+      {showPromptModal && <PromptModal mode={contentMode} fromTour={showTour} onClose={() => setShowPromptModal(false)} />}
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }
+
+
+

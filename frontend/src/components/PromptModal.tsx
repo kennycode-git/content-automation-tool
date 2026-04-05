@@ -6,7 +6,9 @@
 
 import { useState } from 'react'
 
-const PROMPT_TEXT = `Create {NUMBER} searchable image lists about {TOPIC(S)} in the exact format below. Output nothing except the lists — no intro, no commentary, no explanations.
+type PromptMode = 'images' | 'clips' | 'layered'
+
+const IMAGE_PROMPT_TEXT = `Create {NUMBER} searchable image lists about {TOPIC(S)} in the exact format below. Output nothing except the lists - no intro, no commentary, no explanations.
 
 \`\`\`
 # {First Title}
@@ -86,31 +88,91 @@ search term fifteen
 
 **Special Instructions:**
 
-- If user says "too generic" → increase specificity, remove common objects, add unusual details
-- If user says "too repetitive" → you failed rule #1, regenerate with stricter word tracking
-- If user provides aesthetic guidance (dark/gothic/bright/minimal) → apply to ALL searchables
-- For color-specific folders → include color word in EVERY searchable
-- For philosopher series → ensure thematic progression while maintaining zero repetition
+- If user says "too generic" -> increase specificity, remove common objects, add unusual details
+- If user says "too repetitive" -> you failed rule #1, regenerate with stricter word tracking
+- If user provides aesthetic guidance (dark/gothic/bright/minimal) -> apply to ALL searchables
+- For colour-specific folders -> include colour word in EVERY searchable
+- For philosopher series -> ensure thematic progression while maintaining zero repetition
+
+**Output only the formatted lists. Nothing else.**`
+
+const CLIPS_PROMPT_TEXT = `Create {NUMBER} short stock-footage search lists about {TOPIC(S)} in the exact format below. Output nothing except the lists - no intro, no commentary, no explanations.
+
+\`\`\`
+# {First Title}
+search term one
+search term two
+search term three
+
+# {Second Title}
+search term one
+search term two
+search term three
+\`\`\`
+
+**Rules:**
+
+1. **THREE SEARCH TERMS ONLY**
+   - Each list must contain exactly 3 search terms
+   - No extra lines, notes, or variations
+
+2. **WRITE FOR VIDEO CLIPS**
+   - Every search term must describe motion, atmosphere, or a filmable scene
+   - Think in footage, not still photos
+   - Good examples: \`stargazing under clear night sky\`, \`earth rotating from space\`, \`moonlit clouds drifting slowly\`
+
+3. **KEEP IT SHORT**
+   - Each search term should be 3-6 words
+   - Shorter phrases search better on stock video libraries
+
+4. **MAKE IT CINEMATIC**
+   - Lean toward moody, visual, high-production scenes
+   - Use words that suggest motion, scale, light, weather, or texture
+
+5. **STAY SEARCHABLE**
+   - Keep terms natural enough for stock footage sites
+   - Avoid abstract language that would return weak results
+
+6. **AVOID REPETITION**
+   - Do not repeat the exact same phrase across lists
+   - Make each list feel distinct while staying on theme
+
+7. **TITLE FORMAT**
+   - Use \`# Title\` format
+   - Keep titles clean and specific
+
+8. **SELF-CHECK BEFORE OUTPUT**
+   - Are all terms suitable for stock video footage?
+   - Are they short, cinematic, and easy to search?
+   - Does every list contain exactly 3 terms?
 
 **Output only the formatted lists. Nothing else.**`
 
 interface Props {
   onClose: () => void
   fromTour?: boolean
+  mode?: PromptMode
 }
 
-export default function PromptModal({ onClose, fromTour }: Props) {
+export default function PromptModal({ onClose, fromTour, mode = 'images' }: Props) {
   const [copied, setCopied] = useState(false)
 
+  const promptText = mode === 'clips' ? CLIPS_PROMPT_TEXT : IMAGE_PROMPT_TEXT
+  const title = mode === 'clips' ? 'AI clip prompt' : 'AI batch prompt'
+  const footerText =
+    mode === 'clips'
+      ? 'Then paste the output into Classic text mode for Video Clips'
+      : 'Then paste the output into Classic text mode'
+
   function handleCopy() {
-    navigator.clipboard.writeText(PROMPT_TEXT)
+    navigator.clipboard.writeText(promptText)
     setCopied(true)
   }
 
   function renderHighlighted(text: string) {
     return text.split(/(\{[^}]+\})/).map((part, i) =>
       part.startsWith('{') && part.endsWith('}')
-        ? <span key={i} className="bg-brand-500/20 text-brand-400 rounded px-0.5 font-semibold">{part}</span>
+        ? <span key={i} className="rounded bg-brand-500/20 px-0.5 font-semibold text-brand-400">{part}</span>
         : <span key={i}>{part}</span>
     )
   }
@@ -121,44 +183,44 @@ export default function PromptModal({ onClose, fromTour }: Props) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl border border-stone-700 bg-stone-900 shadow-2xl overflow-hidden"
+        className="w-full max-w-lg overflow-hidden rounded-2xl border border-stone-700 bg-stone-900 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-800">
+        <div className="flex items-center justify-between border-b border-stone-800 px-5 py-4">
           <div>
-            <h2 className="text-sm font-semibold text-stone-100">AI batch prompt</h2>
-            <p className="text-xs text-stone-500 mt-0.5">
-              Paste into ChatGPT or Claude (any LLM) and edit the{' '}
-              <span className="text-brand-400 font-semibold">{'{highlighted}'}</span>{' '}
+            <h2 className="text-sm font-semibold text-stone-100">{title}</h2>
+            <p className="mt-0.5 text-xs text-stone-500">
+              Paste into ChatGPT or Claude and edit the{' '}
+              <span className="font-semibold text-brand-400">{'{highlighted}'}</span>{' '}
               parts first.
             </p>
           </div>
-          <button onClick={onClose} className="text-stone-500 hover:text-stone-200 transition text-lg leading-none">✕</button>
+          <button onClick={onClose} className="text-lg leading-none text-stone-500 transition hover:text-stone-200">�</button>
         </div>
-        <div className="px-5 py-4 max-h-[60vh] overflow-y-auto">
-          <pre className="text-xs text-stone-300 leading-relaxed font-mono whitespace-pre-wrap">
-            {renderHighlighted(PROMPT_TEXT)}
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
+          <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-stone-300">
+            {renderHighlighted(promptText)}
           </pre>
         </div>
-        <div className="px-5 py-3 border-t border-stone-800 flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 border-t border-stone-800 px-5 py-3">
           {copied && fromTour ? (
             <>
-              <p className="text-xs text-stone-400">✓ Copied. Paste into ChatGPT or Claude (any LLM)</p>
+              <p className="text-xs text-stone-400">Copied. Paste into ChatGPT or Claude</p>
               <button
                 onClick={onClose}
-                className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-700 transition"
+                className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-brand-700"
               >
-                Return to tutorial →
+                Return to tutorial
               </button>
             </>
           ) : (
             <>
-              <p className="text-xs text-stone-600">Then paste the output into Classic text mode</p>
+              <p className="text-xs text-stone-600">{footerText}</p>
               <button
                 onClick={handleCopy}
-                className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-700 transition"
+                className="shrink-0 rounded-lg bg-brand-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-brand-700"
               >
-                {copied ? '✓ Copied!' : 'Copy prompt'}
+                {copied ? 'Copied' : 'Copy prompt'}
               </button>
             </>
           )}

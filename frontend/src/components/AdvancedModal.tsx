@@ -175,7 +175,7 @@ export default function AdvancedModal({
         <div>
           <p className="mb-2 text-xs text-stone-400">Custom presets</p>
           <PresetManager
-            currentSettings={settings}
+            currentSettings={settings as unknown as Record<string, unknown>}
             onApply={(s, name) => { onSettingsChange({ ...settings, ...s }); onPresetApplied(name) }}
           />
         </div>

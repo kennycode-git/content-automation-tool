@@ -106,6 +106,7 @@ export interface BatchOutput {
   text_overlay?: TextOverlayConfig | null
   ai_voiceover?: AiVoiceoverConfig | null
   layered_background_video_urls?: string[]
+  layered_background_video_query?: string
   philosopher?: string | null            // resolved philosopher key, null = none
   philosopher_count?: number             // 1–5 images to inject
   grade_philosopher?: boolean            // grade philosopher images with color theme
@@ -121,6 +122,7 @@ interface VisualBatch {
   textOverlay?: TextOverlayConfig | null
   aiVoiceover?: AiVoiceoverConfig | null
   layeredBackgroundVideoUrls?: string[]
+  layeredBackgroundVideoQuery?: string
   usePhilosopher?: boolean               // true = include philosopher images
   philosopherOverride?: string | null    // manual pick; undefined = use auto-detected
   philosopherCount?: number              // 1–5 images to inject (default 3)
@@ -134,6 +136,7 @@ interface PendingBundle {
   colorTheme?: string
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null
+  layeredBackgroundVideoQuery?: string
 }
 
 interface Props {
@@ -143,7 +146,18 @@ interface Props {
   pendingBundles?: PendingBundle[] | null
   onBundlesHandled?: () => void
   onOpenPrompt?: () => void
+  highlightedBatchTitle?: string | null
   mode?: 'images' | 'clips' | 'layered'
+}
+
+const DEFAULT_VISUAL_BATCH = {
+  title: 'Stoicism',
+  terms: 'marble statue philosophy\nancient greece\nstoic stone',
+}
+
+const DEFAULT_CLIPS_BATCH = {
+  title: 'Night Sky',
+  terms: 'Stargazing\nEarth from space',
 }
 
 // ── Style popover constants ────────────────────────────────────────────────────
@@ -223,7 +237,7 @@ const DEFAULT_OVERLAY: TextOverlayConfig = {
   background_box: false,
   alignment: 'center',
   position: 'bottom-center',
-  font_size_pct: 0.045,
+  font_size_pct: 0.015,
   margin_pct: 0.05,
   outline: false,
 }
@@ -309,21 +323,21 @@ type OverlayPreset = {
 // ── Overlay preview helpers ────────────────────────────────────────────────────
 
 const FONT_CSS_FAMILY: Record<OverlayFont, string> = {
-  garamond:    'Georgia, "Times New Roman", serif',
-  cormorant:   '"Palatino Linotype", Georgia, serif',
-  playfair:    '"Palatino Linotype", Georgia, serif',
-  crimson:     'Georgia, serif',
-  philosopher: 'Georgia, serif',
-  lora:        'Georgia, serif',
-  outfit:      'system-ui, -apple-system, sans-serif',
-  raleway:     'system-ui, -apple-system, sans-serif',
-  josefin:     'system-ui, -apple-system, sans-serif',
-  inter:       'system-ui, -apple-system, sans-serif',
-  cinzel:      '"Times New Roman", serif',
-  cinzel_deco: '"Times New Roman", serif',
-  uncial:      'Georgia, serif',
-  jetbrains:   '"Courier New", Courier, monospace',
-  space_mono:  '"Courier New", Courier, monospace',
+  garamond:    '"Overlay Garamond", Georgia, "Times New Roman", serif',
+  cormorant:   '"Overlay Cormorant", "Palatino Linotype", Georgia, serif',
+  playfair:    '"Overlay Playfair", "Palatino Linotype", Georgia, serif',
+  crimson:     '"Overlay Crimson", Georgia, serif',
+  philosopher: '"Overlay Philosopher", Georgia, serif',
+  lora:        '"Overlay Lora", Georgia, serif',
+  outfit:      '"Overlay Outfit", system-ui, -apple-system, sans-serif',
+  raleway:     '"Overlay Raleway", system-ui, -apple-system, sans-serif',
+  josefin:     '"Overlay Josefin", system-ui, -apple-system, sans-serif',
+  inter:       '"Overlay Inter", system-ui, -apple-system, sans-serif',
+  cinzel:      '"Overlay Cinzel", "Times New Roman", serif',
+  cinzel_deco: '"Overlay Cinzel Deco", "Times New Roman", serif',
+  uncial:      '"Overlay Uncial", Georgia, serif',
+  jetbrains:   '"Overlay JetBrains Mono", "Courier New", Courier, monospace',
+  space_mono:  '"Overlay Space Mono", "Courier New", Courier, monospace',
 }
 
 
@@ -337,12 +351,16 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   const [enlarged, setEnlarged] = useState(false)
   const [previewH, setPreviewH] = useState(200)
   const dragStartRef = useRef<{ y: number; h: number } | null>(null)
+  const BASE_H = 540
+  const BASE_W = 304
 
   const color = overlayColorHex(ov)
   const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
 
-  function PreviewBox({ h, w }: { h: number; w: number }) {
-    const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.045)))
+  function PreviewBox() {
+    const h = BASE_H
+    const w = BASE_W
+    const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.015)))
     const marginPct = ov.margin_pct ?? 0.05
     const marginX = Math.round(w * marginPct)
     const marginY = Math.round(h * marginPct)
@@ -456,7 +474,18 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   return (
     <div className="flex justify-center my-2">
       <div className="relative group">
-        <PreviewBox h={previewH} w={113} />
+        <div style={{ width: Math.round((BASE_W * previewH) / BASE_H), height: previewH, overflow: 'hidden' }}>
+          <div
+            style={{
+              width: BASE_W,
+              height: BASE_H,
+              transform: `scale(${previewH / BASE_H})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            <PreviewBox />
+          </div>
+        </div>
         {/* Magnify button */}
         <button
           onClick={() => setEnlarged(true)}
@@ -487,7 +516,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           onClick={() => setEnlarged(false)}
         >
           <div className="relative" onClick={e => e.stopPropagation()}>
-            <PreviewBox h={540} w={304} />
+            <PreviewBox />
             <button
               onClick={() => setEnlarged(false)}
               className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center
@@ -921,7 +950,7 @@ function BatchStylePopover({
                 onClick={() => {
                   const current = batch.textOverlay
                   if (!current) {
-                    onChange({ textOverlay: { ...DEFAULT_OVERLAY, enabled: true } })
+                      onChange({ textOverlay: { ...DEFAULT_OVERLAY, enabled: true } })
                   } else {
                     onChange({ textOverlay: { ...current, enabled: !current.enabled } })
                   }
@@ -1149,15 +1178,15 @@ function BatchStylePopover({
                     <div className="flex items-center justify-between mb-0.5">
                       <p className="text-[9px] font-semibold tracking-widest uppercase text-stone-600">Size</p>
                       <span className="text-[10px] font-mono text-stone-300">
-                        {Math.round((ov.font_size_pct ?? 0.045) * 1000) / 10}%
+                        {Math.round((ov.font_size_pct ?? 0.015) * 1000) / 10}%
                       </span>
                     </div>
                     <input
                       type="range"
-                      min={0.01}
-                      max={0.12}
-                      step={0.002}
-                      value={ov.font_size_pct ?? 0.045}
+                      min={0.005}
+                      max={0.05}
+                      step={0.001}
+                      value={ov.font_size_pct ?? 0.015}
                       onChange={e => onChange({ textOverlay: { ...ov, font_size_pct: parseFloat(e.target.value) } })}
                       className="w-full accent-brand-500"
                     />
@@ -1257,7 +1286,20 @@ function parseBatchText(text: string): string[] {
     .filter(l => l && !l.startsWith('#'))
 }
 
-function parseClassicIntoBatches(text: string): BatchOutput[] {
+function limitTermsForMode(terms: string[], mode: 'images' | 'clips' | 'layered' = 'images'): string[] {
+  return mode === 'clips' ? terms.slice(0, 3) : terms
+}
+
+function sanitizeTermsInput(text: string, mode: 'images' | 'clips' | 'layered' = 'images'): string {
+  if (mode !== 'clips') return text
+  return text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .slice(0, 3)
+    .join('\n')
+}
+
+function parseClassicIntoBatches(text: string, mode: 'images' | 'clips' | 'layered' = 'images'): BatchOutput[] {
   const lines = text.split('\n')
   const batches: BatchOutput[] = []
   let title: string | null = null
@@ -1266,27 +1308,36 @@ function parseClassicIntoBatches(text: string): BatchOutput[] {
   for (const line of lines) {
     const trimmed = line.trim()
     if (trimmed.startsWith('#')) {
-      if (terms.length > 0) batches.push({ title, terms })
+      if (terms.length > 0) batches.push({ title, terms: limitTermsForMode(terms, mode) })
       title = trimmed.slice(1).trim() || null
       terms = []
     } else if (trimmed) {
       terms.push(trimmed)
     }
   }
-  if (terms.length > 0) batches.push({ title, terms })
+  if (terms.length > 0) batches.push({ title, terms: limitTermsForMode(terms, mode) })
   return batches
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHandled, pendingBundles, onBundlesHandled, onOpenPrompt, mode = 'images' }: Props) {
+export default function BatchEditor({
+  onBatchesChange,
+  pendingReuse,
+  onReuseHandled,
+  pendingBundles,
+  onBundlesHandled,
+  onOpenPrompt,
+  highlightedBatchTitle,
+  mode = 'images',
+}: Props) {
   const [classicMode, setClassicMode] = useState(false)
   const [classicText, setClassicText] = useState<string>(() => {
     try { return localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CLASSIC_TEXT }
     catch { return DEFAULT_CLASSIC_TEXT }
   })
   const [batches, setBatches] = useState<VisualBatch[]>([
-    { title: 'Stoicism', terms: 'marble statue philosophy\nancient greece\nstoic stone' },
+    mode === 'clips' ? DEFAULT_CLIPS_BATCH : DEFAULT_VISUAL_BATCH,
   ])
   const [uploadedPaths, setUploadedPaths] = useState<Record<number, string[]>>({})
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
@@ -1298,9 +1349,36 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
     listUserPhilosophers().then(setUserPhilosophers).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    setBatches(prev => {
+      let next = prev
+      if (
+        mode === 'clips' &&
+        prev.length === 1 &&
+        prev[0].title === DEFAULT_VISUAL_BATCH.title &&
+        prev[0].terms === DEFAULT_VISUAL_BATCH.terms
+      ) {
+        next = [{ ...DEFAULT_CLIPS_BATCH }]
+      }
+      else if (
+        mode !== 'clips' &&
+        prev.length === 1 &&
+        prev[0].title === DEFAULT_CLIPS_BATCH.title &&
+        prev[0].terms === DEFAULT_CLIPS_BATCH.terms
+      ) {
+        next = [{ ...DEFAULT_VISUAL_BATCH }]
+      }
+      if (next !== prev) {
+        queueMicrotask(() => onBatchesChange(visualToBatchOutputs(next, uploadedPaths)))
+      }
+      return next
+    })
+  }, [mode, onBatchesChange, uploadedPaths])
+
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
     return vBatches.map((b, i) => {
-      const resolvedPhilosopher = mode === 'images' && b.usePhilosopher
+      const supportsPhilosopher = mode === 'images' || mode === 'layered'
+      const resolvedPhilosopher = supportsPhilosopher && b.usePhilosopher
         ? (b.philosopherOverride !== undefined ? b.philosopherOverride : detectPhilosopher(b.title))
         : null
       const resolvedColorTheme = b.colorTheme?.startsWith('user:')
@@ -1308,7 +1386,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
         : b.colorTheme
       return {
         title: b.title.trim() || null,
-        terms: parseBatchText(b.terms),
+        terms: limitTermsForMode(parseBatchText(b.terms), mode),
         uploaded_image_paths: mode === 'images' ? (paths[i] ?? []) : undefined,
         color_theme: resolvedColorTheme,
         custom_grade_params: b.customGradeParams,
@@ -1316,10 +1394,11 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
         text_overlay: b.textOverlay,
         ai_voiceover: b.aiVoiceover,
         layered_background_video_urls: mode === 'layered' ? (b.layeredBackgroundVideoUrls ?? []) : undefined,
+        layered_background_video_query: mode === 'layered' ? (b.layeredBackgroundVideoQuery ?? undefined) : undefined,
         philosopher: resolvedPhilosopher || undefined,
-        philosopher_count: mode === 'images' && resolvedPhilosopher ? (b.philosopherCount ?? 3) : undefined,
-        grade_philosopher: mode === 'images' && resolvedPhilosopher ? (b.gradePhilosopher !== false) : undefined,
-        philosopher_is_user: mode === 'images' && resolvedPhilosopher && b.philosopherIsUser ? true : undefined,
+        philosopher_count: supportsPhilosopher && resolvedPhilosopher ? (b.philosopherCount ?? 3) : undefined,
+        grade_philosopher: supportsPhilosopher && resolvedPhilosopher ? (b.gradePhilosopher !== false) : undefined,
+        philosopher_is_user: supportsPhilosopher && resolvedPhilosopher && b.philosopherIsUser ? true : undefined,
       }
     })
   }
@@ -1327,7 +1406,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
   // Emit initial batches on mount
   useEffect(() => {
     if (classicMode) {
-      onBatchesChange(parseClassicIntoBatches(classicText))
+      onBatchesChange(parseClassicIntoBatches(classicText, mode))
     } else {
       onBatchesChange(visualToBatchOutputs(batches, uploadedPaths))
     }
@@ -1340,7 +1419,10 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
     if (!pendingReuse || pendingReuse === prevReuse.current) return
     prevReuse.current = pendingReuse
     if (!classicMode) {
-      const newCard: VisualBatch = { title: pendingReuse.title ?? 'Duplicated', terms: pendingReuse.terms.join('\n') }
+      const newCard: VisualBatch = {
+        title: pendingReuse.title ?? 'Duplicated',
+        terms: sanitizeTermsInput(pendingReuse.terms.join('\n'), mode),
+      }
       const updated = [...batches, newCard]
       setBatches(updated)
       onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
@@ -1350,7 +1432,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
       const newBlock = `${header}\n${termStr}`
       setClassicText(newBlock)
       try { localStorage.setItem(STORAGE_KEY, newBlock) } catch { /* ignore */ }
-      onBatchesChange(parseClassicIntoBatches(newBlock))
+      onBatchesChange(parseClassicIntoBatches(newBlock, mode))
     }
     onReuseHandled?.()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1364,19 +1446,20 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
 
     if (classicMode) {
       const blocks = pendingBundles.map(b =>
-        `# ${b.title ?? 'Batch'}\n${b.terms.join('\n')}`
+        `# ${b.title ?? 'Batch'}\n${limitTermsForMode(b.terms, mode).join('\n')}`
       ).join('\n\n')
       const newText = classicText.trim() ? `${classicText.trim()}\n\n${blocks}` : blocks
       setClassicText(newText)
       try { localStorage.setItem(STORAGE_KEY, newText) } catch { /* ignore */ }
-      onBatchesChange(parseClassicIntoBatches(newText))
+      onBatchesChange(parseClassicIntoBatches(newText, mode))
     } else {
       const newCards: VisualBatch[] = pendingBundles.map(b => ({
         title: b.title ?? 'Batch',
-        terms: b.terms.join('\n'),
+        terms: limitTermsForMode(b.terms, mode).join('\n'),
         colorTheme: b.colorTheme,
         customGradeParams: b.customGradeParams,
         accentFolder: b.accentFolder,
+        layeredBackgroundVideoQuery: mode === 'layered' ? b.layeredBackgroundVideoQuery : undefined,
       }))
       const onlyEmptyBatch = batches.length === 1 && !batches[0].terms.trim()
       const updated = onlyEmptyBatch ? newCards : [...batches, ...newCards]
@@ -1388,13 +1471,15 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
   }, [pendingBundles])
 
   function handleClassicChange(text: string) {
-    setClassicText(text)
-    try { localStorage.setItem(STORAGE_KEY, text) } catch { /* ignore */ }
-    onBatchesChange(parseClassicIntoBatches(text))
+    const nextText = text
+    setClassicText(nextText)
+    try { localStorage.setItem(STORAGE_KEY, nextText) } catch { /* ignore */ }
+    onBatchesChange(parseClassicIntoBatches(nextText, mode))
   }
 
   function handleBatchTermsChange(idx: number, terms: string) {
-    const updated = batches.map((b, i) => (i === idx ? { ...b, terms } : b))
+    const nextTerms = sanitizeTermsInput(terms, mode)
+    const updated = batches.map((b, i) => (i === idx ? { ...b, terms: nextTerms } : b))
     setBatches(updated)
     onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
   }
@@ -1474,12 +1559,13 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
       const trimmed = line.trim()
       if (trimmed.startsWith('#')) {
         if (current.terms.trim()) result.push(current)
-        const title = trimmed.slice(1).trim() || `Batch ${result.length + 2}`
-        current = { title, terms: '' }
-      } else if (trimmed) {
-        current.terms += (current.terms ? '\n' : '') + trimmed
-      }
+      const title = trimmed.slice(1).trim() || `Batch ${result.length + 2}`
+      current = { title, terms: '' }
+    } else if (trimmed) {
+      const candidate = current.terms ? `${current.terms}\n${trimmed}` : trimmed
+      current.terms = sanitizeTermsInput(candidate, mode)
     }
+  }
     if (current.terms.trim()) result.push(current)
     const final = result.length ? result : [{ title: 'Batch 1', terms: '' }]
     setBatches(final)
@@ -1552,11 +1638,18 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
             const hasVoiceover = !!(batch.aiVoiceover?.enabled && (batch.aiVoiceover.voice_id ?? '').trim())
             const hasLayeredBg = mode === 'layered' && (batch.layeredBackgroundVideoUrls?.length ?? 0) > 0
             const hasOverride = hasThemeOverride || hasAccentOverride || hasTextOverlay || hasVoiceover || hasLayeredBg
+            const isHighlightedBatch = !!highlightedBatchTitle && batch.title.trim() === highlightedBatchTitle.trim()
 
             return (
               <div
                 key={idx}
-                className={`rounded-xl border bg-stone-800 p-3 transition-colors ${mode === 'images' && dragOverIdx === idx ? 'border-brand-500/60 bg-stone-800/80' : 'border-stone-700'}`}
+                className={`rounded-xl border bg-stone-800 p-3 transition-all duration-500 ${
+                  isHighlightedBatch
+                    ? 'border-brand-500 shadow-[0_0_0_1px_rgba(217,132,39,0.35),0_0_22px_rgba(217,132,39,0.18)]'
+                    : mode === 'images' && dragOverIdx === idx
+                      ? 'border-brand-500/60 bg-stone-800/80'
+                      : 'border-stone-700'
+                }`}
                 onDragOver={mode === 'images' ? (e => { e.preventDefault(); setDragOverIdx(idx) }) : undefined}
                 onDragEnter={mode === 'images' ? (e => { e.preventDefault(); setDragOverIdx(idx) }) : undefined}
                 onDragLeave={mode === 'images' ? (e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverIdx(null) }) : undefined}
@@ -1585,15 +1678,24 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                   value={batch.terms}
                   onChange={e => handleBatchTermsChange(idx, e.target.value)}
                   rows={3}
-                  placeholder="one search term per line"
+                  placeholder={mode === 'clips' ? 'up to 3 search terms, one per line' : 'one search term per line'}
                   className="w-full rounded-lg border border-stone-700 bg-stone-900 px-2 py-1.5 font-mono text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
                 />
+                {mode === 'clips' && (
+                  <p className="mt-1 text-[10px] text-stone-600">
+                    Video clip batches are capped at 3 search terms.
+                  </p>
+                )}
 
                 {mode === 'layered' && (
                   <BackgroundVideoPicker
                     selectedUrls={batch.layeredBackgroundVideoUrls ?? []}
                     onChange={urls => handleBatchOverride(idx, { layeredBackgroundVideoUrls: urls })}
                     compact
+                    initialQuery={batch.layeredBackgroundVideoQuery}
+                    dataTourRoot={idx === 0 ? 'layered-bg-panel' : undefined}
+                    dataTourSearch={idx === 0 ? 'layered-bg-search' : undefined}
+                    dataTourFavorites={idx === 0 ? 'layered-bg-favorites' : undefined}
                   />
                 )}
 

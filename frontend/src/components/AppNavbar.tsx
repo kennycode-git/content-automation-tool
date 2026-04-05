@@ -53,9 +53,12 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
   return (
     <nav className="border-b border-stone-800 bg-stone-900 px-6 py-3 flex items-center justify-between">
       <div className="flex items-center gap-5">
-        <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="" className="h-[40px] w-auto" />
-          <img src="/just%20text.png" alt="PassiveClip" className="hidden sm:block h-9 w-auto" />
+        <div className="flex items-center gap-2 min-w-0">
+          <img src="/logo%20w%20text.png" alt="PassiveClip" className="h-8 w-auto object-contain sm:hidden" />
+          <div className="hidden sm:flex items-center gap-2">
+            <img src="/logo.png" alt="" className="h-[40px] w-auto object-contain" />
+            <img src="/just%20text.png" alt="PassiveClip" className="h-9 w-auto object-contain" />
+          </div>
         </div>
 
         {/* Tool tabs */}
@@ -82,7 +85,7 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
           </Link>
           <Link
             to="/schedule"
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${
+            className={`hidden sm:block px-3 py-1.5 text-sm font-medium rounded-md transition ${
               activeTool === 'schedule'
                 ? 'text-stone-100 bg-stone-700/60'
                 : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800'

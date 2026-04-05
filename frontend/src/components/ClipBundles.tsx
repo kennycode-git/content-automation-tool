@@ -59,7 +59,7 @@ const CLIP_BUNDLES: ClipBundle[] = [
 const INITIAL_VISIBLE = 4
 
 interface Props {
-  onLoad: (terms: string[]) => void
+  onLoad: (bundle: ClipBundle) => void
   disabled?: boolean
 }
 
@@ -85,7 +85,7 @@ export default function ClipBundles({ onLoad, disabled }: Props) {
             {CLIP_BUNDLES.map((b, i) => (
               <button
                 key={b.label}
-                onClick={() => onLoad(b.terms.slice(0, 3))}
+                onClick={() => onLoad({ ...b, terms: b.terms.slice(0, 3) })}
                 disabled={disabled}
                 title={b.terms.join(' · ')}
                 className={`rounded-full border px-3 py-1 text-xs transition

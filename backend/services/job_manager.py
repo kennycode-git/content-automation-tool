@@ -179,6 +179,7 @@ async def list_jobs(user_id: str, db, limit: int = 10) -> List[dict]:
         db.table("jobs")
         .select("id, status, progress_message, output_url, thumbnail_url, batch_title, config, created_at, completed_at")
         .eq("user_id", user_id)
+        .neq("status", "deleted")
         .order("created_at", desc=True)
         .limit(limit)
         .execute()
@@ -574,6 +575,7 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
                 output_file=output_file,
                 bg_urls=lc["background_video_urls"],
                 opacity=lc.get("foreground_opacity", 0.55),
+                bg_opacity=lc.get("background_opacity", 1.0),
                 fg_speed=lc.get("foreground_speed", 0.25),
                 color_theme=config.color_theme,
                 custom_grade_params=config.custom_grade_params,
@@ -855,6 +857,9 @@ async def run_regrade_pipeline(
     original_config: dict,
     db,
     selected_paths: list | None = None,
+    custom_grade_params_override: dict | None = None,
+    accent_folder_override: str | None = None,
+    layered_config_override: dict | None = None,
 ) -> None:
     """
     Re-grade cached raw images from source_job_id with a new colour theme and/or pacing,
@@ -868,6 +873,8 @@ async def run_regrade_pipeline(
             source_job_id, new_job_id, user_id, color_theme,
             seconds_per_image, total_seconds, original_config, db,
             selected_paths=selected_paths,
+            custom_grade_params_override=custom_grade_params_override,
+            layered_config_override=layered_config_override,
         )
 
 
@@ -881,6 +888,8 @@ async def _run_regrade_pipeline_inner(
     original_config: dict,
     db,
     selected_paths: list | None = None,
+    custom_grade_params_override: dict | None = None,
+    layered_config_override: dict | None = None,
 ) -> None:
     resolution = original_config.get("resolution", "1080x1920")
     w, h = resolution.lower().split("x")
@@ -889,7 +898,14 @@ async def _run_regrade_pipeline_inner(
     allow_repeats = bool(original_config.get("allow_repeats", True))
     text_overlay = original_config.get("text_overlay")
     preset_name = original_config.get("preset_name")
+    accent_folder = accent_folder_override
+    philosopher = original_config.get("philosopher")
+    philosopher_count = int(original_config.get("philosopher_count", 3))
+    grade_philosopher = bool(original_config.get("grade_philosopher", False))
+    philosopher_is_user = bool(original_config.get("philosopher_is_user", False))
+    custom_grade_params = custom_grade_params_override or original_config.get("custom_grade_params")
     batch_title = original_config.get("batch_title") or original_config.get("batch_title")
+    layered_config = layered_config_override or original_config.get("layered_config")
 
     tmp_root = tempfile.mkdtemp(prefix=f"regrade_{new_job_id[:8]}_")
     raw_dir = os.path.join(tmp_root, "raw")
@@ -952,26 +968,110 @@ async def _run_regrade_pipeline_inner(
         # --- Step 2: Apply colour grading ---
         await update_job_status(new_job_id, user_id, "running", db,
             progress_message="Applying colour grade…")
-        render_input = await asyncio.to_thread(
-            apply_theme_grading, raw_dir, graded_dir, color_theme, None
-        )
+        should_grade_foreground = not layered_config or layered_config.get("grade_target", "both") in ("foreground", "both")
+        if should_grade_foreground:
+            render_input = await asyncio.to_thread(
+                apply_theme_grading, raw_dir, graded_dir, color_theme, custom_grade_params
+            )
+        else:
+            render_input = raw_dir
+
+        needed_frames = max(1, int(total_seconds / seconds_per_image))
+        if accent_folder:
+            await update_job_status(new_job_id, user_id, "running", db,
+                progress_message="Adding accent images…")
+            max_accent = max(1, needed_frames // 5)
+            await asyncio.to_thread(
+                _download_accent_images,
+                accent_folder,
+                render_input,
+                width,
+                height,
+                max_accent,
+                "accent",
+            )
+
+        if philosopher:
+            await update_job_status(new_job_id, user_id, "running", db,
+                progress_message="Adding philosopher images…")
+            max_phil = philosopher_count
+            phil_staging = os.path.join(tmp_root, "phil_staging")
+            if philosopher_is_user:
+                await asyncio.to_thread(
+                    _download_user_philosopher_images,
+                    user_id,
+                    philosopher,
+                    phil_staging,
+                    width,
+                    height,
+                    max_phil,
+                    "phil",
+                )
+            else:
+                await asyncio.to_thread(
+                    _download_accent_images,
+                    f"philosopher/{philosopher}",
+                    phil_staging,
+                    width,
+                    height,
+                    max_phil,
+                    "phil",
+                )
+            if grade_philosopher and color_theme != "none":
+                phil_graded = os.path.join(tmp_root, "phil_graded")
+                graded_phil_dir = await asyncio.to_thread(
+                    apply_theme_grading, phil_staging, phil_graded, color_theme, custom_grade_params
+                )
+                for fname in os.listdir(graded_phil_dir):
+                    src = os.path.join(graded_phil_dir, fname)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, os.path.join(render_input, fname))
+            else:
+                for fname in os.listdir(phil_staging):
+                    src = os.path.join(phil_staging, fname)
+                    if os.path.isfile(src):
+                        shutil.copy2(src, os.path.join(render_input, fname))
 
         # --- Step 3: Render video ---
         await update_job_status(new_job_id, user_id, "running", db,
             progress_message="Rendering video…")
-        result = await asyncio.to_thread(
-            render_slideshow,
-            input_folder=render_input,
-            output_file=output_file,
-            width=width,
-            height=height,
-            seconds_per_image=seconds_per_image,
-            fps=fps,
-            total_seconds=total_seconds,
-            allow_repeats=allow_repeats,
-            shuffle=True,
-            text_overlay=text_overlay,
-        )
+        if layered_config:
+            from services.layered_builder import render_layered_sync
+            layered_config = dict(layered_config)
+            layered_config["foreground_speed"] = seconds_per_image
+            result = await asyncio.to_thread(
+                render_layered_sync,
+                input_folder=render_input,
+                output_file=output_file,
+                bg_urls=layered_config["background_video_urls"],
+                opacity=layered_config.get("foreground_opacity", 0.55),
+                bg_opacity=layered_config.get("background_opacity", 1.0),
+                fg_speed=seconds_per_image,
+                color_theme=color_theme,
+                custom_grade_params=custom_grade_params,
+                grade_target=layered_config.get("grade_target", "both"),
+                crossfade_dur=layered_config.get("crossfade_duration", 0.5),
+                width=width,
+                height=height,
+                fps=fps,
+                total_seconds=total_seconds,
+                allow_repeats=allow_repeats,
+                text_overlay=text_overlay,
+            )
+        else:
+            result = await asyncio.to_thread(
+                render_slideshow,
+                input_folder=render_input,
+                output_file=output_file,
+                width=width,
+                height=height,
+                seconds_per_image=seconds_per_image,
+                fps=fps,
+                total_seconds=total_seconds,
+                allow_repeats=allow_repeats,
+                shuffle=True,
+                text_overlay=text_overlay,
+            )
         if result["returncode"] != 0:
             logger.error("ffmpeg regrade failed (rc=%d). Last 20 lines:\n%s",
                          result["returncode"], "\n".join(result["log"][-20:]))
@@ -998,7 +1098,12 @@ async def _run_regrade_pipeline_inner(
         new_config = dict(original_config)
         new_config["color_theme"] = color_theme
         new_config["seconds_per_image"] = seconds_per_image
+        new_config["total_seconds"] = total_seconds
         new_config["images_cached"] = True
+        new_config["custom_grade_params"] = custom_grade_params
+        if layered_config:
+            layered_config["foreground_speed"] = seconds_per_image
+            new_config["layered_config"] = layered_config
         if preset_name:
             new_config["preset_name"] = preset_name
 

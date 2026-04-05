@@ -24,7 +24,7 @@ export const DEFAULT_CLIPS_SETTINGS: ClipsSettings = {
   transition: 'cut',
   transition_duration: 0.5,
   max_clip_duration: 5,
-  clips_per_term: 2,
+  clips_per_term: 1,
 }
 
 const RESOLUTIONS = [
@@ -128,7 +128,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
 
   return (
     <div className="space-y-5">
-      <div>
+      <div data-tour="clips-resolution-theme">
         <label className="block text-xs font-medium text-stone-400 uppercase tracking-wide mb-2">
           Resolution
         </label>
@@ -158,7 +158,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         </p>
       </div>
 
-      <div>
+      <div data-tour="clips-pacing">
         <div className="flex items-center justify-between text-xs mb-1.5">
           <span className="font-medium text-stone-400 uppercase tracking-wide">Clips per search</span>
           <span className="text-stone-200 font-medium">{settings.clips_per_term}</span>
@@ -201,7 +201,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
         </p>
       </div>
 
-      <div>
+      <div data-tour="clips-transition">
         <label className="block text-xs font-medium text-stone-400 uppercase tracking-wide mb-2">
           Transition
         </label>

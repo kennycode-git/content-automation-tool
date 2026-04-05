@@ -9,14 +9,16 @@
 
 import { useState } from 'react'
 
-interface Bundle {
+export interface Bundle {
   label: string
   terms: string[]
+  layeredBackgroundVideoQuery?: string
 }
 
 export const BUNDLES: Bundle[] = [
   {
     label: 'Buddhism',
+    layeredBackgroundVideoQuery: 'temple candlelight',
     terms: [
       'golden buddha statue temple warm candlelight serene ancient',
       'lotus flower still dark pond reflection dawn peaceful',
@@ -32,6 +34,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'Stoic Philosophy',
+    layeredBackgroundVideoQuery: 'ancient ruins cinematic',
     terms: [
       'marble roman bust dark museum shadows weathered emperor',
       'ancient stone sculpture dark moss covered philosopher contemplating',
@@ -47,6 +50,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'Dark Academia',
+    layeredBackgroundVideoQuery: 'candlelit library',
     terms: [
       'candlelit library shelves dark oak towering volumes leather',
       'aged leather journal dark mahogany desk brass lamp',
@@ -62,6 +66,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'Eastern Philosophy',
+    layeredBackgroundVideoQuery: 'misty mountain temple',
     terms: [
       'misty mountain peak dark fog zen monastery silhouette',
       'bamboo forest dense dark shadows green filtered morning',
@@ -77,6 +82,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'Shadow',
+    layeredBackgroundVideoQuery: 'dark forest mist',
     terms: [
       'dark forest mist dark shadows dense overgrown atmospheric',
       'candlelight flickering darkness dark cathedral shadows dancing eerie',
@@ -92,6 +98,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'Existentialism',
+    layeredBackgroundVideoQuery: 'empty road night',
     terms: [
       'solitary figure walking dark empty road vanishing horizon',
       'person window dark rain reflection isolated contemplating atmospheric',
@@ -107,6 +114,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'Psychology',
+    layeredBackgroundVideoQuery: 'abstract blue smoke',
     terms: [
       'human brain scan dark blue neon glowing neural abstract',
       'silhouette figure dark cracked mirror fragmented reflection identity',
@@ -122,6 +130,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'The Abyss',
+    layeredBackgroundVideoQuery: 'storm ocean dark',
     terms: [
       'chasm vertical drop painted oil baroque vast',
       'silhouette hanged figure etching aged monochrome stark',
@@ -142,6 +151,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'Gothic',
+    layeredBackgroundVideoQuery: 'gothic cathedral interior',
     terms: [
       'gargoyle perched cathedral parapet rain soaked medieval',
       'nave vaulted darkness pillared receding candlelit vast',
@@ -162,6 +172,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'Surrealism',
+    layeredBackgroundVideoQuery: 'surreal clouds dreamscape',
     terms: [
       'melting clock draped fabric desert cracked ochre',
       'eye floating cloudscape severed suspended vast cerulean',
@@ -182,6 +193,7 @@ export const BUNDLES: Bundle[] = [
   },
   {
     label: 'Nature as Philosophy',
+    layeredBackgroundVideoQuery: 'waves rocky shore',
     terms: [
       'waves crashing dark rocky shore dramatic atmospheric spray',
       'dead tree winter dark fog bare branches skeletal',
@@ -198,7 +210,7 @@ export const BUNDLES: Bundle[] = [
 ]
 
 interface Props {
-  onLoad: (bundles: { title: string | null; terms: string[] }[]) => void
+  onLoad: (bundles: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string }[]) => void
 }
 
 const INITIAL_VISIBLE = 3
@@ -220,7 +232,7 @@ export default function TermBundles({ onLoad }: Props) {
   function handleLoad() {
     const bundles = BUNDLES
       .filter(b => selected.has(b.label))
-      .map(b => ({ title: b.label, terms: b.terms }))
+      .map(b => ({ title: b.label, terms: b.terms, layeredBackgroundVideoQuery: b.layeredBackgroundVideoQuery }))
     if (bundles.length === 0) return
     onLoad(bundles)
     setSelected(new Set())

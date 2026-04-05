@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import type { LayeredConfig } from '../lib/api'
 
 export interface CustomGradeParams {
   brightness: number
@@ -91,6 +92,8 @@ interface Props {
   settings: VideoSettings
   onChange: (s: VideoSettings) => void
   onPresetApplied?: (name: string) => void
+  presetSettings?: Record<string, unknown>
+  onPresetSettingsApplied?: (settings: Record<string, unknown>, name: string) => void
   themeDisabled?: boolean
 }
 
@@ -487,7 +490,7 @@ function ThemeSelector({ value, onChange, onCustomize }: {
   )
 }
 
-export default function SettingsPanel({ settings, onChange, onPresetApplied, themeDisabled }: Props) {
+export default function SettingsPanel({ settings, onChange, onPresetApplied, presetSettings, onPresetSettingsApplied, themeDisabled }: Props) {
   function update(patch: Partial<VideoSettings>) {
     onChange({ ...settings, ...patch })
   }
@@ -499,11 +502,19 @@ export default function SettingsPanel({ settings, onChange, onPresetApplied, the
 
   return (
     <div className="space-y-4">
-      <div>
+      <div data-tour="settings-presets">
         <p className="mb-2 text-xs text-stone-400">Custom presets</p>
         <PresetManager
-          currentSettings={settings}
-          onApply={(s, name) => { onChange({ ...settings, ...s }); onPresetApplied?.(name) }}
+          currentSettings={presetSettings ?? (settings as unknown as Record<string, unknown>)}
+          onApply={(s, name) => {
+            if (onPresetSettingsApplied) {
+              onPresetSettingsApplied(s, name)
+              return
+            }
+            const { layered_config: _lc, ...videoSettings } = s as Partial<VideoSettings> & { layered_config?: LayeredConfig }
+            onChange({ ...settings, ...videoSettings })
+            onPresetApplied?.(name)
+          }}
         />
       </div>
       <hr className="border-stone-800" />

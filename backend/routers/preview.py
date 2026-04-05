@@ -389,70 +389,80 @@ async def preview_find_more(
     ts = int(time.time() * 1000)
 
     # Skip pages already fetched. Pexels/Unsplash default per_page=30.
-    # e.g. existing_count=20 → page_start=1 (still on first page but exclude_photo_ids handles dups)
-    # e.g. existing_count=30 → page_start=2 (fresh page of results)
+    # Start from the estimated next page, but continue trying a few pages if
+    # duplicate filtering leaves us short of the requested count.
     _per_page = 30
-    page_start = max(2, 1 + body.existing_count // _per_page)
-    # Fetch a buffer beyond count to absorb any remaining duplicates
-    need_total = body.count + max(5, body.count // 2)
+    page_start = max(1, 1 + body.existing_count // _per_page)
+    need_total = max(body.count * 3, body.count + 20)
 
     tmp_root = tempfile.mkdtemp(prefix="find_more_")
     client = get_client()
 
     try:
-        images_dir = os.path.join(tmp_root, "images")
-        graded_dir = os.path.join(tmp_root, "graded")
-
-        try:
-            render_dir, _, _ = await asyncio.to_thread(
-                _stage_batch_sync,
-                search_terms=body.search_terms,
-                uploaded_image_paths=None,
-                width=w,
-                height=h,
-                need_total=need_total,
-                access_key=access_key,
-                pexels_key=pexels_key,
-                color_theme=body.color_theme,
-                custom_grade_params=None,
-                image_source=body.image_source,
-                images_dir=images_dir,
-                graded_dir=graded_dir,
-                page_start=page_start,
-            )
-        except Exception as e:
-            logger.exception("Find more failed: %s", e)
-            raise HTTPException(status_code=500, detail=f"Image fetch failed: {e}")
-
-        # Remove any images whose photo ID is already in the current batch
-        exclude_ids = set(body.exclude_photo_ids or [])
-        if exclude_ids:
-            for fname in os.listdir(render_dir):
-                stem = Path(fname).stem  # fid without .jpg
-                if stem in exclude_ids:
-                    try:
-                        os.remove(os.path.join(render_dir, fname))
-                    except Exception:
-                        pass
-
         image_items: list[PreviewImageItem] = []
-        render_path = Path(render_dir)
-        fnames = sorted(f for f in os.listdir(render_dir) if Path(render_dir, f).is_file())
+        exclude_ids = set(body.exclude_photo_ids or [])
+        seen_ids = set(exclude_ids)
 
-        for fname in fnames[:body.count]:
-            fpath = render_path / fname
+        max_attempts = 4
+        for attempt in range(max_attempts):
+            if len(image_items) >= body.count:
+                break
+
+            attempt_page = page_start + attempt
+            images_dir = os.path.join(tmp_root, f"images_{attempt}")
+            graded_dir = os.path.join(tmp_root, f"graded_{attempt}")
+
             try:
-                data = _preview_thumbnail(fpath)
-                storage_path = f"{user_id}/preview/{ts}_more_{fname}"
-                client.storage.from_("user-uploads").upload(
-                    path=storage_path,
-                    file=data,
-                    file_options={"content-type": "image/jpeg", "upsert": "true"},
+                render_dir, _, _ = await asyncio.to_thread(
+                    _stage_batch_sync,
+                    search_terms=body.search_terms,
+                    uploaded_image_paths=None,
+                    width=w,
+                    height=h,
+                    need_total=need_total,
+                    access_key=access_key,
+                    pexels_key=pexels_key,
+                    color_theme=body.color_theme,
+                    custom_grade_params=None,
+                    image_source=body.image_source,
+                    images_dir=images_dir,
+                    graded_dir=graded_dir,
+                    page_start=attempt_page,
                 )
-                signed_url = await get_user_uploads_signed_url(storage_path)
-                image_items.append(PreviewImageItem(storage_path=storage_path, signed_url=signed_url))
             except Exception as e:
-                logger.warning("Find more: failed to upload/sign %s: %s", fname, e)
+                logger.exception("Find more failed on page %s: %s", attempt_page, e)
+                raise HTTPException(status_code=500, detail=f"Image fetch failed: {e}")
+
+            render_path = Path(render_dir)
+            fnames = sorted(f for f in os.listdir(render_dir) if Path(render_dir, f).is_file())
+            added_this_attempt = 0
+
+            for fname in fnames:
+                if len(image_items) >= body.count:
+                    break
+
+                stem = Path(fname).stem
+                if stem in seen_ids:
+                    continue
+                seen_ids.add(stem)
+
+                fpath = render_path / fname
+                try:
+                    data = _preview_thumbnail(fpath)
+                    storage_path = f"{user_id}/preview/{ts}_more_{attempt}_{fname}"
+                    client.storage.from_("user-uploads").upload(
+                        path=storage_path,
+                        file=data,
+                        file_options={"content-type": "image/jpeg", "upsert": "true"},
+                    )
+                    signed_url = await get_user_uploads_signed_url(storage_path)
+                    image_items.append(PreviewImageItem(storage_path=storage_path, signed_url=signed_url))
+                    added_this_attempt += 1
+                except Exception as e:
+                    logger.warning("Find more: failed to upload/sign %s: %s", fname, e)
+
+            if added_this_attempt == 0:
+                logger.info("Find more: page %d produced no new unique images", attempt_page)
 
         logger.info("Find more: %d images fetched for user %s", len(image_items), user_id)
         return PreviewFindMoreResponse(images=image_items)

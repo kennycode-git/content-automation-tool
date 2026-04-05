@@ -3,20 +3,19 @@ jobs.py
 
 GET    /api/jobs/{job_id}        — poll job status
 GET    /api/jobs                 — list recent jobs (last 10)
-DELETE /api/jobs/{job_id}        — cancel/delete a job
+DELETE /api/jobs/{job_id}        — cancel/delete a job permanently
 POST   /api/jobs/{job_id}/resign — generate a fresh signed URL for an existing video file
 
 Security considerations:
 - All queries include .eq("user_id", user_id) from the verified JWT — a user
   can never read or delete another user's job.
-- DELETE cleans up the storage file before soft-deleting the DB row.
+- DELETE cleans up the storage file, dependent scheduled rows, and the DB row.
 - output_url is a time-limited signed URL (48h) generated at job completion.
 - resign regenerates the URL without re-running the pipeline — the MP4 file
   persists in Storage until explicitly deleted.
 """
 
 import logging
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
@@ -70,6 +69,8 @@ async def get_job_status(
         layered_config=cfg.get("layered_config"),
         preset_name=cfg.get("preset_name"),
         preview_images=cfg.get("preview_images"),
+        custom_grade_params=cfg.get("custom_grade_params"),
+        text_overlay=cfg.get("text_overlay"),
         ai_voiceover=cfg.get("ai_voiceover"),
         images_cached=cfg.get("images_cached", False),
         created_at=job["created_at"],
@@ -102,12 +103,16 @@ async def get_recent_jobs(user_id: str = Depends(get_current_user_id)):
             accent_folder=(j.get("config") or {}).get("accent_folder"),
             philosopher=(j.get("config") or {}).get("philosopher"),
             philosopher_count=(j.get("config") or {}).get("philosopher_count"),
+            grade_philosopher=(j.get("config") or {}).get("grade_philosopher"),
+            philosopher_is_user=(j.get("config") or {}).get("philosopher_is_user"),
             transition=(j.get("config") or {}).get("transition"),
             transition_duration=(j.get("config") or {}).get("transition_duration"),
             max_clip_duration=(j.get("config") or {}).get("max_clip_duration"),
             clip_count=(j.get("config") or {}).get("clip_count"),
             layered_config=(j.get("config") or {}).get("layered_config"),
             preset_name=(j.get("config") or {}).get("preset_name"),
+            custom_grade_params=(j.get("config") or {}).get("custom_grade_params"),
+            text_overlay=(j.get("config") or {}).get("text_overlay"),
             ai_voiceover=(j.get("config") or {}).get("ai_voiceover"),
             images_cached=(j.get("config") or {}).get("images_cached", False),
             created_at=j["created_at"],
@@ -140,14 +145,14 @@ async def delete_job(
     except Exception as exc:
         logger.warning("Could not delete raw images for job %s: %s", job_id, exc)
 
-    # Soft-delete: null out output_url and mark deleted
-    db.table("jobs").update({
-        "status": "deleted",
-        "output_url": None,
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", job_id).eq("user_id", user_id).execute()
+    try:
+        db.table("scheduled_posts").delete().eq("job_id", job_id).execute()
+    except Exception as exc:
+        logger.warning("Could not delete scheduled post rows for job %s: %s", job_id, exc)
 
-    logger.info("Job %s deleted by user %s", job_id, user_id)
+    db.table("jobs").delete().eq("id", job_id).eq("user_id", user_id).execute()
+
+    logger.info("Job %s permanently deleted by user %s", job_id, user_id)
 
 
 @router.post("/jobs/{job_id}/resign")
@@ -206,6 +211,11 @@ async def regrade_job(
             status_code=400,
             detail="No cached images available for this job. Re-grade is only available for recently completed jobs.",
         )
+    effective_custom_grade_params = (
+        req.custom_grade_params.model_dump() if req.custom_grade_params else original_config.get("custom_grade_params")
+    )
+    if req.color_theme == "custom" and not effective_custom_grade_params:
+        raise HTTPException(status_code=400, detail="This job has no saved custom theme settings to reuse.")
 
     # Derive seconds_per_image / total_seconds: use request value or fall back to original
     seconds_per_image = req.seconds_per_image
@@ -215,6 +225,8 @@ async def regrade_job(
     total_seconds = req.total_seconds
     if total_seconds is None:
         total_seconds = float(original_config.get("total_seconds", 11.0))
+
+    accent_folder = req.accent_folder if "accent_folder" in req.model_fields_set else original_config.get("accent_folder")
 
     # Build a config for the new job row
     source_title = source_job.get("batch_title") or original_config.get("batch_title")
@@ -231,7 +243,16 @@ async def regrade_job(
         max_per_query=int(original_config.get("max_per_query", 3)),
         batch_title=new_title,
         preset_name=original_config.get("preset_name"),
+        accent_folder=accent_folder,
+        image_source=original_config.get("image_source", "unsplash"),
+        custom_grade_params=effective_custom_grade_params if req.color_theme == "custom" else original_config.get("custom_grade_params"),
+        philosopher=original_config.get("philosopher"),
+        philosopher_count=int(original_config.get("philosopher_count", 3)),
+        grade_philosopher=bool(original_config.get("grade_philosopher", False)),
+        philosopher_is_user=bool(original_config.get("philosopher_is_user", False)),
         text_overlay=original_config.get("text_overlay"),
+        ai_voiceover=original_config.get("ai_voiceover"),
+        layered_config=req.layered_config.model_dump() if req.layered_config else original_config.get("layered_config"),
     )
     new_job_id = await create_job(user_id, new_config, db)
     logger.info("Regrade job %s created from source %s (theme=%s)", new_job_id, job_id, req.color_theme)
@@ -247,6 +268,9 @@ async def regrade_job(
         original_config=original_config,
         db=db,
         selected_paths=req.selected_paths,
+        custom_grade_params_override=effective_custom_grade_params if req.color_theme == "custom" else None,
+        accent_folder_override=accent_folder,
+        layered_config_override=req.layered_config.model_dump() if req.layered_config else None,
     )
     return {"job_id": new_job_id, "status": "queued"}
 
