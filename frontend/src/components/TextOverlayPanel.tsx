@@ -7,6 +7,7 @@
 
 import { useRef, useState } from 'react'
 import type { OverlayAlignment, OverlayColor, OverlayFont, OverlayPosition, TextOverlayConfig } from '../lib/api'
+import { buildOverlayPreviewLayout } from '../lib/overlayPreview'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -79,42 +80,12 @@ const OVERLAY_ALIGNMENTS: { value: OverlayAlignment; label: string }[] = [
   { value: 'right',  label: 'Right' },
 ]
 
-const FONT_CSS_FAMILY: Record<OverlayFont, string> = {
-  garamond:    '"Overlay Garamond", Georgia, "Times New Roman", serif',
-  cormorant:   '"Overlay Cormorant", "Palatino Linotype", Georgia, serif',
-  playfair:    '"Overlay Playfair", "Palatino Linotype", Georgia, serif',
-  crimson:     '"Overlay Crimson", Georgia, serif',
-  philosopher: '"Overlay Philosopher", Georgia, serif',
-  lora:        '"Overlay Lora", Georgia, serif',
-  outfit:      '"Overlay Outfit", system-ui, -apple-system, sans-serif',
-  raleway:     '"Overlay Raleway", system-ui, -apple-system, sans-serif',
-  josefin:     '"Overlay Josefin", system-ui, -apple-system, sans-serif',
-  inter:       '"Overlay Inter", system-ui, -apple-system, sans-serif',
-  cinzel:      '"Overlay Cinzel", "Times New Roman", serif',
-  cinzel_deco: '"Overlay Cinzel Deco", "Times New Roman", serif',
-  uncial:      '"Overlay Uncial", Georgia, serif',
-  jetbrains:   '"Overlay JetBrains Mono", "Courier New", Courier, monospace',
-  space_mono:  '"Overlay Space Mono", "Courier New", Courier, monospace',
-}
-
-const COLOR_HEX_MAP: Record<string, string> = {
-  white: '#ffffff',
-  cream: '#f5f0e8',
-  gold:  '#f5e317',
-  black: '#000000',
-}
-
 const OVERLAY_PRESETS_KEY = 'cogito_overlay_presets'
 
 type OverlayPreset = {
   id: string
   name: string
   settings: Omit<TextOverlayConfig, 'text' | 'enabled'>
-}
-
-function overlayColorHex(ov: TextOverlayConfig): string {
-  if (ov.color === 'custom') return ov.custom_color ?? '#ffffff'
-  return COLOR_HEX_MAP[ov.color] ?? '#ffffff'
 }
 
 // ── OverlayPreview ─────────────────────────────────────────────────────────────
@@ -126,75 +97,10 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   const BASE_H = 540
   const BASE_W = 304
 
-  const color = overlayColorHex(ov)
-  const fontFamily = FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
-
   function PreviewBox() {
     const h = BASE_H
     const w = BASE_W
-    const fontSize = Math.max(3, Math.round(h * (ov.font_size_pct ?? 0.015)))
-    const marginPct = ov.margin_pct ?? 0.05
-    const marginX = Math.round(w * marginPct)
-    const marginY = Math.round(h * marginPct)
-    const usableW = Math.max(10, w - 2 * marginX)
-    const lineHeight = Math.max(1, Math.round(fontSize * 1.25))
-
-    const charsPerLine = Math.max(10, Math.floor(usableW / (fontSize * 0.52)))
-
-    const rawInput = ov.text.trim() || 'Preview text'
-    const previewLines: string[] = []
-    for (const seg of rawInput.replace(/\r\n/g, '\n').split('\n')) {
-      if (!seg.trim()) { previewLines.push(''); continue }
-      const words = seg.split(' ')
-      let cur = ''
-      for (const word of words) {
-        if (!cur) { cur = word }
-        else if (cur.length + 1 + word.length <= charsPerLine) { cur += ' ' + word }
-        else { previewLines.push(cur); cur = word }
-      }
-      if (cur) previewLines.push(cur)
-    }
-    if (!previewLines.some(l => l)) previewLines.push('Preview text')
-
-    let maxLineWidthPx = 0
-    try {
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.font = `${fontSize}px ${fontFamily}`
-        maxLineWidthPx = previewLines
-          .filter(l => l)
-          .reduce((max, l) => Math.max(max, ctx.measureText(l).width), 0)
-      }
-    } catch { /* ignore */ }
-    if (!maxLineWidthPx) {
-      const maxLineLen = previewLines.reduce((max, l) => Math.max(max, l.length), 5)
-      maxLineWidthPx = Math.min(maxLineLen / charsPerLine, 1.0) * usableW
-    }
-    const blockW = Math.max(20, Math.min(Math.round(maxLineWidthPx), usableW))
-
-    const [vertPart, horizPart] = (ov.position as OverlayPosition).split('-') as ['top' | 'middle' | 'bottom', 'left' | 'center' | 'right']
-
-    const blockLeft = horizPart === 'left' ? marginX
-      : horizPart === 'right' ? w - marginX - blockW
-      : Math.round((w - blockW) / 2)
-
-    const vertStyle: React.CSSProperties = vertPart === 'top'
-      ? { top: marginY }
-      : vertPart === 'bottom'
-      ? { bottom: marginY }
-      : { top: '50%', transform: 'translateY(-50%)' }
-
-    const textStyle: React.CSSProperties = {
-      color, fontFamily, fontSize,
-      lineHeight: `${lineHeight}px`,
-      height: lineHeight,
-      textAlign: (ov.alignment ?? 'center') as React.CSSProperties['textAlign'],
-      whiteSpace: 'pre',
-      overflow: 'hidden',
-      ...(ov.background_box ? { background: 'rgba(0,0,0,0.55)', padding: '0 3px', borderRadius: 2 } : {}),
-      ...(ov.outline ? { textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' } : {}),
-    }
+    const layout = buildOverlayPreviewLayout(ov, w, h)
 
     return (
       <div style={{
@@ -206,23 +112,14 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
         border: '1px solid #333',
         flexShrink: 0,
       }}>
-        {previewLines.filter(l => l).map((line, i) => (
+        {layout.visibleLines.map((line, i) => (
           <div key={i} style={{
             position: 'absolute',
-            left: blockLeft,
-            width: blockW,
-            ...vertStyle,
-            ...(vertPart !== 'middle' ? {
-              [vertPart === 'top' ? 'top' : 'bottom']:
-                vertPart === 'top'
-                  ? marginY + i * lineHeight
-                  : marginY + (previewLines.filter(l => l).length - 1 - i) * lineHeight,
-            } : {
-              top: '50%',
-              transform: `translateY(calc(-50% + ${(i - (previewLines.filter(l => l).length - 1) / 2) * lineHeight}px))`,
-            }),
+            left: layout.blockLeft,
+            top: layout.positions[i],
+            width: layout.blockWidth,
           }}>
-            <div style={textStyle}>{line}</div>
+            <div style={layout.textStyle}>{line}</div>
           </div>
         ))}
       </div>
