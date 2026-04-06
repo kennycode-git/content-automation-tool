@@ -8,11 +8,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getJobStatus, regradeJob, getRawImages } from '../lib/api'
-import type { JobStatus, PreviewBatchResult, LayeredConfig } from '../lib/api'
+import { getJobStatus, regradeJob, reviewRegradeImages, listUserPhilosophers } from '../lib/api'
+import type { JobStatus, PreviewBatchResult, LayeredConfig, UserPhilosopher } from '../lib/api'
 import PreviewModal from './PreviewModal'
 import type { ConfirmedBatch } from './PreviewModal'
 import JobMetaPopover from './JobMetaPopover'
+import BackgroundVideoPicker from './BackgroundVideoPicker'
+import { PHILOSOPHER_LIST, detectPhilosopher } from './BatchEditor'
 
 const RE_EDIT_THEMES = [
   { value: 'none',     label: 'Natural' },
@@ -334,11 +336,21 @@ function formatEta(secs: number): string {
 
 function formatPhilosopherLabel(philosopher: string | null | undefined): string | null {
   if (!philosopher) return null
-  return philosopher
+  return PHILOSOPHER_LIST.find(p => p.key === philosopher)?.display ?? philosopher
     .split('_')
     .filter(Boolean)
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+function inferReEditPhilosopher(job: JobStatus): string {
+  return job.philosopher
+    ?? detectPhilosopher(stripThemeSuffix(job.batch_title) ?? '')
+    ?? ''
+}
+
+function isUserPhilosopherKey(key: string, userPhilosophers: UserPhilosopher[]): boolean {
+  return userPhilosophers.some(p => p.key === key)
 }
 
 function stripThemeSuffix(title: string | null | undefined): string | null | undefined {
@@ -410,16 +422,30 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
   const [reEditOpen, setReEditOpen] = useState(false)
   const [reEditTheme, setReEditTheme] = useState('none')
   const [reEditAccent, setReEditAccent] = useState<string>('none')
+  const [reEditPhilosopher, setReEditPhilosopher] = useState<string>('')
+  const [reEditPhilosopherCount, setReEditPhilosopherCount] = useState<number>(3)
+  const [reEditGradePhilosopher, setReEditGradePhilosopher] = useState<boolean>(true)
+  const [reEditPhilosopherIsUser, setReEditPhilosopherIsUser] = useState<boolean>(false)
   const [reEditSpi, setReEditSpi] = useState<number | null>(null)
   const [reEditTotal, setReEditTotal] = useState<number | null>(null)
   const [reEditFgOpacity, setReEditFgOpacity] = useState<number | null>(null)
   const [reEditBgOpacity, setReEditBgOpacity] = useState<number | null>(null)
   const [reEditGradeTarget, setReEditGradeTarget] = useState<'foreground' | 'background' | 'both'>('both')
+  const [reEditBgVideoUrls, setReEditBgVideoUrls] = useState<string[] | null>(null)
   const [reEditing, setReEditing] = useState(false)
   const [reviewImages, setReviewImages] = useState(false)
   const [reviewData, setReviewData] = useState<PreviewBatchResult | null>(null)
   const [loadingReview, setLoadingReview] = useState(false)
-  const pendingRegrade = useRef<{ theme: string; spi: number | null; total: number | null } | null>(null)
+  const [userPhilosophers, setUserPhilosophers] = useState<UserPhilosopher[]>([])
+  const pendingRegrade = useRef<{
+    theme: string
+    spi: number | null
+    total: number | null
+    philosopher: string | null
+    philosopher_count: number
+    grade_philosopher: boolean
+    philosopher_is_user: boolean
+  } | null>(null)
   const imageCountRef = useRef<{ done: number; total: number } | null>(null)
   const sourceRef = useRef<string | null>(null)
   const overlayHideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -450,6 +476,10 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
       }
     }
   }, [error])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    listUserPhilosophers().then(setUserPhilosophers).catch(() => {})
+  }, [])
 
   const doneFired = useRef(false)
   const jobRef = useRef(job)
@@ -713,11 +743,17 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                     if (!reEditOpen) {
                       setReEditTheme(job.color_theme ?? 'none')
                       setReEditAccent(job.accent_folder ?? 'none')
+                      const initialPhilosopher = inferReEditPhilosopher(job)
+                      setReEditPhilosopher(initialPhilosopher)
+                      setReEditPhilosopherCount(job.philosopher_count ?? 3)
+                      setReEditGradePhilosopher(job.grade_philosopher ?? true)
+                      setReEditPhilosopherIsUser(job.philosopher_is_user ?? isUserPhilosopherKey(initialPhilosopher, userPhilosophers))
                       setReEditSpi(job.seconds_per_image ?? null)
                       setReEditTotal(job.total_seconds ?? null)
                       setReEditFgOpacity(job.layered_config?.foreground_opacity ?? null)
                       setReEditBgOpacity(job.layered_config?.background_opacity ?? 1)
                       setReEditGradeTarget(job.layered_config?.grade_target ?? 'both')
+                      setReEditBgVideoUrls(job.layered_config?.background_video_urls ?? null)
                     }
                   }}
                   className={`w-full rounded-lg border py-1.5 text-xs font-medium transition ${
@@ -756,6 +792,61 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[10px] text-stone-600 mb-1.5">Philosopher images:</p>
+                  <select
+                    value={reEditPhilosopher}
+                    onChange={e => {
+                      const value = e.target.value
+                      setReEditPhilosopher(value)
+                      setReEditPhilosopherIsUser(isUserPhilosopherKey(value, userPhilosophers))
+                    }}
+                    className="w-full rounded-lg border border-stone-700 bg-stone-800 px-2.5 py-2 text-xs text-stone-200 focus:border-brand-500 focus:outline-none"
+                  >
+                    <option value="">None</option>
+                    <optgroup label="System">
+                      {PHILOSOPHER_LIST.map(p => (
+                        <option key={p.key} value={p.key}>{p.display}</option>
+                      ))}
+                    </optgroup>
+                    {userPhilosophers.length > 0 && (
+                      <optgroup label="My philosophers">
+                        {userPhilosophers.map(p => (
+                          <option key={p.key} value={p.key}>{p.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  {reEditPhilosopher && (
+                    <>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[10px] text-stone-600">Philosopher images</p>
+                          <span className="text-[10px] text-stone-400 font-mono">{reEditPhilosopherCount}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={5}
+                          step={1}
+                          value={reEditPhilosopherCount}
+                          onChange={e => setReEditPhilosopherCount(Number(e.target.value))}
+                          className="w-full accent-brand-500"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={reEditGradePhilosopher}
+                          onChange={e => setReEditGradePhilosopher(e.target.checked)}
+                          className="accent-brand-500 w-3.5 h-3.5"
+                        />
+                        <span className="text-xs text-stone-400">Color grade philosopher images</span>
+                      </label>
+                    </>
+                  )}
                 </div>
 
                   {/* Seconds per image */}
@@ -798,6 +889,12 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
 
                   {job.mode === 'layered' && job.layered_config && (
                     <>
+                      <BackgroundVideoPicker
+                        selectedUrls={reEditBgVideoUrls ?? job.layered_config.background_video_urls}
+                        onChange={urls => setReEditBgVideoUrls(urls)}
+                        compact
+                      />
+
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <p className="text-[10px] text-stone-600">Foreground image opacity</p>
@@ -854,18 +951,39 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                       const layeredConfig = job.mode === 'layered' && job.layered_config
                         ? {
                             ...job.layered_config,
+                            background_video_urls: reEditBgVideoUrls ?? job.layered_config.background_video_urls,
                             foreground_opacity: reEditFgOpacity ?? job.layered_config.foreground_opacity,
                             background_opacity: reEditBgOpacity ?? (job.layered_config.background_opacity ?? 1),
                             foreground_speed: reEditSpi ?? job.layered_config.foreground_speed,
                             grade_target: reEditGradeTarget,
                           }
                         : undefined
+                      const resolvedPhilosopher = reEditPhilosopher || null
                       // If review images checked, fetch cached images + show PreviewModal
                       if (reviewImages) {
                         setLoadingReview(true)
-                        pendingRegrade.current = { theme: reEditTheme, spi: reEditSpi, total: reEditTotal }
+                        pendingRegrade.current = {
+                          theme: reEditTheme,
+                          spi: reEditSpi,
+                          total: reEditTotal,
+                          philosopher: resolvedPhilosopher,
+                          philosopher_count: reEditPhilosopherCount,
+                          grade_philosopher: reEditGradePhilosopher,
+                          philosopher_is_user: reEditPhilosopherIsUser,
+                        }
                         try {
-                          const data = await getRawImages(job.job_id)
+                          const data = await reviewRegradeImages(job.job_id, {
+                            color_theme: reEditTheme,
+                            accent_folder: reEditAccent === 'none' ? null : reEditAccent,
+                            ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
+                            ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
+                            ...(reEditTheme === 'custom' && job.custom_grade_params ? { custom_grade_params: job.custom_grade_params } : {}),
+                            philosopher: resolvedPhilosopher,
+                            philosopher_count: reEditPhilosopherCount,
+                            grade_philosopher: resolvedPhilosopher ? reEditGradePhilosopher : false,
+                            philosopher_is_user: resolvedPhilosopher ? reEditPhilosopherIsUser : false,
+                            ...(layeredConfig ? { layered_config: layeredConfig } : {}),
+                          })
                           setReviewData(data)
                         } catch {
                           alert('Could not load cached images.')
@@ -884,6 +1002,10 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                             ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
                             ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
                             ...(reEditTheme === 'custom' && job.custom_grade_params ? { custom_grade_params: job.custom_grade_params } : {}),
+                            philosopher: resolvedPhilosopher,
+                            philosopher_count: reEditPhilosopherCount,
+                            grade_philosopher: resolvedPhilosopher ? reEditGradePhilosopher : false,
+                            philosopher_is_user: resolvedPhilosopher ? reEditPhilosopherIsUser : false,
                             ...(layeredConfig ? { layered_config: layeredConfig } : {}),
                           })
                           onRegraded(res.job_id, newTitle)
@@ -894,10 +1016,10 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
                             ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
                             ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
                             ...(reEditTheme === 'custom' && job.custom_grade_params ? { custom_grade_params: job.custom_grade_params } : {}),
-                            ...(job.philosopher ? { philosopher: job.philosopher } : {}),
-                            ...(job.philosopher_count != null ? { philosopher_count: job.philosopher_count } : {}),
-                            ...(job.grade_philosopher != null ? { grade_philosopher: job.grade_philosopher } : {}),
-                            ...(job.philosopher_is_user != null ? { philosopher_is_user: job.philosopher_is_user } : {}),
+                            philosopher: resolvedPhilosopher,
+                            philosopher_count: resolvedPhilosopher ? reEditPhilosopherCount : undefined,
+                            grade_philosopher: resolvedPhilosopher ? reEditGradePhilosopher : undefined,
+                            philosopher_is_user: resolvedPhilosopher ? reEditPhilosopherIsUser : undefined,
                             ...(job.preset_name ? { preset_name: job.preset_name } : {}),
                             ...(job.text_overlay ? { text_overlay: job.text_overlay } : {}),
                             ...(job.ai_voiceover ? { ai_voiceover: job.ai_voiceover } : {}),
@@ -969,10 +1091,11 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
           if (!pending) return
           setReEditing(true)
           try {
-            const selectedPaths = confirmed[0]?.images.map(i => i.storage_path) ?? []
+            const selectedPaths = confirmed[0]?.images.map(i => i.render_storage_path ?? i.storage_path) ?? []
             const layeredConfig = job!.mode === 'layered' && job!.layered_config
               ? {
                   ...job!.layered_config,
+                  background_video_urls: reEditBgVideoUrls ?? job!.layered_config.background_video_urls,
                   foreground_opacity: reEditFgOpacity ?? job!.layered_config.foreground_opacity,
                   background_opacity: reEditBgOpacity ?? (job!.layered_config.background_opacity ?? 1),
                   foreground_speed: pending.spi ?? job!.layered_config.foreground_speed,
@@ -986,6 +1109,10 @@ export default function JobPanel({ jobId, title, minimized, onToggleMinimize, on
               ...(pending.total != null ? { total_seconds: pending.total } : {}),
               ...(selectedPaths.length ? { selected_paths: selectedPaths } : {}),
               ...(pending.theme === 'custom' && job!.custom_grade_params ? { custom_grade_params: job!.custom_grade_params } : {}),
+              philosopher: pending.philosopher,
+              philosopher_count: pending.philosopher ? pending.philosopher_count : undefined,
+              grade_philosopher: pending.philosopher ? pending.grade_philosopher : false,
+              philosopher_is_user: pending.philosopher ? pending.philosopher_is_user : false,
               ...(layeredConfig ? { layered_config: layeredConfig } : {}),
             })
             const newTitle = job!.batch_title

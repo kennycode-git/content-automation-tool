@@ -1,5 +1,18 @@
 # Release Notes
 
+## 2026-04-06
+
+### General Edits And Bug Fixes
+
+- Fixed visual-to-classic batch switching so current searchables carry across instead of resetting to placeholder text.
+- Fixed preview selection so accent images appear in the staging grid and can be refreshed/swapped.
+- Fixed preview-confirmed renders using compressed preview thumbnails for final output, so previewed videos now keep full staged image quality.
+
+### Enhancements
+
+- Improved preview staging so UI thumbnails stay lightweight while final renders use separate full-quality staged assets.
+- Tightened staged-image handling so preview/render downloads stay scoped to the current user's storage namespace.
+
 ## 2026-04-03
 
 ### Broadcast Updates

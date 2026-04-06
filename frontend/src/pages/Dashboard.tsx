@@ -1022,11 +1022,11 @@ export default function Dashboard({ session }: Props) {
         </button>
       )}
 
-      <div className="mx-auto max-w-7xl px-4 py-8">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="mx-auto w-full max-w-[1600px] px-4 py-8 xl:max-w-[1760px] 2xl:max-w-[1920px]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 xl:grid-cols-[minmax(0,1.85fr)_minmax(360px,0.95fr)] xl:gap-8">
 
           {/* Left column: batch editor + settings + generate */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 xl:col-span-1">
 
             {/* Mode tabs */}
             <div className="flex gap-1 mb-5 border-b border-stone-800">
@@ -1462,7 +1462,7 @@ export default function Dashboard({ session }: Props) {
           </div>
 
           {/* Right column: active jobs + recent jobs */}
-          <div className="space-y-6">
+          <div className="space-y-6 xl:min-w-[360px]">
             {trialExpired && (
               <div className="rounded-xl border border-red-900 bg-red-950/40 px-4 py-3">
                 <p className="text-xs text-red-400 font-medium mb-1">Trial ended</p>

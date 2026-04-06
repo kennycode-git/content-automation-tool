@@ -4,9 +4,9 @@
 
 - Name: Sprint 2
 - Status: In progress
-- Goal: Fix preview-to-render parity issues, tighten mobile interactions, and polish tutorial onboarding surfaces.
+- Goal: Fix preview-to-render parity issues, tighten mobile interactions, improve staged render quality, and polish tutorial onboarding surfaces.
 - Owner: Codex + project owner
-- Last updated: 2026-04-05
+- Last updated: 2026-04-06
 
 ## Broadcast Updates
 
@@ -19,6 +19,11 @@
 - Done: Batch-level and panel-level overlay previews now follow the same wrapping and positioning rules as the final render logic, including long-word breaking near tight margins.
 - Done: Tutorial start cards now show the PassiveClip logo with the PassiveClip name at the top.
 - Done: On mobile, the top template carousel arrows now disable at the ends so repeated taps cannot trigger the end-of-list glitch.
+- Done: Switching from visual batches to classic text now preserves the current batch content instead of falling back to placeholder/default text.
+- Done: Preview image selection now stages accent images and supports refreshing/swapping them inside the preview modal.
+- Done: Preview image selection now uses the same philosopher refresh/staging path across preview and swap flows, reducing mismatch between philosopher preview states.
+- Done: Preview-confirmed renders now use full-quality staged images instead of compressed preview thumbnails, fixing the softer video quality seen after previewing.
+- Done: Preview and render loading of staged images now validates user-scoped storage paths before downloading from `user-uploads`.
 
 - Done: Clip bundle titles now persist as batch titles in video clips mode.
 - Done: Template routing is mode-aware and resets stale preview state when switching flows.
@@ -55,6 +60,7 @@
 - Done: Top templates now auto-scroll into the editor, show a temporary loaded banner, and pulse only the imported batch card.
 - Done: Video Clips now defaults to `Night Sky`, uses 1 clip per search by default, supports paged preview browsing, and enforces a persistent 60-second selection cap.
 - Done: Overlay font size controls now use a 0.5 to 5 range with a 1.5 default, and preview parity between small and expanded views is tighter.
+- Done: Preview staging now separates fast UI thumbnails from full-quality render assets so preview remains responsive without degrading final output quality.
 - Next: Add dedicated top templates for clips mode.
 - Next: Add dedicated top templates for layered mode.
 - Next: Add an explicit "source template mode" label on template cards if mixed-mode presets become common.
@@ -62,14 +68,18 @@
 ## QA / Risks
 
 - Verified: `npm run build` in `frontend`
-- Verified: backend read-only syntax parse passed for `schemas.py`, `jobs.py`, `preview.py`, `job_manager.py`, and `layered_builder.py`
+- Verified: backend syntax compile passed for `schemas.py`, `preview.py`, and `job_manager.py`
 - Risk: Existing preview layout should be manually checked on an actual mobile viewport after the latest trim UI changes.
 - Risk: Font parity should be spot-checked across Garamond, Cinzel, Uncial, and JetBrains Mono.
 - Risk: Tutorial auto-scroll behaviour should still be verified in the live dev environment because it has behaved differently locally versus dev before.
 - Risk: Overlay preview should still be spot-checked in dev against a few real rendered videos for fonts with unusual widths.
 - Risk: Template carousel end-stop should still be checked on a physical mobile device for smooth-scroll timing differences.
+- Risk: Philosopher image preview should be rechecked in `dev` with both auto-detected and manually selected philosophers, since that path had diverged from accent staging before the latest fixes.
+- Risk: Preview-to-render quality should be compared in `dev` against a direct render on at least one detailed image-heavy batch to confirm the staged full-res asset flow works end-to-end.
 
 ## Next Up
 
 - Spot-check overlay parity in dev using a few long quotes and different margin settings.
+- Spot-check philosopher preview visibility in dev for both system and user philosophers.
+- Compare direct render vs preview-confirmed render quality on the same batch in dev.
 - Move completed user-facing items into [RELEASE_NOTES.md](c:/Documents/Cogito/saas/markdown/RELEASE_NOTES.md) when they are ready to announce.

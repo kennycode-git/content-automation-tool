@@ -11,6 +11,9 @@ import type { VideoSettings } from './SettingsPanel'
 import { listUserPhilosophers, createUserPhilosopher, deleteUserPhilosopher, uploadPhilosopherImages } from '../lib/api'
 import type { UserPhilosopher } from '../lib/api'
 
+const USER_PHILOSOPHERS_UPDATED_EVENT = 'cogito:user-philosophers-updated'
+const MAX_USER_PHILOSOPHER_IMAGES = 50
+
 const ACCENT_OPTIONS = [
   { value: null,     label: 'None',   dot: 'bg-stone-600' },
   { value: 'blue',   label: 'Blue',   dot: 'bg-blue-500' },
@@ -40,6 +43,10 @@ function UserPhilosopherManager() {
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
+  function broadcastUpdate() {
+    window.dispatchEvent(new Event(USER_PHILOSOPHERS_UPDATED_EVENT))
+  }
+
   useEffect(() => {
     listUserPhilosophers().then(data => { setPhilosophers(data); setLoading(false) }).catch(() => setLoading(false))
   }, [])
@@ -52,6 +59,7 @@ function UserPhilosopherManager() {
       const created = await createUserPhilosopher(newName.trim())
       setPhilosophers(prev => [...prev, created])
       setNewName('')
+      broadcastUpdate()
     } catch (e: unknown) {
       setCreateError(e instanceof Error ? e.message : 'Failed to create')
     } finally {
@@ -62,6 +70,7 @@ function UserPhilosopherManager() {
   async function handleDelete(key: string) {
     await deleteUserPhilosopher(key)
     setPhilosophers(prev => prev.filter(p => p.key !== key))
+    broadcastUpdate()
   }
 
   async function handleUpload(key: string, files: FileList | null) {
@@ -70,7 +79,10 @@ function UserPhilosopherManager() {
     try {
       const result = await uploadPhilosopherImages(key, Array.from(files))
       setPhilosophers(prev => prev.map(p => p.key === key ? { ...p, image_count: p.image_count + result.uploaded } : p))
-    } catch { /* ignore */ } finally {
+      broadcastUpdate()
+    } catch (e: unknown) {
+      setCreateError(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
       setUploading(prev => ({ ...prev, [key]: false }))
     }
   }
@@ -86,7 +98,9 @@ function UserPhilosopherManager() {
             <div key={p.key} className="flex items-center gap-2 bg-stone-800 rounded-lg px-2.5 py-2">
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] text-stone-200 truncate">{p.name}</p>
-                <p className="text-[9px] text-stone-500">{p.image_count} image{p.image_count !== 1 ? 's' : ''}</p>
+                <p className="text-[9px] text-stone-500">
+                  {p.image_count} / {MAX_USER_PHILOSOPHER_IMAGES} images
+                </p>
               </div>
               <button
                 onClick={() => fileInputRefs.current[p.key]?.click()}
@@ -114,6 +128,9 @@ function UserPhilosopherManager() {
           {philosophers.length === 0 && (
             <p className="text-[10px] text-stone-600 italic">No custom philosophers yet.</p>
           )}
+          <p className="text-[10px] text-stone-600">
+            Up to {MAX_USER_PHILOSOPHER_IMAGES} images per custom philosopher.
+          </p>
           {/* Create new */}
           <div className="flex gap-1.5 pt-1">
             <input

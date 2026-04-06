@@ -186,8 +186,8 @@ export default function Photos({ session }: Props) {
     <div className="min-h-screen bg-stone-950">
       <AppNavbar session={session} activeTool="photos" />
 
-      <div className="mx-auto max-w-5xl px-4 py-8">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="mx-auto w-full max-w-[1500px] px-4 py-8 xl:max-w-[1680px] 2xl:max-w-[1840px]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)] xl:gap-8">
 
           {/* Left: Settings */}
           <div className="lg:col-span-1">
@@ -303,7 +303,7 @@ export default function Photos({ session }: Props) {
           </div>
 
           {/* Right: Results */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-1 min-w-0">
             {/* Header row when results exist */}
             {hasResults && (
               <div className="mb-4 flex items-center justify-between">
@@ -355,7 +355,7 @@ export default function Photos({ session }: Props) {
 
             {/* Image grid */}
             {hasResults && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {images.map((img, i) => (
                   <div
                     key={img.storage_path}

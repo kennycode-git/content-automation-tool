@@ -54,7 +54,7 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
     <nav className="border-b border-stone-800 bg-stone-900 px-6 py-3 flex items-center justify-between">
       <div className="flex items-center gap-5">
         <div className="flex items-center gap-2 min-w-0">
-          <img src="/logo%20w%20text.png" alt="PassiveClip" className="h-8 w-auto object-contain sm:hidden" />
+          <img src="/logo.png" alt="PassiveClip" className="h-8 w-auto object-contain sm:hidden" />
           <div className="hidden sm:flex items-center gap-2">
             <img src="/logo.png" alt="" className="h-[40px] w-auto object-contain" />
             <img src="/just%20text.png" alt="PassiveClip" className="h-9 w-auto object-contain" />

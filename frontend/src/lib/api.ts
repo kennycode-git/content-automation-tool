@@ -258,6 +258,10 @@ export interface RegradeRequest {
   selected_paths?: string[]
   custom_grade_params?: CustomGradeParams | null
   accent_folder?: string | null
+  philosopher?: string | null
+  philosopher_count?: number
+  grade_philosopher?: boolean
+  philosopher_is_user?: boolean
   layered_config?: LayeredConfig | null
 }
 
@@ -273,6 +277,15 @@ export async function regradeJob(jobId: string, req: RegradeRequest): Promise<Ge
 export async function getRawImages(jobId: string): Promise<PreviewBatchResult> {
   const res = await fetch(`${API_URL}/api/jobs/${jobId}/raw-images`, {
     headers: await authHeaders(),
+  })
+  return handleResponse<PreviewBatchResult>(res)
+}
+
+export async function reviewRegradeImages(jobId: string, req: RegradeRequest): Promise<PreviewBatchResult> {
+  const res = await fetch(`${API_URL}/api/jobs/${jobId}/review-images`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
   })
   return handleResponse<PreviewBatchResult>(res)
 }

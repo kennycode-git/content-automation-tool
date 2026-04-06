@@ -24,6 +24,7 @@ export type { TextOverlayConfig }
 
 const STORAGE_KEY = 'cogito_classic_text'
 const USER_THEMES_KEY = 'cogito_user_themes'
+const USER_PHILOSOPHERS_UPDATED_EVENT = 'cogito:user-philosophers-updated'
 
 export interface UserColorTheme {
   id: string
@@ -1261,7 +1262,12 @@ export default function BatchEditor({
   const [userPhilosophers, setUserPhilosophers] = useState<UserPhilosopher[]>([])
 
   useEffect(() => {
-    listUserPhilosophers().then(setUserPhilosophers).catch(() => {})
+    const refreshUserPhilosophers = () => {
+      listUserPhilosophers().then(setUserPhilosophers).catch(() => {})
+    }
+    refreshUserPhilosophers()
+    window.addEventListener(USER_PHILOSOPHERS_UPDATED_EVENT, refreshUserPhilosophers)
+    return () => window.removeEventListener(USER_PHILOSOPHERS_UPDATED_EVENT, refreshUserPhilosophers)
   }, [])
 
   useEffect(() => {

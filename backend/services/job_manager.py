@@ -864,6 +864,10 @@ async def run_regrade_pipeline(
     selected_paths: list | None = None,
     custom_grade_params_override: dict | None = None,
     accent_folder_override: str | None = None,
+    philosopher_override: str | None = None,
+    philosopher_count_override: int | None = None,
+    grade_philosopher_override: bool | None = None,
+    philosopher_is_user_override: bool | None = None,
     layered_config_override: dict | None = None,
 ) -> None:
     """
@@ -879,6 +883,11 @@ async def run_regrade_pipeline(
             seconds_per_image, total_seconds, original_config, db,
             selected_paths=selected_paths,
             custom_grade_params_override=custom_grade_params_override,
+            accent_folder_override=accent_folder_override,
+            philosopher_override=philosopher_override,
+            philosopher_count_override=philosopher_count_override,
+            grade_philosopher_override=grade_philosopher_override,
+            philosopher_is_user_override=philosopher_is_user_override,
             layered_config_override=layered_config_override,
         )
 
@@ -894,6 +903,11 @@ async def _run_regrade_pipeline_inner(
     db,
     selected_paths: list | None = None,
     custom_grade_params_override: dict | None = None,
+    accent_folder_override: str | None = None,
+    philosopher_override: str | None = None,
+    philosopher_count_override: int | None = None,
+    grade_philosopher_override: bool | None = None,
+    philosopher_is_user_override: bool | None = None,
     layered_config_override: dict | None = None,
 ) -> None:
     resolution = original_config.get("resolution", "1080x1920")
@@ -904,10 +918,10 @@ async def _run_regrade_pipeline_inner(
     text_overlay = original_config.get("text_overlay")
     preset_name = original_config.get("preset_name")
     accent_folder = accent_folder_override
-    philosopher = original_config.get("philosopher")
-    philosopher_count = int(original_config.get("philosopher_count", 3))
-    grade_philosopher = bool(original_config.get("grade_philosopher", False))
-    philosopher_is_user = bool(original_config.get("philosopher_is_user", False))
+    philosopher = philosopher_override
+    philosopher_count = philosopher_count_override if philosopher_count_override is not None else int(original_config.get("philosopher_count", 3))
+    grade_philosopher = grade_philosopher_override if grade_philosopher_override is not None else bool(original_config.get("grade_philosopher", False))
+    philosopher_is_user = philosopher_is_user_override if philosopher_is_user_override is not None else bool(original_config.get("philosopher_is_user", False))
     custom_grade_params = custom_grade_params_override or original_config.get("custom_grade_params")
     batch_title = original_config.get("batch_title") or original_config.get("batch_title")
     layered_config = layered_config_override or original_config.get("layered_config")
@@ -945,6 +959,9 @@ async def _run_regrade_pipeline_inner(
                     _client = _get_client()
                     for path in paths:
                         try:
+                            if not path.startswith(f"{user_id}/"):
+                                logger.warning("Regrade: rejected extra image outside user namespace: %s", path)
+                                continue
                             data = _client.storage.from_("user-uploads").download(path)
                             fname = os.path.basename(path)
                             dest = os.path.join(raw_dir, fname)
@@ -1106,6 +1123,20 @@ async def _run_regrade_pipeline_inner(
         new_config["total_seconds"] = total_seconds
         new_config["images_cached"] = True
         new_config["custom_grade_params"] = custom_grade_params
+        if accent_folder:
+            new_config["accent_folder"] = accent_folder
+        else:
+            new_config.pop("accent_folder", None)
+        if philosopher:
+            new_config["philosopher"] = philosopher
+            new_config["philosopher_count"] = philosopher_count
+            new_config["grade_philosopher"] = grade_philosopher
+            new_config["philosopher_is_user"] = philosopher_is_user
+        else:
+            new_config.pop("philosopher", None)
+            new_config.pop("philosopher_count", None)
+            new_config.pop("grade_philosopher", None)
+            new_config.pop("philosopher_is_user", None)
         if layered_config:
             layered_config["foreground_speed"] = seconds_per_image
             new_config["layered_config"] = layered_config

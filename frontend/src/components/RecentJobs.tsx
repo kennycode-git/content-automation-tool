@@ -6,12 +6,14 @@
  * Refreshes every 30s.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getRecentJobs, deleteJob, resignJob, regradeJob, deleteJobImages } from '../lib/api'
-import type { JobStatus, LayeredConfig } from '../lib/api'
+import { getRecentJobs, deleteJob, resignJob, regradeJob, deleteJobImages, listUserPhilosophers } from '../lib/api'
+import type { JobStatus, LayeredConfig, UserPhilosopher } from '../lib/api'
 import type { VideoSettings } from './SettingsPanel'
 import JobMetaPopover from './JobMetaPopover'
+import BackgroundVideoPicker from './BackgroundVideoPicker'
+import { PHILOSOPHER_LIST, detectPhilosopher } from './BatchEditor'
 
 const COLOR_THEMES = [
   { value: 'none',    label: 'Natural' },
@@ -192,6 +194,16 @@ function stripThemeSuffix(title: string | null | undefined): string | null | und
 }
 
 /** Returns 'ok' | 'warning' (< 4h left) | 'expired' based on completed_at or a manual resign time */
+function inferReEditPhilosopher(job: JobStatus): string {
+  return job.philosopher
+    ?? detectPhilosopher(stripThemeSuffix(job.batch_title) ?? '')
+    ?? ''
+}
+
+function isUserPhilosopherKey(key: string, userPhilosophers: UserPhilosopher[]): boolean {
+  return userPhilosophers.some(p => p.key === key)
+}
+
 function expiryStatus(job: JobStatus, resignedAt?: number): 'ok' | 'warning' | 'expired' {
   if (job.status !== 'done' || !job.completed_at || !job.output_url) return 'ok'
   const base = resignedAt ?? new Date(job.completed_at).getTime()
@@ -210,20 +222,30 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
   const [reEditJob, setReEditJob] = useState<string | null>(null)
   const [reEditTheme, setReEditTheme] = useState('none')
   const [reEditAccent, setReEditAccent] = useState<string>('none')
+  const [reEditPhilosopher, setReEditPhilosopher] = useState<string>('')
+  const [reEditPhilosopherCount, setReEditPhilosopherCount] = useState<number>(3)
+  const [reEditGradePhilosopher, setReEditGradePhilosopher] = useState<boolean>(true)
+  const [reEditPhilosopherIsUser, setReEditPhilosopherIsUser] = useState<boolean>(false)
   const [reEditSpi, setReEditSpi] = useState<number | null>(null)
   const [reEditTotal, setReEditTotal] = useState<number | null>(null)
   const [reEditFgOpacity, setReEditFgOpacity] = useState<number | null>(null)
   const [reEditBgOpacity, setReEditBgOpacity] = useState<number | null>(null)
   const [reEditGradeTarget, setReEditGradeTarget] = useState<'foreground' | 'background' | 'both'>('both')
+  const [reEditBgVideoUrls, setReEditBgVideoUrls] = useState<string[] | null>(null)
   const [reEditing, setReEditing] = useState<Record<string, boolean>>({})
   const [deletingImages, setDeletingImages] = useState<Record<string, boolean>>({})
   const [clearingAll, setClearingAll] = useState(false)
+  const [userPhilosophers, setUserPhilosophers] = useState<UserPhilosopher[]>([])
 
   const { data: jobs = [], refetch } = useQuery({
     queryKey: ['jobs'],
     queryFn: getRecentJobs,
     refetchInterval: 30_000,
   })
+
+  useEffect(() => {
+    listUserPhilosophers().then(setUserPhilosophers).catch(() => {})
+  }, [])
 
   async function handleDelete(jobId: string) {
     if (!confirm('Delete this job and its video file?')) return
@@ -268,12 +290,14 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
       const layeredConfig = job.mode === 'layered' && job.layered_config
         ? {
             ...job.layered_config,
+            background_video_urls: reEditBgVideoUrls ?? job.layered_config.background_video_urls,
             foreground_opacity: reEditFgOpacity ?? job.layered_config.foreground_opacity,
             background_opacity: reEditBgOpacity ?? (job.layered_config.background_opacity ?? 1),
             foreground_speed: reEditSpi ?? job.layered_config.foreground_speed,
             grade_target: reEditGradeTarget,
           }
         : undefined
+      const resolvedPhilosopher = reEditPhilosopher || null
       if (job.images_cached) {
         const res = await regradeJob(jobId, {
           color_theme: reEditTheme,
@@ -281,6 +305,10 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
           ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
           ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
           ...(reEditTheme === 'custom' && job.custom_grade_params ? { custom_grade_params: job.custom_grade_params } : {}),
+          philosopher: resolvedPhilosopher,
+          philosopher_count: reEditPhilosopherCount,
+          grade_philosopher: resolvedPhilosopher ? reEditGradePhilosopher : false,
+          philosopher_is_user: resolvedPhilosopher ? reEditPhilosopherIsUser : false,
           ...(layeredConfig ? { layered_config: layeredConfig } : {}),
         })
         const newTitle = job.batch_title
@@ -294,6 +322,10 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
           ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
           ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
           ...(reEditTheme === 'custom' && job.custom_grade_params ? { custom_grade_params: job.custom_grade_params } : {}),
+          philosopher: resolvedPhilosopher,
+          philosopher_count: resolvedPhilosopher ? reEditPhilosopherCount : undefined,
+          grade_philosopher: resolvedPhilosopher ? reEditGradePhilosopher : undefined,
+          philosopher_is_user: resolvedPhilosopher ? reEditPhilosopherIsUser : undefined,
           ...(layeredConfig ? { layered_config: layeredConfig } : {}),
         }
         onColourGrade?.(job.search_terms!, job.batch_title ?? null, updatedSettings, reEditTheme)
@@ -446,11 +478,17 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
                       setReEditJob(job.job_id)
                       setReEditTheme(job.color_theme ?? 'none')
                       setReEditAccent(job.accent_folder ?? 'none')
+                      const initialPhilosopher = inferReEditPhilosopher(job)
+                      setReEditPhilosopher(initialPhilosopher)
+                      setReEditPhilosopherCount(job.philosopher_count ?? 3)
+                      setReEditGradePhilosopher(job.grade_philosopher ?? true)
+                      setReEditPhilosopherIsUser(job.philosopher_is_user ?? isUserPhilosopherKey(initialPhilosopher, userPhilosophers))
                       setReEditSpi(job.seconds_per_image ?? null)
                       setReEditTotal(job.total_seconds ?? null)
                       setReEditFgOpacity(job.layered_config?.foreground_opacity ?? null)
                       setReEditBgOpacity(job.layered_config?.background_opacity ?? 1)
                       setReEditGradeTarget(job.layered_config?.grade_target ?? 'both')
+                      setReEditBgVideoUrls(job.layered_config?.background_video_urls ?? null)
                     }
                   }}
                   className={`text-xs transition ${reEditJob === job.job_id ? 'text-brand-400' : 'text-stone-500 hover:text-stone-300'}`}
@@ -520,6 +558,61 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
                   </select>
                 </div>
 
+                <div className="space-y-2">
+                  <p className="text-[10px] text-stone-600 mb-1.5">Philosopher images:</p>
+                  <select
+                    value={reEditPhilosopher}
+                    onChange={e => {
+                      const value = e.target.value
+                      setReEditPhilosopher(value)
+                      setReEditPhilosopherIsUser(isUserPhilosopherKey(value, userPhilosophers))
+                    }}
+                    className="w-full rounded-lg border border-stone-700 bg-stone-800 px-2.5 py-2 text-xs text-stone-200 focus:border-brand-500 focus:outline-none"
+                  >
+                    <option value="">None</option>
+                    <optgroup label="System">
+                      {PHILOSOPHER_LIST.map(p => (
+                        <option key={p.key} value={p.key}>{p.display}</option>
+                      ))}
+                    </optgroup>
+                    {userPhilosophers.length > 0 && (
+                      <optgroup label="My philosophers">
+                        {userPhilosophers.map(p => (
+                          <option key={p.key} value={p.key}>{p.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  {reEditPhilosopher && (
+                    <>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[10px] text-stone-600">Philosopher images</p>
+                          <span className="text-[10px] text-stone-400 font-mono">{reEditPhilosopherCount}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={5}
+                          step={1}
+                          value={reEditPhilosopherCount}
+                          onChange={e => setReEditPhilosopherCount(Number(e.target.value))}
+                          className="w-full accent-brand-500"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={reEditGradePhilosopher}
+                          onChange={e => setReEditGradePhilosopher(e.target.checked)}
+                          className="accent-brand-500 w-3.5 h-3.5"
+                        />
+                        <span className="text-xs text-stone-400">Color grade philosopher images</span>
+                      </label>
+                    </>
+                  )}
+                </div>
+
                 {/* Seconds per image */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -560,6 +653,12 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
 
                 {job.mode === 'layered' && job.layered_config && (
                   <>
+                    <BackgroundVideoPicker
+                      selectedUrls={reEditBgVideoUrls ?? job.layered_config.background_video_urls}
+                      onChange={urls => setReEditBgVideoUrls(urls)}
+                      compact
+                    />
+
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-[10px] text-stone-600">Foreground image opacity</p>

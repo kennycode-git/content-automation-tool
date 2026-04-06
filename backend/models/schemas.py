@@ -346,6 +346,10 @@ class RegradeRequest(BaseModel):
     selected_paths: Optional[List[str]] = None  # subset of cached image paths; None = use all
     custom_grade_params: Optional[CustomGradeParams] = None
     accent_folder: Optional[str] = Field(default=None)
+    philosopher: Optional[str] = Field(default=None)
+    philosopher_count: Optional[int] = Field(default=None, ge=1, le=5)
+    grade_philosopher: Optional[bool] = None
+    philosopher_is_user: Optional[bool] = None
     layered_config: Optional[LayeredConfig] = None
 
     @field_validator("color_theme")

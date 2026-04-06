@@ -34,7 +34,7 @@ from services.storage import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_MAX_IMAGES = 10
+_MAX_IMAGES = 50
 
 
 def _name_to_key(name: str) -> str:
@@ -103,12 +103,18 @@ async def upload_philosopher_images(
         raise HTTPException(status_code=404, detail="Philosopher not found.")
 
     existing = list_user_philosopher_images(user_id, key)
-    slots = _MAX_IMAGES - len(existing)
-    if slots <= 0:
+    existing_count = len(existing)
+    if existing_count >= _MAX_IMAGES:
         raise HTTPException(status_code=400, detail=f"Maximum {_MAX_IMAGES} images per philosopher reached.")
+    if existing_count + len(files) > _MAX_IMAGES:
+        remaining = _MAX_IMAGES - existing_count
+        raise HTTPException(
+            status_code=400,
+            detail=f"You can upload {remaining} more image{'s' if remaining != 1 else ''} for this philosopher (max {_MAX_IMAGES} total).",
+        )
 
     uploaded = 0
-    for f in files[:slots]:
+    for f in files:
         if not f.content_type or not f.content_type.startswith("image/"):
             continue
         data = await f.read()
