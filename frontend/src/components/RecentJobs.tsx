@@ -74,6 +74,7 @@ const ACCENT_LABEL: Record<string, string> = {
   blue: 'Blue accent',
   red: 'Red accent',
   gold: 'Gold accent',
+  green: 'Green accent',
   purple: 'Purple accent',
 }
 
@@ -82,6 +83,7 @@ const RE_EDIT_ACCENTS = [
   { value: 'blue', label: 'Blue accent' },
   { value: 'red', label: 'Red accent' },
   { value: 'gold', label: 'Gold accent' },
+  { value: 'green', label: 'Green accent' },
   { value: 'purple', label: 'Purple accent' },
 ]
 

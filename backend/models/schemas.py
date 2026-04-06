@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 ALLOWED_RESOLUTIONS = {"1080x1920", "1920x1080", "1080x1080"}
 ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp", "custom", "mocha", "noir", "midnight", "dusk"}
-ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold", "purple"}
+ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold", "purple", "green"}
 ALLOWED_IMAGE_SOURCES = {"unsplash", "pexels", "both"}
 ALLOWED_PHILOSOPHERS = {
     "marcus_aurelius", "seneca", "epictetus", "nietzsche", "socrates", "aristotle",

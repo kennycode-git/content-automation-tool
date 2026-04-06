@@ -19,6 +19,7 @@ const ACCENT_OPTIONS = [
   { value: 'blue',   label: 'Blue',   dot: 'bg-blue-500' },
   { value: 'red',    label: 'Red',    dot: 'bg-red-500' },
   { value: 'gold',   label: 'Gold',   dot: 'bg-amber-400' },
+  { value: 'green',  label: 'Green',  dot: 'bg-emerald-500' },
   { value: 'purple', label: 'Purple', dot: 'bg-purple-500' },
 ]
 
