@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from routers.auth import get_current_user_id
 from db.supabase_client import get_client
-from models.schemas import SchedulePostRequest
+from models.schemas import PostNowRequest, SchedulePostRequest
 from services import tiktok_service
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,40 @@ router = APIRouter()
 class TikTokExchangeRequest(BaseModel):
     code: str
     state: str
+
+
+def _compose_caption(caption: str, hashtags: list[str] | None) -> str:
+    parts = [caption or ""]
+    if hashtags:
+        parts.append(" ".join(f"#{h.lstrip('#')}" for h in hashtags))
+    return " ".join(p for p in parts if p).strip()[:2200]
+
+
+def _get_job_and_account_or_404(*, user_id: str, job_id: str, tiktok_account_id: str) -> tuple[dict, dict]:
+    supabase = get_client()
+
+    job_result = (
+        supabase.table("jobs")
+        .select("id, user_id")
+        .eq("id", job_id)
+        .eq("user_id", user_id)
+        .eq("status", "done")
+        .execute()
+    )
+    if not job_result.data:
+        raise HTTPException(status_code=404, detail="Job not found or not completed.")
+
+    acct_result = (
+        supabase.table("tiktok_accounts")
+        .select("*")
+        .eq("id", tiktok_account_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not acct_result.data:
+        raise HTTPException(status_code=404, detail="TikTok account not found.")
+
+    return job_result.data[0], acct_result.data[0]
 
 
 # ─── OAuth ────────────────────────────────────────────────────────────────────
@@ -117,29 +151,11 @@ async def schedule_post(req: SchedulePostRequest, user_id: str = Depends(get_cur
         raise HTTPException(status_code=400, detail="scheduled_at must be in the future.")
 
     supabase = get_client()
-
-    # Verify job belongs to this user and is done
-    job_result = (
-        supabase.table("jobs")
-        .select("id")
-        .eq("id", req.job_id)
-        .eq("user_id", user_id)
-        .eq("status", "done")
-        .execute()
+    _get_job_and_account_or_404(
+        user_id=user_id,
+        job_id=req.job_id,
+        tiktok_account_id=req.tiktok_account_id,
     )
-    if not job_result.data:
-        raise HTTPException(status_code=404, detail="Job not found or not completed.")
-
-    # Verify account belongs to this user
-    acct_result = (
-        supabase.table("tiktok_accounts")
-        .select("id")
-        .eq("id", req.tiktok_account_id)
-        .eq("user_id", user_id)
-        .execute()
-    )
-    if not acct_result.data:
-        raise HTTPException(status_code=404, detail="TikTok account not found.")
 
     insert_result = supabase.table("scheduled_posts").insert({
         "user_id": user_id,
@@ -154,6 +170,61 @@ async def schedule_post(req: SchedulePostRequest, user_id: str = Depends(get_cur
     }).execute()
 
     return {"id": insert_result.data[0]["id"]}
+
+
+@router.post("/tiktok/post-now", status_code=201)
+async def post_now(req: PostNowRequest, user_id: str = Depends(get_current_user_id)):
+    supabase = get_client()
+    job, account = _get_job_and_account_or_404(
+        user_id=user_id,
+        job_id=req.job_id,
+        tiktok_account_id=req.tiktok_account_id,
+    )
+
+    row = supabase.table("scheduled_posts").insert({
+        "user_id": user_id,
+        "job_id": req.job_id,
+        "tiktok_account_id": req.tiktok_account_id,
+        "caption": req.caption,
+        "hashtags": req.hashtags,
+        "privacy_level": req.privacy_level,
+        "scheduled_at": datetime.now(timezone.utc).isoformat(),
+        "draft_mode": False,
+        "status": "posting",
+    }).execute()
+    post_id = row.data[0]["id"]
+
+    try:
+        storage_path = f"{job['user_id']}/{job['id']}.mp4"
+        sign_result = supabase.storage.from_("outputs").create_signed_url(storage_path, 600)
+        signed_url = (
+            sign_result.get("signedURL")
+            or sign_result.get("signed_url")
+            or (sign_result.get("data") or {}).get("signedUrl")
+        )
+        if not signed_url:
+            raise ValueError(f"Could not re-sign storage URL for job {job['id']}")
+
+        publish_id = tiktok_service.post_video(
+            access_token=tiktok_service.get_valid_token(account),
+            video_url=signed_url,
+            caption=_compose_caption(req.caption, req.hashtags),
+            privacy_level=req.privacy_level,
+            draft=False,
+        )
+
+        supabase.table("scheduled_posts").update({
+            "status": "posted",
+            "tiktok_publish_id": publish_id,
+        }).eq("id", post_id).execute()
+        return {"id": post_id, "publish_id": publish_id}
+    except Exception as exc:
+        logger.exception("Immediate TikTok post failed: %s", exc)
+        supabase.table("scheduled_posts").update({
+            "status": "failed",
+            "error_message": str(exc)[:500],
+        }).eq("id", post_id).execute()
+        raise HTTPException(status_code=502, detail=f"Immediate TikTok post failed: {str(exc)[:300]}")
 
 
 @router.get("/tiktok/scheduled")

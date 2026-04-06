@@ -374,6 +374,7 @@ class PreviewBatchRequest(BaseModel):
     uploaded_image_paths: Optional[List[str]] = None
     color_theme: Optional[str] = None
     custom_grade_params: Optional[CustomGradeParams] = None
+    accent_folder: Optional[str] = Field(default=None)
     philosopher: Optional[str] = Field(default=None)
     philosopher_count: int = Field(default=3, ge=1, le=5)
     grade_philosopher: bool = False
@@ -388,6 +389,14 @@ class PreviewBatchRequest(BaseModel):
             if not term.strip():
                 raise ValueError("Search terms must not be blank.")
         return [t.strip() for t in v]
+
+
+    @field_validator("accent_folder")
+    @classmethod
+    def validate_accent_folder(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ALLOWED_ACCENT_FOLDERS:
+            raise ValueError(f"accent_folder must be one of: {', '.join(sorted(ALLOWED_ACCENT_FOLDERS))}")
+        return v
 
 
 class PreviewStageRequest(BaseModel):
@@ -423,13 +432,21 @@ class PreviewStageRequest(BaseModel):
 
 class PreviewImageItem(BaseModel):
     storage_path: str
+    render_storage_path: Optional[str] = None
     signed_url: str
     is_philosopher: bool = False
+    is_accent: bool = False
+    source_key: Optional[str] = None
 
 
 class PreviewBatchResult(BaseModel):
     batch_title: Optional[str]
     search_terms: List[str]
+    color_theme: Optional[str] = None
+    accent_folder: Optional[str] = None
+    philosopher: Optional[str] = None
+    grade_philosopher: bool = False
+    philosopher_is_user: bool = False
     images: List[PreviewImageItem]
 
 
@@ -469,6 +486,57 @@ class PreviewFindMoreRequest(BaseModel):
 
 class PreviewFindMoreResponse(BaseModel):
     images: List[PreviewImageItem]
+
+
+class PreviewRefreshPhilosopherRequest(BaseModel):
+    philosopher: str = Field(..., min_length=1, max_length=80)
+    resolution: str = Field(default="1080x1920")
+    color_theme: str = Field(default="none")
+    grade_philosopher: bool = False
+    philosopher_is_user: bool = False
+    exclude_source_keys: List[str] = Field(default_factory=list, max_length=50)
+
+    @field_validator("resolution")
+    @classmethod
+    def validate_resolution(cls, v: str) -> str:
+        if v not in ALLOWED_RESOLUTIONS:
+            raise ValueError(f"resolution must be one of: {', '.join(sorted(ALLOWED_RESOLUTIONS))}")
+        return v
+
+    @field_validator("color_theme")
+    @classmethod
+    def validate_color_theme(cls, v: str) -> str:
+        if v not in ALLOWED_COLOR_THEMES:
+            raise ValueError(f"color_theme must be one of: {', '.join(sorted(ALLOWED_COLOR_THEMES))}")
+        return v
+
+
+class PreviewRefreshPhilosopherResponse(BaseModel):
+    image: PreviewImageItem
+
+
+class PreviewRefreshAccentRequest(BaseModel):
+    accent_folder: str
+    resolution: str = Field(default="1080x1920")
+    exclude_source_keys: List[str] = Field(default_factory=list, max_length=50)
+
+    @field_validator("accent_folder")
+    @classmethod
+    def validate_accent_folder(cls, v: str) -> str:
+        if v not in ALLOWED_ACCENT_FOLDERS:
+            raise ValueError(f"accent_folder must be one of: {', '.join(sorted(ALLOWED_ACCENT_FOLDERS))}")
+        return v
+
+    @field_validator("resolution")
+    @classmethod
+    def validate_resolution(cls, v: str) -> str:
+        if v not in ALLOWED_RESOLUTIONS:
+            raise ValueError(f"resolution must be one of: {', '.join(sorted(ALLOWED_RESOLUTIONS))}")
+        return v
+
+
+class PreviewRefreshAccentResponse(BaseModel):
+    image: PreviewImageItem
 
 
 ALLOWED_TRANSITIONS = {"cut", "fade_black", "crossfade"}
@@ -556,6 +624,21 @@ class SchedulePostRequest(BaseModel):
     privacy_level: str = Field(default="PUBLIC_TO_EVERYONE")
     scheduled_at: datetime
     draft_mode: bool = False
+
+    @field_validator("privacy_level")
+    @classmethod
+    def validate_privacy_level(cls, v: str) -> str:
+        if v not in ALLOWED_PRIVACY_LEVELS:
+            raise ValueError(f"privacy_level must be one of: {', '.join(sorted(ALLOWED_PRIVACY_LEVELS))}")
+        return v
+
+
+class PostNowRequest(BaseModel):
+    job_id: str
+    tiktok_account_id: str
+    caption: str = Field(default="", max_length=2200)
+    hashtags: List[str] = Field(default=[])
+    privacy_level: str = Field(default="PUBLIC_TO_EVERYONE")
 
     @field_validator("privacy_level")
     @classmethod

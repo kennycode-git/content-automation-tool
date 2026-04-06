@@ -37,6 +37,10 @@ from models.schemas import (
     PreviewImageItem,
     PreviewFindMoreRequest,
     PreviewFindMoreResponse,
+    PreviewRefreshPhilosopherRequest,
+    PreviewRefreshPhilosopherResponse,
+    PreviewRefreshAccentRequest,
+    PreviewRefreshAccentResponse,
 )
 from routers.auth import get_current_user_id
 from services.image_pipeline import fetch_images, download_and_save, RateLimitError
@@ -90,6 +94,169 @@ def _list_system_philosopher_images(key: str) -> list[str]:
     return []
 
 
+def _write_cover_jpeg(data: bytes, out_path: Path, width: int, height: int) -> None:
+    img = PilImage.open(io.BytesIO(data)).convert("RGB")
+    iw, ih = img.size
+    scale = max(width / iw, height / ih)
+    nw, nh = int(iw * scale), int(ih * scale)
+    img = img.resize((nw, nh), PilImage.LANCZOS)
+    left, top = (nw - width) // 2, (nh - height) // 2
+    img = img.crop((left, top, left + width, top + height))
+    img.save(out_path, "JPEG", quality=92)
+
+
+async def _upload_preview_item(
+    *,
+    user_id: str,
+    storage_suffix: str,
+    local_path: Path,
+    is_philosopher: bool = False,
+    is_accent: bool = False,
+    source_key: str | None = None,
+) -> PreviewImageItem:
+    client = get_client()
+    preview_data = _preview_thumbnail(local_path)
+    render_storage_path = f"{user_id}/staged/{storage_suffix}"
+    preview_storage_path = f"{user_id}/preview/{storage_suffix}"
+    with open(local_path, "rb") as f:
+        render_data = f.read()
+    client.storage.from_("user-uploads").upload(
+        path=render_storage_path,
+        file=render_data,
+        file_options={"content-type": "image/jpeg", "upsert": "true"},
+    )
+    client.storage.from_("user-uploads").upload(
+        path=preview_storage_path,
+        file=preview_data,
+        file_options={"content-type": "image/jpeg", "upsert": "true"},
+    )
+    signed_url = await get_user_uploads_signed_url(preview_storage_path)
+    return PreviewImageItem(
+        storage_path=preview_storage_path,
+        render_storage_path=render_storage_path,
+        signed_url=signed_url,
+        is_philosopher=is_philosopher,
+        is_accent=is_accent,
+        source_key=source_key,
+    )
+
+
+async def _stage_philosopher_preview_items(
+    *,
+    user_id: str,
+    philosopher: str,
+    philosopher_count: int,
+    philosopher_is_user: bool,
+    grade_philosopher: bool,
+    color_theme: str,
+    custom_grade_params: dict | None,
+    width: int,
+    height: int,
+    storage_prefix: str,
+    exclude_source_keys: set[str] | None = None,
+) -> list[PreviewImageItem]:
+    import random
+
+    from services.storage import download_accent_image, download_user_philosopher_image, list_user_philosopher_images
+
+    exclude = exclude_source_keys or set()
+    if philosopher_is_user:
+        all_paths = list_user_philosopher_images(user_id, philosopher)
+    else:
+        all_paths = _list_system_philosopher_images(philosopher)
+
+    available = [path for path in all_paths if path not in exclude]
+    if not available:
+        return []
+
+    selected = random.sample(available, min(philosopher_count, len(available)))
+    items: list[PreviewImageItem] = []
+
+    with tempfile.TemporaryDirectory(prefix="phil_preview_") as tmp_root:
+        tmp_dir = Path(tmp_root)
+        staging_dir = tmp_dir / "staging"
+        staging_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, source_key in enumerate(selected, 1):
+            data = (
+                download_user_philosopher_image(source_key)
+                if philosopher_is_user
+                else download_accent_image(source_key)
+            )
+            _write_cover_jpeg(data, staging_dir / f"phil_{idx:03d}.jpg", width, height)
+
+        upload_dir = staging_dir
+        if grade_philosopher and color_theme and color_theme != "none":
+            graded_dir = tmp_dir / "graded"
+            graded_out = await asyncio.to_thread(
+                apply_theme_grading,
+                str(staging_dir),
+                str(graded_dir),
+                color_theme,
+                custom_grade_params,
+            )
+            upload_dir = Path(graded_out)
+
+        for idx, source_key in enumerate(selected, 1):
+            local_path = upload_dir / f"phil_{idx:03d}.jpg"
+            if not local_path.is_file():
+                continue
+            items.append(await _upload_preview_item(
+                user_id=user_id,
+                storage_suffix=f"{storage_prefix}_{idx:03d}.jpg",
+                local_path=local_path,
+                is_philosopher=True,
+                source_key=source_key,
+            ))
+    return items
+
+
+async def _stage_accent_preview_items(
+    *,
+    user_id: str,
+    accent_folder: str,
+    accent_count: int,
+    width: int,
+    height: int,
+    storage_prefix: str,
+    exclude_source_keys: set[str] | None = None,
+) -> list[PreviewImageItem]:
+    import random
+
+    from services.storage import download_accent_image, list_accent_images
+
+    exclude = exclude_source_keys or set()
+    all_paths = list_accent_images(accent_folder)
+    available = [path for path in all_paths if path not in exclude]
+    if not available:
+        return []
+
+    selected = random.sample(available, min(accent_count, len(available)))
+    items: list[PreviewImageItem] = []
+
+    with tempfile.TemporaryDirectory(prefix="accent_preview_") as tmp_root:
+        tmp_dir = Path(tmp_root)
+        staging_dir = tmp_dir / "staging"
+        staging_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, source_key in enumerate(selected, 1):
+            data = download_accent_image(source_key)
+            _write_cover_jpeg(data, staging_dir / f"accent_{idx:03d}.jpg", width, height)
+
+        for idx, source_key in enumerate(selected, 1):
+            local_path = staging_dir / f"accent_{idx:03d}.jpg"
+            if not local_path.is_file():
+                continue
+            items.append(await _upload_preview_item(
+                user_id=user_id,
+                storage_suffix=f"{storage_prefix}_{idx:03d}.jpg",
+                local_path=local_path,
+                is_accent=True,
+                source_key=source_key,
+            ))
+    return items
+
+
 def _stage_batch_sync(
     *,
     search_terms: List[str],
@@ -105,16 +272,17 @@ def _stage_batch_sync(
     images_dir: str,
     graded_dir: str,
     page_start: int = 1,
+    accent_folder: str | None = None,
     philosopher: str | None = None,
     philosopher_count: int = 3,
     grade_philosopher: bool = False,
     philosopher_is_user: bool = False,
     user_id: str = "",
     phil_dir: str = "",
-) -> tuple[str, str | None, bool]:
+) -> tuple[str, str | None, bool, list[str], int]:
     """
     Synchronous worker that runs fetch → download → grade for a single batch.
-    Returns (graded_dir_path, pexels_fallback_used).
+    Returns (graded_dir_path, philosopher_dir_path, pexels_fallback_used, selected_philosopher_paths, accent_count).
     If Unsplash hits a rate limit and pexels_key is available, falls back to Pexels.
     Must be called via asyncio.to_thread.
     """
@@ -130,6 +298,9 @@ def _stage_batch_sync(
         client = _get_client()
         for i, path in enumerate(uploaded_image_paths):
             try:
+                if user_id and not path.startswith(f"{user_id}/"):
+                    logger.warning("Preview: rejected uploaded image outside user namespace: %s", path)
+                    continue
                 data = client.storage.from_("user-uploads").download(path)
                 img = Image.open(io.BytesIO(data)).convert("RGB")
                 iw, ih = img.size
@@ -200,8 +371,12 @@ def _stage_batch_sync(
     # --- Apply colour grading ---
     render_dir = apply_theme_grading(images_dir, graded_dir, color_theme, custom_params=custom_grade_params)
 
+    needed_frames = max(1, need_total - 10)
+    accent_count = max(1, needed_frames // 5) if accent_folder else 0
+
     # --- Philosopher images ---
     phil_out_dir: str | None = None
+    selected_phil_paths: list[str] = []
     if philosopher and phil_dir:
         import random
         os.makedirs(phil_dir, exist_ok=True)
@@ -210,6 +385,7 @@ def _stage_batch_sync(
             from services.storage import list_user_philosopher_images, download_user_philosopher_image
             phil_paths = list_user_philosopher_images(user_id, philosopher)
             selected = random.sample(phil_paths, min(philosopher_count, len(phil_paths))) if phil_paths else []
+            selected_phil_paths = list(selected)
             for idx, path in enumerate(selected, 1):
                 try:
                     data = download_user_philosopher_image(path)
@@ -227,6 +403,7 @@ def _stage_batch_sync(
             from services.storage import download_accent_image
             phil_paths = _list_system_philosopher_images(philosopher)
             selected = random.sample(phil_paths, min(philosopher_count, len(phil_paths))) if phil_paths else []
+            selected_phil_paths = list(selected)
             for idx, path in enumerate(selected, 1):
                 try:
                     data = download_accent_image(path)
@@ -248,7 +425,7 @@ def _stage_batch_sync(
             else:
                 phil_out_dir = phil_dir
 
-    return render_dir, phil_out_dir, pexels_fallback
+    return render_dir, phil_out_dir, pexels_fallback, selected_phil_paths, accent_count
 
 
 @router.post("/preview-stage", response_model=PreviewStageResponse)
@@ -292,7 +469,7 @@ async def preview_stage(
                 effective_grade_params = (
                     batch.custom_grade_params.model_dump() if batch.custom_grade_params else None
                 ) if effective_theme == "custom" else None
-                render_dir, phil_out_dir, used_pexels = await asyncio.to_thread(
+                render_dir, _, used_pexels, _, _accent_count = await asyncio.to_thread(
                     _stage_batch_sync,
                     search_terms=batch.search_terms,
                     uploaded_image_paths=batch.uploaded_image_paths or None,
@@ -306,13 +483,10 @@ async def preview_stage(
                     image_source=body.image_source,
                     images_dir=images_dir,
                     graded_dir=graded_dir,
-                    philosopher=batch.philosopher or None,
-                    philosopher_count=batch.philosopher_count,
-                    grade_philosopher=batch.grade_philosopher,
-                    philosopher_is_user=batch.philosopher_is_user,
+                    accent_folder=batch.accent_folder,
                     user_id=user_id,
-                    phil_dir=os.path.join(tmp_root, f"batch_{batch_idx}", "phil"),
                 )
+                accent_count = max(1, int(body.total_seconds / body.seconds_per_image) // 5) if batch.accent_folder else 0
                 if used_pexels:
                     any_pexels_fallback = True
             except Exception as e:
@@ -327,45 +501,60 @@ async def preview_stage(
             for fname in fnames:
                 fpath = render_path / fname
                 try:
-                    data = _preview_thumbnail(fpath)
-                    storage_path = f"{user_id}/preview/{ts}_{batch_idx}_{fname}"
-                    client.storage.from_("user-uploads").upload(
-                        path=storage_path,
-                        file=data,
-                        file_options={"content-type": "image/jpeg", "upsert": "true"},
-                    )
-                    signed_url = await get_user_uploads_signed_url(storage_path)
-                    image_items.append(PreviewImageItem(storage_path=storage_path, signed_url=signed_url))
+                    image_items.append(await _upload_preview_item(
+                        user_id=user_id,
+                        storage_suffix=f"{ts}_{batch_idx}_{fname}",
+                        local_path=fpath,
+                    ))
                 except Exception as e:
                     logger.warning("Preview: failed to upload/sign %s: %s", fname, e)
 
             # Upload philosopher images (prepend so they appear first in the grid)
             phil_items: list[PreviewImageItem] = []
-            if phil_out_dir and os.path.isdir(phil_out_dir):
-                phil_fnames = sorted(f for f in os.listdir(phil_out_dir) if Path(phil_out_dir, f).is_file())
-                for fname in phil_fnames:
-                    fpath = Path(phil_out_dir) / fname
-                    try:
-                        data = _preview_thumbnail(fpath)
-                        storage_path = f"{user_id}/preview/{ts}_{batch_idx}_phil_{fname}"
-                        client.storage.from_("user-uploads").upload(
-                            path=storage_path,
-                            file=data,
-                            file_options={"content-type": "image/jpeg", "upsert": "true"},
-                        )
-                        signed_url = await get_user_uploads_signed_url(storage_path)
-                        phil_items.append(PreviewImageItem(storage_path=storage_path, signed_url=signed_url, is_philosopher=True))
-                    except Exception as e:
-                        logger.warning("Preview: failed to upload/sign philosopher image %s: %s", fname, e)
+            if batch.philosopher:
+                try:
+                    phil_items = await _stage_philosopher_preview_items(
+                        user_id=user_id,
+                        philosopher=batch.philosopher,
+                        philosopher_count=batch.philosopher_count,
+                        philosopher_is_user=batch.philosopher_is_user,
+                        grade_philosopher=batch.grade_philosopher,
+                        color_theme=effective_theme,
+                        custom_grade_params=effective_grade_params,
+                        width=w,
+                        height=h,
+                        storage_prefix=f"{ts}_{batch_idx}_phil",
+                    )
+                except Exception as e:
+                    logger.warning("Preview: failed to stage philosopher images for batch %d: %s", batch_idx, e)
+
+            accent_items: list[PreviewImageItem] = []
+            if batch.accent_folder and accent_count > 0:
+                try:
+                    accent_items = await _stage_accent_preview_items(
+                        user_id=user_id,
+                        accent_folder=batch.accent_folder,
+                        accent_count=accent_count,
+                        width=w,
+                    height=h,
+                    storage_prefix=f"{ts}_{batch_idx}_accent",
+                    )
+                except Exception as e:
+                    logger.warning("Preview: failed to stage accent images for batch %d: %s", batch_idx, e)
 
             batch_results.append(PreviewBatchResult(
                 batch_title=batch.batch_title,
                 search_terms=batch.search_terms,
-                images=phil_items + image_items,
+                color_theme=effective_theme,
+                accent_folder=batch.accent_folder,
+                philosopher=batch.philosopher,
+                grade_philosopher=batch.grade_philosopher,
+                philosopher_is_user=batch.philosopher_is_user,
+                images=phil_items + accent_items + image_items,
             ))
             logger.info(
-                "Preview batch %d staged: %d images (%d philosopher) for user %s",
-                batch_idx, len(phil_items) + len(image_items), len(phil_items), user_id,
+                "Preview batch %d staged: %d images (%d philosopher, %d accent) for user %s",
+                batch_idx, len(phil_items) + len(accent_items) + len(image_items), len(phil_items), len(accent_items), user_id,
             )
 
         return PreviewStageResponse(batches=batch_results, pexels_fallback=any_pexels_fallback)
@@ -413,7 +602,7 @@ async def preview_find_more(
             graded_dir = os.path.join(tmp_root, f"graded_{attempt}")
 
             try:
-                render_dir, _, _ = await asyncio.to_thread(
+                render_dir, _, _, _, _ = await asyncio.to_thread(
                     _stage_batch_sync,
                     search_terms=body.search_terms,
                     uploaded_image_paths=None,
@@ -469,3 +658,48 @@ async def preview_find_more(
 
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
+
+
+@router.post("/preview-refresh-philosopher", response_model=PreviewRefreshPhilosopherResponse)
+async def preview_refresh_philosopher(
+    body: PreviewRefreshPhilosopherRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    w, h = (int(x) for x in body.resolution.lower().split("x"))
+    items = await _stage_philosopher_preview_items(
+        user_id=user_id,
+        philosopher=body.philosopher,
+        philosopher_count=1,
+        philosopher_is_user=body.philosopher_is_user,
+        grade_philosopher=body.grade_philosopher,
+        color_theme=body.color_theme,
+        custom_grade_params=None,
+        width=w,
+        height=h,
+        storage_prefix=f"{int(time.time() * 1000)}_refresh_phil",
+        exclude_source_keys=set(body.exclude_source_keys),
+    )
+    if not items:
+        raise HTTPException(status_code=404, detail="No unused philosopher images are available for this batch.")
+    return PreviewRefreshPhilosopherResponse(image=items[0])
+
+
+@router.post("/preview-refresh-accent", response_model=PreviewRefreshAccentResponse)
+async def preview_refresh_accent(
+    body: PreviewRefreshAccentRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    width, height = (int(x) for x in body.resolution.lower().split("x"))
+    ts = int(time.time() * 1000)
+    items = await _stage_accent_preview_items(
+        user_id=user_id,
+        accent_folder=body.accent_folder,
+        accent_count=1,
+        width=width,
+        height=height,
+        storage_prefix=f"{ts}_accent_refresh",
+        exclude_source_keys=set(body.exclude_source_keys),
+    )
+    if not items:
+        raise HTTPException(status_code=404, detail="No unused accent images are available for this batch.")
+    return PreviewRefreshAccentResponse(image=items[0])

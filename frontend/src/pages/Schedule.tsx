@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
@@ -10,6 +10,7 @@ import {
   getScheduledPosts,
   getTikTokAccounts,
   getTikTokAuthUrl,
+  postNow,
   schedulePost,
 } from '../lib/api'
 import type { JobStatus, ScheduledPost, TikTokAccount } from '../lib/api'
@@ -34,8 +35,8 @@ export default function Schedule({ session }: Props) {
   const queryClient = useQueryClient()
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduledAtRef = useRef<HTMLInputElement>(null)
 
-  // Form state
   const [selectedJobId, setSelectedJobId] = useState('')
   const [selectedAccountId, setSelectedAccountId] = useState('')
   const [caption, setCaption] = useState('')
@@ -45,6 +46,7 @@ export default function Schedule({ session }: Props) {
   const [scheduledAt, setScheduledAt] = useState('')
   const [scheduleTab, setScheduleTab] = useState<'upcoming' | 'history'>('upcoming')
   const [showInboxInfo, setShowInboxInfo] = useState(false)
+  const [showValidation, setShowValidation] = useState(false)
 
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
     if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -75,9 +77,11 @@ export default function Schedule({ session }: Props) {
   const { data: recentJobs = [] } = useQuery<JobStatus[]>({
     queryKey: ['jobs'],
     queryFn: getRecentJobs,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
   })
 
-  const doneJobs = recentJobs.filter(j => j.status === 'done')
+  const doneJobs = recentJobs.filter(j => j.status === 'done' && j.output_url)
 
   const connectMutation = useMutation({
     mutationFn: getTikTokAuthUrl,
@@ -104,6 +108,22 @@ export default function Schedule({ session }: Props) {
       setHashtags([])
       setHashtagInput('')
       setScheduledAt('')
+      setShowValidation(false)
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  })
+
+  const postNowMutation = useMutation({
+    mutationFn: postNow,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-posts'] })
+      showToast('Post sent to TikTok now!', 'success')
+      setSelectedJobId('')
+      setCaption('')
+      setHashtags([])
+      setHashtagInput('')
+      setScheduledAt('')
+      setShowValidation(false)
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   })
@@ -128,21 +148,63 @@ export default function Schedule({ session }: Props) {
     }
   }
 
-  function handleSchedule(draftMode: boolean) {
-    if (!selectedJobId || !selectedAccountId) return
-    if (!draftMode && !scheduledAt) return
+  function buildHashtags() {
     const pendingTag = hashtagInput.trim().replace(/^#/, '')
-    const allHashtags = pendingTag && !hashtags.includes(pendingTag)
+    return pendingTag && !hashtags.includes(pendingTag)
       ? [...hashtags, pendingTag]
       : hashtags
+  }
+
+  function openSchedulePicker() {
+    const input = scheduledAtRef.current
+    if (!input) return
+    input.focus()
+    if ('showPicker' in input) {
+      try {
+        input.showPicker()
+      } catch {
+        // ignore browser restrictions
+      }
+    }
+  }
+
+  function handleSchedule(draftMode: boolean) {
+    const missingVideo = !selectedJobId
+    const missingAccount = !selectedAccountId
+    const missingSchedule = !draftMode && !scheduledAt
+
+    if (missingVideo || missingAccount || missingSchedule) {
+      setShowValidation(true)
+      if (missingSchedule) openSchedulePicker()
+      return
+    }
+
     scheduleMutation.mutate({
       job_id: selectedJobId,
       tiktok_account_id: selectedAccountId,
       caption,
-      hashtags: allHashtags,
+      hashtags: buildHashtags(),
       privacy_level: privacyLevel,
-      scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : new Date().toISOString(),
+      scheduled_at: draftMode
+        ? new Date().toISOString()
+        : new Date(scheduledAt).toISOString(),
       draft_mode: draftMode,
+    })
+  }
+
+  function handlePostNow() {
+    const missingVideo = !selectedJobId
+    const missingAccount = !selectedAccountId
+    if (missingVideo || missingAccount) {
+      setShowValidation(true)
+      return
+    }
+    postNowMutation.mutate({
+      job_id: selectedJobId,
+      tiktok_account_id: selectedAccountId,
+      caption,
+      hashtags: buildHashtags(),
+      privacy_level: privacyLevel,
     })
   }
 
@@ -150,16 +212,17 @@ export default function Schedule({ session }: Props) {
   const historyPosts = scheduledPosts.filter(
     p => p.status === 'posted' || p.status === 'failed' || p.status === 'cancelled'
   )
-
-  // minDatetime reserved for when scheduling is re-enabled
-  // const minDatetime = new Date(Date.now() + 2 * 60 * 1000).toISOString().slice(0, 16)
+  const minDatetime = new Date(Date.now() + 2 * 60 * 1000).toISOString().slice(0, 16)
+  const actionDisabled = !selectedJobId || !selectedAccountId
+  const missingVideo = showValidation && !selectedJobId
+  const missingAccount = showValidation && !selectedAccountId
+  const missingSchedule = showValidation && !scheduledAt
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-200">
       <AppNavbar session={session} activeTool="schedule" />
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        {/* Connected Accounts */}
         <section className="bg-stone-900 border border-stone-800 rounded-xl p-5">
           <h2 className="text-sm font-semibold text-stone-300 mb-4">Connected TikTok Accounts</h2>
           {accounts.length === 0 ? (
@@ -199,23 +262,25 @@ export default function Schedule({ session }: Props) {
             disabled={connectMutation.isPending}
             className="px-4 py-2 text-sm font-medium bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg transition disabled:opacity-50"
           >
-            {connectMutation.isPending ? 'Connecting…' : '+ Connect TikTok'}
+            {connectMutation.isPending ? 'Connecting...' : '+ Connect TikTok'}
           </button>
         </section>
 
-        {/* Schedule a Post */}
         <section className="bg-stone-900 border border-stone-800 rounded-xl p-5">
           <h2 className="text-sm font-semibold text-stone-300 mb-4">Schedule a Post</h2>
           <form onSubmit={e => e.preventDefault()} className="space-y-4">
-            {/* Video */}
             <div>
               <label className="block text-xs text-stone-400 mb-1">Video</label>
               <select
                 value={selectedJobId}
                 onChange={e => setSelectedJobId(e.target.value)}
-                className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-stone-500"
+                className={`w-full rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none ${
+                  missingVideo
+                    ? 'bg-stone-800 border border-red-500 focus:border-red-400'
+                    : 'bg-stone-800 border border-stone-700 focus:border-stone-500'
+                }`}
               >
-                <option value="">Select a completed video…</option>
+                <option value="">Select a completed video...</option>
                 {doneJobs.map(j => (
                   <option key={j.job_id} value={j.job_id}>
                     {j.batch_title ?? j.job_id.slice(0, 8)}
@@ -227,7 +292,6 @@ export default function Schedule({ session }: Props) {
               )}
             </div>
 
-            {/* Caption */}
             <div>
               <label className="block text-xs text-stone-400 mb-1">
                 Caption
@@ -237,12 +301,11 @@ export default function Schedule({ session }: Props) {
                 value={caption}
                 onChange={e => setCaption(e.target.value.slice(0, 2200))}
                 rows={3}
-                placeholder="Write a caption…"
+                placeholder="Write a caption..."
                 className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 placeholder-stone-600 resize-none focus:outline-none focus:border-stone-500"
               />
             </div>
 
-            {/* Hashtags */}
             <div>
               <label className="block text-xs text-stone-400 mb-1">
                 Hashtags
@@ -260,7 +323,7 @@ export default function Schedule({ session }: Props) {
                       onClick={() => setHashtags(h => h.filter(t => t !== tag))}
                       className="text-stone-500 hover:text-stone-200 leading-none"
                     >
-                      ×
+                      x
                     </button>
                   </span>
                 ))}
@@ -269,21 +332,24 @@ export default function Schedule({ session }: Props) {
                 value={hashtagInput}
                 onChange={e => setHashtagInput(e.target.value)}
                 onKeyDown={handleAddHashtag}
-                placeholder="stoicism, philosophy…"
+                placeholder="stoicism, philosophy..."
                 className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 placeholder-stone-600 focus:outline-none focus:border-stone-500"
               />
             </div>
 
-            {/* Account + Privacy row */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-stone-400 mb-1">TikTok Account</label>
                 <select
                   value={selectedAccountId}
                   onChange={e => setSelectedAccountId(e.target.value)}
-                  className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none focus:border-stone-500"
+                  className={`w-full rounded-lg px-3 py-2 text-sm text-stone-200 focus:outline-none ${
+                    missingAccount
+                      ? 'bg-stone-800 border border-red-500 focus:border-red-400'
+                      : 'bg-stone-800 border border-stone-700 focus:border-stone-500'
+                  }`}
                 >
-                  <option value="">Select account…</option>
+                  <option value="">Select account...</option>
                   {accounts.map(a => (
                     <option key={a.id} value={a.id}>
                       {a.display_name ?? a.tiktok_user_id}
@@ -308,43 +374,49 @@ export default function Schedule({ session }: Props) {
               </div>
             </div>
 
-            {/* Post at — coming soon */}
-            <div className="group/cs relative cursor-not-allowed select-none">
-              <div className="pointer-events-none opacity-40">
-                <label className="block text-xs text-stone-400 mb-1">Post at</label>
-                <input
-                  type="datetime-local"
-                  value={scheduledAt}
-                  readOnly
-                  className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-200 [color-scheme:dark]"
-                />
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cs:opacity-100 transition-opacity">
-                <span className="text-xs text-stone-400 bg-stone-900/90 border border-stone-700 rounded px-2 py-1">Coming soon</span>
-              </div>
+            <div>
+              <label className="block text-xs text-stone-400 mb-1">Post at</label>
+              <input
+                ref={scheduledAtRef}
+                type="datetime-local"
+                value={scheduledAt}
+                min={minDatetime}
+                onChange={e => setScheduledAt(e.target.value)}
+                className={`w-full rounded-lg px-3 py-2 text-sm text-stone-200 [color-scheme:dark] focus:outline-none ${
+                  missingSchedule
+                    ? 'bg-stone-800 border border-red-500 focus:border-red-400'
+                    : 'bg-stone-800 border border-stone-700 focus:border-stone-500'
+                }`}
+              />
+              <p className={`mt-1 text-xs ${missingSchedule ? 'text-red-400' : 'text-stone-500'}`}>
+                {missingSchedule ? 'Choose a date and time to schedule this post.' : 'Choose a future time for the delayed scheduler path.'}
+              </p>
             </div>
 
-            <div className="flex gap-2">
-              {/* Schedule Post — coming soon */}
-              <div className="group/cs2 relative flex-1 cursor-not-allowed select-none">
-                <button
-                  type="button"
-                  disabled
-                  className="w-full py-2.5 rounded-lg bg-brand-600 text-sm font-medium text-white opacity-40 cursor-not-allowed"
-                >
-                  Schedule Post
-                </button>
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/cs2:opacity-100 transition-opacity">
-                  <span className="text-xs text-stone-400 bg-stone-900/90 border border-stone-700 rounded px-2 py-1">Coming soon</span>
-                </div>
-              </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={() => handleSchedule(false)}
+                disabled={scheduleMutation.isPending || postNowMutation.isPending || actionDisabled}
+                className="py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-sm font-medium text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {scheduleMutation.isPending ? 'Scheduling...' : 'Schedule post'}
+              </button>
+              <button
+                type="button"
+                onClick={handlePostNow}
+                disabled={scheduleMutation.isPending || postNowMutation.isPending || actionDisabled}
+                className="py-2.5 rounded-lg bg-stone-200 hover:bg-white text-sm font-medium text-stone-950 transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {postNowMutation.isPending ? 'Posting...' : 'Post now'}
+              </button>
               <button
                 type="button"
                 onClick={() => handleSchedule(true)}
-                disabled={scheduleMutation.isPending || !selectedJobId || !selectedAccountId}
-                className="flex-1 py-2.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-sm font-medium text-stone-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={scheduleMutation.isPending || postNowMutation.isPending || actionDisabled}
+                className="py-2.5 rounded-lg bg-stone-700 hover:bg-stone-600 text-sm font-medium text-stone-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {scheduleMutation.isPending ? 'Saving…' : 'Send to Inbox'}
+                {scheduleMutation.isPending ? 'Saving...' : 'Send to Inbox'}
               </button>
             </div>
 
@@ -353,12 +425,11 @@ export default function Schedule({ session }: Props) {
               onClick={() => setShowInboxInfo(true)}
               className="w-full text-center text-xs text-stone-500 hover:text-stone-300 transition mt-1"
             >
-              Where will I see my post? →
+              Where will I see my post? -&gt;
             </button>
           </form>
         </section>
 
-        {/* Posts list */}
         <section className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden">
           <div className="flex border-b border-stone-800">
             {(['upcoming', 'history'] as const).map(tab => (
@@ -406,7 +477,6 @@ export default function Schedule({ session }: Props) {
         </section>
       </main>
 
-      {/* Toast */}
       {toast && (
         <div
           className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-xl text-sm font-medium border ${
@@ -419,7 +489,6 @@ export default function Schedule({ session }: Props) {
         </div>
       )}
 
-      {/* Inbox info modal */}
       {showInboxInfo && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
@@ -502,15 +571,20 @@ function PostRow({ post, onCancel }: PostRowProps) {
 }
 
 function StatusBadge({ status, draftMode }: { status: ScheduledPost['status']; draftMode?: boolean }) {
-  if (status === 'pending')
+  if (status === 'pending') {
     return <span className="text-xs text-stone-400 bg-stone-800 px-2 py-0.5 rounded-full">Pending</span>
-  if (status === 'posting')
-    return <span className="text-xs text-amber-300 bg-amber-900/30 px-2 py-0.5 rounded-full">Posting…</span>
-  if (status === 'posted')
-    return <span className="text-xs text-lime-300 bg-lime-900/30 px-2 py-0.5 rounded-full">{draftMode ? '✓ Saved' : '✓ Posted'}</span>
-  if (status === 'failed')
-    return <span className="text-xs text-red-300 bg-red-900/30 px-2 py-0.5 rounded-full">✗ Failed</span>
-  if (status === 'cancelled')
+  }
+  if (status === 'posting') {
+    return <span className="text-xs text-amber-300 bg-amber-900/30 px-2 py-0.5 rounded-full">Posting...</span>
+  }
+  if (status === 'posted') {
+    return <span className="text-xs text-lime-300 bg-lime-900/30 px-2 py-0.5 rounded-full">{draftMode ? 'Saved' : 'Posted'}</span>
+  }
+  if (status === 'failed') {
+    return <span className="text-xs text-red-300 bg-red-900/30 px-2 py-0.5 rounded-full">Failed</span>
+  }
+  if (status === 'cancelled') {
     return <span className="text-xs text-stone-500 bg-stone-800 px-2 py-0.5 rounded-full">Cancelled</span>
+  }
   return null
 }

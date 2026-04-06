@@ -199,7 +199,7 @@ async def _increment_usage(user_id: str, db) -> None:
     ).execute()
 
 
-def _copy_uploaded_images(paths: List[str], dest_dir: str, width: int, height: int) -> int:
+def _copy_uploaded_images(paths: List[str], dest_dir: str, user_id: str, width: int, height: int) -> int:
     """
     Download user-uploaded images from Supabase Storage concurrently, resize, and save as JPEG.
     Returns the number of images successfully saved.
@@ -211,10 +211,14 @@ def _copy_uploaded_images(paths: List[str], dest_dir: str, width: int, height: i
 
     client = get_client()
     os.makedirs(dest_dir, exist_ok=True)
+    allowed_prefix = f"{user_id}/"
 
     def _copy_one(idx_path):
         i, path = idx_path
         try:
+            if not path.startswith(allowed_prefix):
+                logger.warning("Rejected uploaded image outside user namespace: %s", path)
+                return False
             data = client.storage.from_("user-uploads").download(path)
             img = Image.open(io.BytesIO(data)).convert("RGB")
             iw, ih = img.size
@@ -366,6 +370,7 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
                 _copy_uploaded_images,
                 config.uploaded_image_paths,
                 images_dir,
+                user_id,
                 width,
                 height,
             )

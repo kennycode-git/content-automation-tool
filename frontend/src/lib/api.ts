@@ -324,6 +324,7 @@ export interface PreviewBatchRequest {
   uploaded_image_paths?: string[]
   color_theme?: string
   custom_grade_params?: Record<string, number>
+  accent_folder?: string | null
   philosopher?: string | null
   philosopher_count?: number
   grade_philosopher?: boolean
@@ -342,13 +343,21 @@ export interface PreviewStageRequest {
 
 export interface PreviewImageItem {
   storage_path: string
+  render_storage_path?: string | null
   signed_url: string
   is_philosopher?: boolean
+  is_accent?: boolean
+  source_key?: string | null
 }
 
 export interface PreviewBatchResult {
   batch_title: string | null
   search_terms: string[]
+  color_theme?: string | null
+  accent_folder?: string | null
+  philosopher?: string | null
+  grade_philosopher?: boolean
+  philosopher_is_user?: boolean
   images: PreviewImageItem[]
 }
 
@@ -426,7 +435,68 @@ export async function findMoreImages(req: FindMoreRequest): Promise<FindMoreResp
   return handleResponse<FindMoreResponse>(res)
 }
 
+export interface RefreshPhilosopherRequest {
+  philosopher: string
+  resolution?: string
+  color_theme?: string
+  grade_philosopher?: boolean
+  philosopher_is_user?: boolean
+  exclude_source_keys?: string[]
+}
+
+export interface RefreshPhilosopherResponse {
+  image: PreviewImageItem
+}
+
+export async function refreshPhilosopherImage(req: RefreshPhilosopherRequest): Promise<RefreshPhilosopherResponse> {
+  if (DEV_BYPASS) {
+    return {
+      image: {
+        storage_path: `dev/philosopher/${crypto.randomUUID()}.jpg`,
+        signed_url: '',
+        is_philosopher: true,
+        source_key: crypto.randomUUID(),
+      },
+    }
+  }
+  const res = await fetch(`${API_URL}/api/preview-refresh-philosopher`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<RefreshPhilosopherResponse>(res)
+}
+
 // ─── Image upload ─────────────────────────────────────────────────────────────
+
+export interface RefreshAccentRequest {
+  accent_folder: string
+  resolution?: string
+  exclude_source_keys?: string[]
+}
+
+export interface RefreshAccentResponse {
+  image: PreviewImageItem
+}
+
+export async function refreshAccentImage(req: RefreshAccentRequest): Promise<RefreshAccentResponse> {
+  if (DEV_BYPASS) {
+    return {
+      image: {
+        storage_path: `dev/accent/${crypto.randomUUID()}.jpg`,
+        signed_url: '',
+        is_accent: true,
+        source_key: crypto.randomUUID(),
+      },
+    }
+  }
+  const res = await fetch(`${API_URL}/api/preview-refresh-accent`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<RefreshAccentResponse>(res)
+}
 
 export async function uploadImages(files: File[]): Promise<{ paths: string[] }> {
   const token = await getAccessToken()
@@ -486,6 +556,14 @@ export interface SchedulePostRequest {
   draft_mode?: boolean
 }
 
+export interface PostNowRequest {
+  job_id: string
+  tiktok_account_id: string
+  caption?: string
+  hashtags?: string[]
+  privacy_level?: string
+}
+
 export async function getTikTokAuthUrl(): Promise<{ url: string }> {
   const res = await fetch(`${API_URL}/api/tiktok/auth-url`, { headers: await authHeaders() })
   return handleResponse<{ url: string }>(res)
@@ -533,6 +611,15 @@ export async function getScheduledPosts(): Promise<ScheduledPost[]> {
   if (DEV_BYPASS) return []
   const res = await fetch(`${API_URL}/api/tiktok/scheduled`, { headers: await authHeaders() })
   return handleResponse<ScheduledPost[]>(res)
+}
+
+export async function postNow(req: PostNowRequest): Promise<{ id: string; publish_id: string }> {
+  const res = await fetch(`${API_URL}/api/tiktok/post-now`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<{ id: string; publish_id: string }>(res)
 }
 
 export async function cancelScheduledPost(id: string): Promise<void> {

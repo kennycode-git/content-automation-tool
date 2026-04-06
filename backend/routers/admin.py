@@ -116,17 +116,21 @@ async def list_users(request: Request):
         for s in (sb.table("subscriptions").select("user_id, plan, status, trial_expires_at").execute().data or [])
     }
 
-    # Current-month usage keyed by user_id
-    usage = {
-        u["user_id"]: u["render_count"]
-        for u in (
-            sb.table("usage")
-            .select("user_id, render_count")
-            .eq("month", _current_month())
-            .execute()
-            .data or []
-        )
-    }
+    usage_rows = (
+        sb.table("usage")
+        .select("user_id, month, render_count")
+        .execute()
+        .data or []
+    )
+    monthly_usage: dict[str, int] = {}
+    lifetime_usage: dict[str, int] = {}
+    current_month = _current_month()
+    for row in usage_rows:
+        uid = row["user_id"]
+        count = int(row.get("render_count", 0) or 0)
+        lifetime_usage[uid] = lifetime_usage.get(uid, 0) + count
+        if row.get("month") == current_month:
+            monthly_usage[uid] = count
 
     # Total jobs per user
     job_counts: dict = {}
@@ -157,8 +161,8 @@ async def list_users(request: Request):
             entry.update({
                 "user_id":          uid,
                 "plan":             plan,
-                "render_count":     usage.get(uid, 0),
-                "render_limit":     PLAN_LIMITS.get(plan),
+                "render_count":     lifetime_usage.get(uid, 0) if plan == "trial" else monthly_usage.get(uid, 0),
+                "render_limit":     None if plan == "trial" else PLAN_LIMITS.get(plan),
                 "trial_expires_at": sub.get("trial_expires_at"),
                 "last_job_at":      last_job.get(uid),
                 "total_jobs":       job_counts.get(uid, 0),

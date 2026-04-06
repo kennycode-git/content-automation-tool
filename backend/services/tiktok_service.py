@@ -34,6 +34,34 @@ def _get_secret() -> str:
     return secret
 
 
+def _resolve_redirect_uri() -> str:
+    explicit = os.environ.get("TIKTOK_REDIRECT_URI", "").strip()
+    frontend_url = os.environ.get("FRONTEND_URL", "").strip().rstrip("/")
+
+    if frontend_url.startswith("http://localhost") or frontend_url.startswith("https://localhost"):
+        return f"{frontend_url}/tiktok-callback"
+
+    if explicit:
+        return explicit
+
+    if frontend_url:
+        return f"{frontend_url}/tiktok-callback"
+
+    raise RuntimeError("TikTok redirect URI is not configured")
+
+
+def _raise_for_status_with_body(resp: httpx.Response, context: str) -> None:
+    if resp.is_success:
+        return
+    body_text = resp.text
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = None
+    detail = payload if payload is not None else body_text
+    raise ValueError(f"{context} failed ({resp.status_code}): {detail}")
+
+
 def _sign_state(payload: str) -> str:
     """Return HMAC-SHA256 hex digest of payload."""
     return hmac.new(
@@ -46,9 +74,9 @@ def _sign_state(payload: str) -> str:
 def build_auth_url(user_id: str) -> str:
     """Build TikTok OAuth URL with HMAC-signed state."""
     client_key = os.environ.get("TIKTOK_CLIENT_KEY", "")
-    redirect_uri = os.environ.get("TIKTOK_REDIRECT_URI", "")
-    if not client_key or not redirect_uri:
-        raise RuntimeError("TIKTOK_CLIENT_KEY and TIKTOK_REDIRECT_URI must be set")
+    redirect_uri = _resolve_redirect_uri()
+    if not client_key:
+        raise RuntimeError("TIKTOK_CLIENT_KEY must be set")
 
     timestamp = int(time.time())
     payload = f"{user_id}:{timestamp}"
@@ -63,6 +91,7 @@ def build_auth_url(user_id: str) -> str:
         "redirect_uri": redirect_uri,
         "state": state,
         "force_reauth": "1",
+        "disable_auto_auth": "1",
     }
     return f"{TIKTOK_AUTH_BASE}?{urllib.parse.urlencode(params)}"
 
@@ -89,7 +118,7 @@ def exchange_code(code: str) -> dict:
     """Exchange OAuth code for tokens. Returns token + user info dict."""
     client_key = os.environ.get("TIKTOK_CLIENT_KEY", "")
     client_secret = _get_secret()
-    redirect_uri = os.environ.get("TIKTOK_REDIRECT_URI", "")
+    redirect_uri = _resolve_redirect_uri()
 
     with httpx.Client(timeout=30) as client:
         resp = client.post(
@@ -103,7 +132,7 @@ def exchange_code(code: str) -> dict:
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        resp.raise_for_status()
+        _raise_for_status_with_body(resp, "TikTok token exchange")
         data = resp.json()
 
     if data.get("error"):
@@ -134,7 +163,7 @@ def get_creator_info(access_token: str) -> dict:
             params={"fields": "display_name,avatar_url,open_id"},
             headers={"Authorization": f"Bearer {access_token}"},
         )
-        resp.raise_for_status()
+        _raise_for_status_with_body(resp, "TikTok creator info")
         data = resp.json()
 
     user_data = data.get("data", {}).get("user", {})
@@ -161,7 +190,7 @@ def refresh_access_token(refresh_token: str) -> dict:
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        resp.raise_for_status()
+        _raise_for_status_with_body(resp, "TikTok token refresh")
         data = resp.json()
 
     if data.get("error"):
@@ -266,7 +295,10 @@ def post_video(
                     "Content-Type": "application/json; charset=UTF-8",
                 },
             )
-            init_resp.raise_for_status()
+            _raise_for_status_with_body(
+                init_resp,
+                f"TikTok {'inbox upload init' if draft else 'direct post init'}",
+            )
             init_data = init_resp.json()
 
         err = init_data.get("error", {})
@@ -290,7 +322,7 @@ def post_video(
                     "Content-Length": str(video_size),
                 },
             )
-            upload_resp.raise_for_status()
+            _raise_for_status_with_body(upload_resp, "TikTok video upload")
 
         logger.info("TikTok video uploaded, publish_id=%s", publish_id)
         return publish_id

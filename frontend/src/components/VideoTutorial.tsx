@@ -400,6 +400,10 @@ export default function VideoTutorial({
     return (
       <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4">
         <div className="w-full max-w-md rounded-2xl border border-stone-700 bg-stone-900 p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="mb-5 flex flex-col items-center">
+            <img src="/logo.png" alt="" className="h-12 w-auto" />
+            <img src="/just%20text.png" alt="PassiveClip" className="mt-2 h-6 w-auto" />
+          </div>
           <h2 className="mb-2 text-center text-lg font-semibold text-stone-100">{intro.title}</h2>
           <p className="mb-6 text-center text-sm leading-relaxed text-stone-400">{intro.body}</p>
           <div className="flex gap-3">

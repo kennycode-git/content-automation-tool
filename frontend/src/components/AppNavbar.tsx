@@ -136,10 +136,12 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
               <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-stone-700 bg-stone-900 shadow-2xl z-20 overflow-hidden">
                 {/* Credits / usage */}
                 {usageInfo && (
-                  usageInfo.plan === 'pro' ? (
+                  (usageInfo.plan === 'pro' || (usageInfo.plan === 'trial' && usageInfo.limit === null)) ? (
                     <div className="px-4 py-3 border-b border-stone-800">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-stone-100">Unlimited</span>
+                        <span className="text-sm font-semibold text-stone-100">
+                          {usageInfo.plan === 'trial' ? 'Unlimited for now' : 'Unlimited'}
+                        </span>
                         <span className="text-xs text-stone-500">{usageInfo.render_count} used</span>
                       </div>
                       <div className="h-2 w-full rounded-full bg-stone-800 overflow-hidden">

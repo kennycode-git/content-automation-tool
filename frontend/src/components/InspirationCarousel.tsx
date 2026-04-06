@@ -5,7 +5,7 @@
  * Hover a card to reveal "Use this style" overlay.
  */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BUNDLES } from './TermBundles'
 
 export type TemplateTargetMode = 'images' | 'clips' | 'layered'
@@ -142,6 +142,9 @@ interface Props {
 export default function InspirationCarousel({ onApply, onHide }: Props) {
   const [dismissed, setDismissed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [isMobile, setIsMobile] = useState(false)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(true)
 
   if (dismissed) return null
 
@@ -161,10 +164,42 @@ export default function InspirationCarousel({ onApply, onHide }: Props) {
     )
   }
 
+  function updateScrollState() {
+    const el = scrollRef.current
+    if (!el) return
+    const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
+    const current = Math.round(el.scrollLeft)
+    setCanScrollLeft(current > 2)
+    setCanScrollRight(current < maxScrollLeft - 2)
+  }
+
   function scroll(dir: 'left' | 'right') {
     if (!scrollRef.current) return
+    if (isMobile && dir === 'left' && !canScrollLeft) return
+    if (isMobile && dir === 'right' && !canScrollRight) return
     scrollRef.current.scrollBy({ left: dir === 'right' ? 280 : -280, behavior: 'smooth' })
   }
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 640px)')
+    const syncMobile = () => setIsMobile(media.matches)
+    syncMobile()
+    media.addEventListener?.('change', syncMobile)
+    window.addEventListener('resize', updateScrollState)
+    updateScrollState()
+    return () => {
+      media.removeEventListener?.('change', syncMobile)
+      window.removeEventListener('resize', updateScrollState)
+    }
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    updateScrollState()
+    el.addEventListener('scroll', updateScrollState, { passive: true })
+    return () => el.removeEventListener('scroll', updateScrollState)
+  }, [isMobile])
 
   return (
     <div className="border-b border-stone-800 bg-stone-950">
@@ -172,7 +207,12 @@ export default function InspirationCarousel({ onApply, onHide }: Props) {
       <div className="relative">
         <button
           onClick={() => scroll('left')}
-          className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-stone-900/90 border border-stone-700 flex items-center justify-center text-stone-400 hover:text-stone-100 hover:bg-stone-800 transition shadow-lg"
+          disabled={isMobile && !canScrollLeft}
+          className={`absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full border flex items-center justify-center transition shadow-lg ${
+            isMobile && !canScrollLeft
+              ? 'bg-stone-900/60 border-stone-800 text-stone-700 cursor-not-allowed'
+              : 'bg-stone-900/90 border-stone-700 text-stone-400 hover:text-stone-100 hover:bg-stone-800'
+          }`}
           aria-label="Scroll left"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -181,7 +221,12 @@ export default function InspirationCarousel({ onApply, onHide }: Props) {
         </button>
         <button
           onClick={() => scroll('right')}
-          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-stone-900/90 border border-stone-700 flex items-center justify-center text-stone-400 hover:text-stone-100 hover:bg-stone-800 transition shadow-lg"
+          disabled={isMobile && !canScrollRight}
+          className={`absolute right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full border flex items-center justify-center transition shadow-lg ${
+            isMobile && !canScrollRight
+              ? 'bg-stone-900/60 border-stone-800 text-stone-700 cursor-not-allowed'
+              : 'bg-stone-900/90 border-stone-700 text-stone-400 hover:text-stone-100 hover:bg-stone-800'
+          }`}
           aria-label="Scroll right"
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

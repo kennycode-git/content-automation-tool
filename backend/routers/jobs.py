@@ -20,8 +20,9 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from db.supabase_client import get_client
-from models.schemas import JobListItem, JobStatusResponse, RegradeRequest
+from models.schemas import JobListItem, JobStatusResponse, PreviewBatchResult, PreviewImageItem, RegradeRequest
 from routers.auth import get_current_user_id
+from routers.preview import _stage_philosopher_preview_items
 from services.job_manager import get_job, list_jobs, update_job_status, run_regrade_pipeline, create_job, JobConfig
 from services.storage import delete_file, get_signed_url, delete_raw_images, list_raw_image_paths
 
@@ -275,7 +276,7 @@ async def regrade_job(
     return {"job_id": new_job_id, "status": "queued"}
 
 
-@router.get("/jobs/{job_id}/raw-images")
+@router.get("/jobs/{job_id}/raw-images", response_model=PreviewBatchResult)
 async def get_raw_images(
     job_id: str,
     user_id: str = Depends(get_current_user_id),
@@ -291,19 +292,43 @@ async def get_raw_images(
         raise HTTPException(status_code=404, detail="No cached images for this job.")
 
     paths = await asyncio.to_thread(list_raw_image_paths, user_id, job_id)
-    signed = []
+    signed: list[PreviewImageItem] = []
     for path in paths:
         try:
             url = await get_signed_url(path, expiry_seconds=3600)
-            signed.append({"storage_path": path, "signed_url": url})
+            signed.append(PreviewImageItem(storage_path=path, signed_url=url))
         except Exception:
             pass  # skip files that can't be signed
 
-    return {
-        "batch_title": job.get("batch_title"),
-        "search_terms": cfg.get("search_terms", []),
-        "images": signed,
-    }
+    phil_items: list[PreviewImageItem] = []
+    philosopher = cfg.get("philosopher")
+    if philosopher:
+        resolution = cfg.get("resolution", "1080x1920")
+        try:
+            width, height = (int(x) for x in resolution.lower().split("x"))
+            phil_items = await _stage_philosopher_preview_items(
+                user_id=user_id,
+                philosopher=philosopher,
+                philosopher_count=int(cfg.get("philosopher_count", 3)),
+                philosopher_is_user=bool(cfg.get("philosopher_is_user", False)),
+                grade_philosopher=bool(cfg.get("grade_philosopher", False)),
+                color_theme=cfg.get("color_theme", "none"),
+                width=width,
+                height=height,
+                storage_prefix=f"{job_id}_raw_phil",
+            )
+        except Exception as exc:
+            logger.warning("Could not stage philosopher review images for job %s: %s", job_id, exc)
+
+    return PreviewBatchResult(
+        batch_title=job.get("batch_title"),
+        search_terms=cfg.get("search_terms", []),
+        color_theme=cfg.get("color_theme"),
+        philosopher=philosopher,
+        grade_philosopher=bool(cfg.get("grade_philosopher", False)),
+        philosopher_is_user=bool(cfg.get("philosopher_is_user", False)),
+        images=phil_items + signed,
+    )
 
 
 @router.delete("/jobs/{job_id}/images", status_code=204)

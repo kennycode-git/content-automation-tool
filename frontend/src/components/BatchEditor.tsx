@@ -1392,6 +1392,30 @@ export default function BatchEditor({
     onBatchesChange(parseClassicIntoBatches(nextText, mode))
   }
 
+  function visualBatchesToClassicText(vBatches: VisualBatch[]): string {
+    const blocks = vBatches
+      .map((batch, idx) => {
+        const title = batch.title.trim() || `Batch ${idx + 1}`
+        const terms = limitTermsForMode(parseBatchText(batch.terms), mode)
+        if (terms.length === 0) return ''
+        return `# ${title}\n${terms.join('\n')}`
+      })
+      .filter(Boolean)
+    return blocks.join('\n\n')
+  }
+
+  function handleToggleEditorMode() {
+    if (classicMode) {
+      setClassicMode(false)
+      return
+    }
+    const nextText = visualBatchesToClassicText(batches)
+    setClassicText(nextText)
+    try { localStorage.setItem(STORAGE_KEY, nextText) } catch { /* ignore */ }
+    setClassicMode(true)
+    onBatchesChange(parseClassicIntoBatches(nextText, mode))
+  }
+
   function handleBatchTermsChange(idx: number, terms: string) {
     const nextTerms = sanitizeTermsInput(terms, mode)
     const updated = batches.map((b, i) => (i === idx ? { ...b, terms: nextTerms } : b))
@@ -1515,7 +1539,7 @@ export default function BatchEditor({
             Clear
           </button>
           <button
-            onClick={() => setClassicMode(m => !m)}
+            onClick={handleToggleEditorMode}
             className="text-xs text-brand-500 hover:underline"
           >
             {classicMode ? 'Visual editor' : 'Classic text'}

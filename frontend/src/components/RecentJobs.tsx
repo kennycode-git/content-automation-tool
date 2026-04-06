@@ -97,7 +97,7 @@ const GRADE_TARGET_LABEL: Record<string, string> = {
 
 interface Props {
   onReuse?: (title: string | null, terms: string[], settings: Partial<VideoSettings> | null) => void
-  onEditImages?: (terms: string[], batchTitle: string | null) => void
+  onEditImages?: (terms: string[], batchTitle: string | null, settings: ReturnType<typeof extractSettings>) => void
   onColourGrade?: (terms: string[], batchTitle: string | null, settings: ((Partial<VideoSettings> & {
     custom_grade_params?: JobStatus['custom_grade_params']
     accent_folder?: string | null
@@ -430,7 +430,7 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
               )}
               {onEditImages && job.status === 'done' && job.search_terms && job.search_terms.length > 0 && (
                 <button
-                  onClick={() => onEditImages(job.search_terms!, job.batch_title ?? null)}
+                  onClick={() => onEditImages(job.search_terms!, job.batch_title ?? null, extractSettings(job))}
                   className="text-xs text-stone-500 hover:text-stone-300 transition"
                   title="Re-fetch images and edit before re-rendering"
                 >

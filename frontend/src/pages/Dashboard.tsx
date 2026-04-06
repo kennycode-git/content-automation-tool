@@ -414,12 +414,16 @@ export default function Dashboard({ session }: Props) {
           const effectiveGradeParams = effectiveTheme === 'custom'
             ? (b.custom_grade_params ?? settings.custom_grade_params)
             : undefined
+          const effectiveAccent = b.accent_folder_override !== undefined
+            ? b.accent_folder_override
+            : accentFolder
           return {
             search_terms: b.terms,
             batch_title: b.title,
             uploaded_image_paths: b.uploaded_image_paths?.length ? b.uploaded_image_paths : undefined,
             color_theme: effectiveTheme,
             custom_grade_params: effectiveGradeParams as Record<string, number> | undefined,
+            accent_folder: effectiveAccent ?? undefined,
             philosopher: b.philosopher ?? undefined,
             philosopher_count: b.philosopher_count,
             grade_philosopher: b.grade_philosopher,
@@ -443,7 +447,7 @@ export default function Dashboard({ session }: Props) {
       stagingAbortRef.current = null
       setStaging(false)
     }
-  }, [batches, settings, resolvedSource, contentMode])
+  }, [batches, settings, resolvedSource, contentMode, accentFolder])
 
   const handlePreviewConfirm = useCallback(async (confirmedBatches: ConfirmedBatch[]) => {
     setPreviewData(null)
@@ -467,21 +471,13 @@ export default function Dashboard({ session }: Props) {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of eligible) {
         const originalBatch = batches.find(b => b.title === batch.batch_title)
-        const effectiveAccent = originalBatch?.accent_folder_override !== undefined
-          ? originalBatch.accent_folder_override
-          : accentFolder
         const reqBase = {
           search_terms: batch.search_terms,
           ...settings,
           color_theme: 'none' as const,
           batch_title: batch.batch_title,
-          uploaded_image_paths: batch.images.map(img => img.storage_path),
+          uploaded_image_paths: batch.images.map(img => img.render_storage_path ?? img.storage_path),
           uploaded_only: true,
-          accent_folder: effectiveAccent ?? undefined,
-          philosopher: originalBatch?.philosopher ?? undefined,
-          philosopher_count: originalBatch?.philosopher_count,
-          grade_philosopher: originalBatch?.grade_philosopher || undefined,
-          philosopher_is_user: originalBatch?.philosopher_is_user || undefined,
           preset_name: appliedPresetName ?? undefined,
           image_source: resolvedSource,
           text_overlay: originalBatch?.text_overlay ?? undefined,
@@ -574,7 +570,11 @@ export default function Dashboard({ session }: Props) {
     }
   }
 
-  const handleEditImages = useCallback(async (terms: string[], batchTitle: string | null) => {
+  const handleEditImages = useCallback(async (
+    terms: string[],
+    batchTitle: string | null,
+    restoredSettings: ReEditRestoreSettings | null,
+  ) => {
     setError(null)
     setStagingError(null)
     setStagingUsedPexels(false)
@@ -583,12 +583,24 @@ export default function Dashboard({ session }: Props) {
     stagingAbortRef.current = abort
     try {
       const res = await stagePreview({
-        batches: [{ search_terms: terms, batch_title: batchTitle, uploaded_image_paths: undefined }],
-        resolution: settings.resolution,
-        seconds_per_image: settings.seconds_per_image,
-        total_seconds: settings.total_seconds,
-        max_per_query: settings.max_per_query,
-        color_theme: settings.color_theme,
+        batches: [{
+          search_terms: terms,
+          batch_title: batchTitle,
+          uploaded_image_paths: undefined,
+          color_theme: restoredSettings?.color_theme ?? settings.color_theme,
+          custom_grade_params: ((restoredSettings?.color_theme ?? settings.color_theme) === 'custom'
+            ? (restoredSettings?.custom_grade_params ?? settings.custom_grade_params)
+            : undefined) as Record<string, number> | undefined,
+          philosopher: restoredSettings?.philosopher ?? undefined,
+          philosopher_count: restoredSettings?.philosopher_count ?? undefined,
+          grade_philosopher: restoredSettings?.grade_philosopher ?? undefined,
+          philosopher_is_user: restoredSettings?.philosopher_is_user ?? undefined,
+        }],
+        resolution: restoredSettings?.resolution ?? settings.resolution,
+        seconds_per_image: restoredSettings?.seconds_per_image ?? settings.seconds_per_image,
+        total_seconds: restoredSettings?.total_seconds ?? settings.total_seconds,
+        max_per_query: restoredSettings?.max_per_query ?? settings.max_per_query,
+        color_theme: restoredSettings?.color_theme ?? settings.color_theme,
         image_source: resolvedSource,
       }, abort.signal)
       if (res.pexels_fallback) setStagingUsedPexels(true)
