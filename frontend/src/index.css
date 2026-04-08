@@ -2,6 +2,67 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Overlay Garamond';
+  src: url('/overlay-fonts/EBGaramond-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Cormorant';
+  src: url('/overlay-fonts/Cormorant-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Playfair';
+  src: url('/overlay-fonts/PlayfairDisplay-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Crimson';
+  src: url('/overlay-fonts/CrimsonText-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Philosopher';
+  src: url('/overlay-fonts/Philosopher-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Lora';
+  src: url('/overlay-fonts/Lora-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Outfit';
+  src: url('/overlay-fonts/Outfit-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Raleway';
+  src: url('/overlay-fonts/Raleway-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Josefin';
+  src: url('/overlay-fonts/JosefinSans-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Inter';
+  src: url('/overlay-fonts/Inter_18pt-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Cinzel';
+  src: url('/overlay-fonts/Cinzel-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Cinzel Deco';
+  src: url('/overlay-fonts/CinzelDecorative-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Uncial';
+  src: url('/overlay-fonts/UncialAntiqua-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay JetBrains Mono';
+  src: url('/overlay-fonts/JetBrainsMono-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Overlay Space Mono';
+  src: url('/overlay-fonts/SpaceMono-Regular.ttf') format('truetype');
+}
+
 @layer base {
   body {
     @apply bg-stone-950 text-stone-100 font-sans;

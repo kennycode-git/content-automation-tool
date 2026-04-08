@@ -7,16 +7,24 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
 
 const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS === 'true'
-import { generateVideo, generateVariants, stagePreview, deleteJob, getUsage } from '../lib/api'
-import type { JobStatus, PreviewBatchResult, UsageInfo } from '../lib/api'
+import { generateVideo, generateVariants, stagePreview, deleteJob, getUsage, fetchVideoClips, generateFromClips } from '../lib/api'
+import type { LayeredConfig } from '../lib/api'
+import type { JobStatus, PreviewBatchResult, UsageInfo, ClipSearchResult, SelectedClip } from '../lib/api'
 import BatchEditor from '../components/BatchEditor'
 import type { BatchOutput } from '../components/BatchEditor'
 import SettingsPanel from '../components/SettingsPanel'
 import type { VideoSettings, CustomGradeParams } from '../components/SettingsPanel'
+import ClipsSettingsPanel, { DEFAULT_CLIPS_SETTINGS } from '../components/ClipsSettingsPanel'
+import type { ClipsSettings } from '../components/ClipsSettingsPanel'
+import ClipBundles from '../components/ClipBundles'
+import ClipPreviewGrid from '../components/ClipPreviewGrid'
+import { DEFAULT_LAYERED_CONFIG, OPACITY_PRESETS } from '../components/LayeredPanel'
+import type { LayeredPanelConfig } from '../components/LayeredPanel'
 import JobPanel from '../components/JobPanel'
 import RecentJobs from '../components/RecentJobs'
 import TermBundles from '../components/TermBundles'
@@ -29,6 +37,30 @@ import OnboardingTour, { TOUR_STORAGE_KEY } from '../components/OnboardingTour'
 import PromptModal from '../components/PromptModal'
 import AppNavbar from '../components/AppNavbar'
 import InspirationCarousel from '../components/InspirationCarousel'
+import type { TemplateTargetMode } from '../components/InspirationCarousel'
+
+type ContentMode = 'images' | 'clips' | 'layered'
+type ReEditRestoreSettings = Omit<Partial<VideoSettings>, 'custom_grade_params'> & {
+  layered_config?: LayeredConfig | null
+  custom_grade_params?: CustomGradeParams | null
+  accent_folder?: string | null
+  philosopher?: string | null
+  philosopher_count?: number | null
+  grade_philosopher?: boolean | null
+  philosopher_is_user?: boolean | null
+  preset_name?: string | null
+  text_overlay?: JobStatus['text_overlay']
+  ai_voiceover?: JobStatus['ai_voiceover']
+}
+
+interface PendingBundleSelection {
+  title: string | null
+  terms: string[]
+  colorTheme?: string
+  customGradeParams?: CustomGradeParams
+  accentFolder?: string | null
+  layeredBackgroundVideoQuery?: string
+}
 
 interface Props {
   session: Session
@@ -60,6 +92,11 @@ const VARIANT_THEMES = [
   { value: 'dusk',    label: 'Dusk',        dot: 'bg-purple-900 ring-1 ring-purple-700' },
 ]
 
+const BACKGROUND_OPACITY_PRESETS = [
+  ...OPACITY_PRESETS,
+  { label: 'Full', value: 1.0 },
+]
+
 export default function Dashboard({ session }: Props) {
   const [batches, setBatches] = useState<BatchOutput[]>([])
   const [settings, setSettings] = useState<VideoSettings>(DEFAULT_SETTINGS)
@@ -75,7 +112,7 @@ export default function Dashboard({ session }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [pendingReuse, setPendingReuse] = useState<{ title: string | null; terms: string[] } | null>(null)
-  const [pendingBundles, setPendingBundles] = useState<{ title: string | null; terms: string[]; colorTheme?: string; customGradeParams?: CustomGradeParams; accentFolder?: string | null }[] | null>(null)
+  const [pendingBundles, setPendingBundles] = useState<PendingBundleSelection[] | null>(null)
   const [appliedPresetName, setAppliedPresetName] = useState<string | null>(null)
   const [showVariants, setShowVariants] = useState(false)
   const [showVariantsConfirm, setShowVariantsConfirm] = useState(false)
@@ -86,8 +123,18 @@ export default function Dashboard({ session }: Props) {
   const activeJobsRef = useRef(activeJobs)
   const [variantStatus, setVariantStatus] = useState<string | null>(null)
   const [accentFolder, setAccentFolder] = useState<string | null>(null)
-  const [philosopher] = useState<string | null>(null)
-  const [gradePhilosopher] = useState(false)
+  const [contentMode, setContentMode] = useState<ContentMode>('images')
+  const [clipsSettings, setClipsSettings] = useState<ClipsSettings>(DEFAULT_CLIPS_SETTINGS)
+  const [fetchedClips, setFetchedClips] = useState<ClipSearchResult[] | null>(null)
+  const [selectedClips, setSelectedClips] = useState<SelectedClip[]>([])
+  const [clipPreviewBatch, setClipPreviewBatch] = useState<BatchOutput | null>(null)
+  const [clipsSearching, setClipsSearching] = useState(false)
+  const [clipsGenerating, setClipsGenerating] = useState(false)
+  const [clipsError, setClipsError] = useState<string | null>(null)
+  const [clipPreviewPerTerm, setClipPreviewPerTerm] = useState(4)
+  const [layeredConfig, setLayeredConfig] = useState<LayeredPanelConfig>(DEFAULT_LAYERED_CONFIG)
+  const [layeredError, setLayeredError] = useState<string | null>(null)
+  const [layeredSubmitting, setLayeredSubmitting] = useState(false)
   const [staging, setStaging] = useState(false)
   const [stagingError, setStagingError] = useState<string | null>(null)
   const [stagingUsedPexels, setStagingUsedPexels] = useState(false)
@@ -96,10 +143,14 @@ export default function Dashboard({ session }: Props) {
   const [showTour, setShowTour] = useState(false)
   const [carouselKey, setCarouselKey] = useState(0)
   const [carouselVisible, setCarouselVisible] = useState(true)
+  const [templateLoadedLabel, setTemplateLoadedLabel] = useState<string | null>(null)
   const [imageSource, setImageSource] = useState<'auto' | 'unsplash' | 'pexels' | 'both'>('auto')
   const [showStagingOverlay, setShowStagingOverlay] = useState(false)
   const stagingAbortRef = useRef<AbortController | null>(null)
   const stagingOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const step1Ref = useRef<HTMLDivElement>(null)
+  const step2Ref = useRef<HTMLDivElement>(null)
+  const templateFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Usage query
   const { data: usageInfo } = useQuery<UsageInfo>({
@@ -161,6 +212,12 @@ export default function Dashboard({ session }: Props) {
     try { localStorage.setItem('cogito_minimized_jobs', JSON.stringify([...minimizedJobs])) } catch { /* ignore */ }
   }, [minimizedJobs])
 
+  useEffect(() => {
+    return () => {
+      if (templateFeedbackTimerRef.current) clearTimeout(templateFeedbackTimerRef.current)
+    }
+  }, [])
+
   // Auto-compute max_per_query so at least 75% of the target image count is reachable.
   // Only updates when the user hasn't manually overridden (tracked via autoMaxPerQuery ref).
   const autoMaxPerQueryRef = useRef<number>(DEFAULT_SETTINGS.max_per_query)
@@ -190,6 +247,13 @@ export default function Dashboard({ session }: Props) {
   function dismissJob(jobId: string) {
     setActiveJobs(prev => prev.filter(j => j.jobId !== jobId))
     setMinimizedJobs(prev => { const next = new Set(prev); next.delete(jobId); return next })
+  }
+
+  function dismissAllJobs() {
+    setActiveJobs([])
+    setMinimizedJobs(new Set())
+    setJobEstimates({})
+    setCompletedJobIds(new Set())
   }
 
   async function cancelJob(jobId: string) {
@@ -242,10 +306,13 @@ export default function Dashboard({ session }: Props) {
           uploaded_image_paths: batch.uploaded_image_paths?.length ? batch.uploaded_image_paths : undefined,
           preset_name: appliedPresetName ?? undefined,
           accent_folder: effectiveAccent ?? undefined,
-          philosopher: philosopher ?? undefined,
-          grade_philosopher: gradePhilosopher || undefined,
+          philosopher: batch.philosopher ?? undefined,
+          philosopher_count: batch.philosopher_count,
+          grade_philosopher: batch.grade_philosopher || undefined,
+          philosopher_is_user: batch.philosopher_is_user || undefined,
           image_source: resolvedSource,
           text_overlay: batch.text_overlay ?? undefined,
+          ai_voiceover: batch.ai_voiceover ?? undefined,
         })
         submitted.push({ jobId: res.job_id, title: batch.title })
       }
@@ -257,7 +324,7 @@ export default function Dashboard({ session }: Props) {
       submittingRef.current = false
       setSubmitting(false)
     }
-  }, [batches, settings, trialExpired, appliedPresetName, accentFolder, philosopher, gradePhilosopher, resolvedSource])
+  }, [batches, settings, trialExpired, appliedPresetName, accentFolder, resolvedSource])
 
   const handleGenerateVariants = useCallback(async () => {
     if (submittingRef.current) return
@@ -327,10 +394,12 @@ export default function Dashboard({ session }: Props) {
   const handleStagePreview = useCallback(async () => {
     const validBatches = batches.filter(b => b.terms.length > 0)
     if (validBatches.length === 0) {
-      setError('Enter at least one search term.')
+      if (contentMode === 'layered') setLayeredError('Enter at least one search term.')
+      else setError('Enter at least one search term.')
       return
     }
     setError(null)
+    setLayeredError(null)
     setStagingError(null)
     setStagingUsedPexels(false)
     setStaging(true)
@@ -343,12 +412,20 @@ export default function Dashboard({ session }: Props) {
           const effectiveGradeParams = effectiveTheme === 'custom'
             ? (b.custom_grade_params ?? settings.custom_grade_params)
             : undefined
+          const effectiveAccent = b.accent_folder_override !== undefined
+            ? b.accent_folder_override
+            : accentFolder
           return {
             search_terms: b.terms,
             batch_title: b.title,
             uploaded_image_paths: b.uploaded_image_paths?.length ? b.uploaded_image_paths : undefined,
             color_theme: effectiveTheme,
             custom_grade_params: effectiveGradeParams as Record<string, number> | undefined,
+            accent_folder: effectiveAccent ?? undefined,
+            philosopher: b.philosopher ?? undefined,
+            philosopher_count: b.philosopher_count,
+            grade_philosopher: b.grade_philosopher,
+            philosopher_is_user: b.philosopher_is_user,
           }
         }),
         resolution: settings.resolution,
@@ -368,57 +445,79 @@ export default function Dashboard({ session }: Props) {
       stagingAbortRef.current = null
       setStaging(false)
     }
-  }, [batches, settings, resolvedSource])
+  }, [batches, settings, resolvedSource, contentMode, accentFolder])
 
   const handlePreviewConfirm = useCallback(async (confirmedBatches: ConfirmedBatch[]) => {
     setPreviewData(null)
     const eligible = confirmedBatches.filter(b => b.images.length > 0)
     if (eligible.length === 0) return
-    setError(null)
+    if (contentMode === 'layered') {
+      const missingBg = eligible.find(b => {
+        const originalBatch = batches.find(ob => ob.title === b.batch_title)
+        return !(originalBatch?.layered_background_video_urls?.length)
+      })
+      if (missingBg) {
+        setLayeredError(`Select at least one background video for ${missingBg.batch_title?.trim() || 'each layered batch'}.`)
+        return
+      }
+    }
+    if (contentMode === 'layered') setLayeredError(null)
+    else setError(null)
     setSubmitting(true)
     setPendingCount(prev => prev + eligible.length)
     try {
       const submitted: { jobId: string; title: string | null }[] = []
       for (const batch of eligible) {
         const originalBatch = batches.find(b => b.title === batch.batch_title)
-        const effectiveAccent = originalBatch?.accent_folder_override !== undefined
-          ? originalBatch.accent_folder_override
-          : accentFolder
-        const res = await generateVideo({
+        const reqBase = {
           search_terms: batch.search_terms,
           ...settings,
-          color_theme: 'none',  // already graded at staging time
+          color_theme: 'none' as const,
           batch_title: batch.batch_title,
-          uploaded_image_paths: batch.images.map(img => img.storage_path),
+          uploaded_image_paths: batch.images.map(img => img.render_storage_path ?? img.storage_path),
           uploaded_only: true,
-          accent_folder: effectiveAccent ?? undefined,
-          philosopher: philosopher ?? undefined,
-          grade_philosopher: gradePhilosopher || undefined,
           preset_name: appliedPresetName ?? undefined,
           image_source: resolvedSource,
           text_overlay: originalBatch?.text_overlay ?? undefined,
-        })
+          ai_voiceover: originalBatch?.ai_voiceover ?? undefined,
+        }
+        const res = contentMode === 'layered'
+          ? await generateVideo({
+              ...reqBase,
+              layered_config: {
+                background_video_urls: originalBatch?.layered_background_video_urls ?? [],
+                foreground_opacity: layeredConfig.opacity,
+                background_opacity: layeredConfig.backgroundOpacity,
+                foreground_speed: settings.seconds_per_image,
+                grade_target: layeredConfig.gradeTarget,
+                crossfade_duration: layeredConfig.crossfadeDuration,
+              },
+            })
+          : await generateVideo(reqBase)
         submitted.push({ jobId: res.job_id, title: batch.batch_title })
       }
       setActiveJobs(prev => [...submitted, ...prev])
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      if (contentMode === 'layered') setLayeredError(e instanceof Error ? e.message : 'Unknown error')
+      else setError(e instanceof Error ? e.message : 'Unknown error')
       setPendingCount(0)
     } finally {
       setSubmitting(false)
     }
-  }, [settings, batches, accentFolder, philosopher, gradePhilosopher, appliedPresetName, resolvedSource])
+  }, [settings, batches, accentFolder, appliedPresetName, resolvedSource, contentMode, layeredConfig])
 
   // Ctrl/Cmd+Enter to generate
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !submitting) {
-        handleGenerate()
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !submitting && !layeredSubmitting) {
+        if (contentMode === 'layered') handleGenerateLayered()
+        else handleGenerate()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleGenerate, submitting])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleGenerate, submitting, layeredSubmitting, contentMode])
 
   function handleJobDone(job: JobStatus) {
     setPendingCount(prev => Math.max(0, prev - 1))
@@ -450,7 +549,16 @@ export default function Dashboard({ session }: Props) {
         max_per_query: job.max_per_query ?? undefined,
         batch_title: job.batch_title ?? undefined,
         preset_name: job.preset_name ?? undefined,
+        accent_folder: job.accent_folder ?? undefined,
+        image_source: (job.image_source as 'unsplash' | 'pexels' | 'both' | null) ?? undefined,
+        philosopher: job.philosopher ?? undefined,
+        philosopher_count: job.philosopher_count ?? undefined,
+        grade_philosopher: job.grade_philosopher ?? undefined,
+        philosopher_is_user: job.philosopher_is_user ?? undefined,
+        text_overlay: job.text_overlay ?? undefined,
         custom_grade_params: job.custom_grade_params ?? undefined,
+        ai_voiceover: job.ai_voiceover ?? undefined,
+        layered_config: job.layered_config ?? undefined,
       })
       setPendingCount(prev => prev + 1)
       setActiveJobs(prev => [{ jobId: res.job_id, title: job.batch_title ?? null }, ...prev])
@@ -460,7 +568,11 @@ export default function Dashboard({ session }: Props) {
     }
   }
 
-  const handleEditImages = useCallback(async (terms: string[], batchTitle: string | null) => {
+  const handleEditImages = useCallback(async (
+    terms: string[],
+    batchTitle: string | null,
+    restoredSettings: ReEditRestoreSettings | null,
+  ) => {
     setError(null)
     setStagingError(null)
     setStagingUsedPexels(false)
@@ -469,12 +581,24 @@ export default function Dashboard({ session }: Props) {
     stagingAbortRef.current = abort
     try {
       const res = await stagePreview({
-        batches: [{ search_terms: terms, batch_title: batchTitle, uploaded_image_paths: undefined }],
-        resolution: settings.resolution,
-        seconds_per_image: settings.seconds_per_image,
-        total_seconds: settings.total_seconds,
-        max_per_query: settings.max_per_query,
-        color_theme: settings.color_theme,
+        batches: [{
+          search_terms: terms,
+          batch_title: batchTitle,
+          uploaded_image_paths: undefined,
+          color_theme: restoredSettings?.color_theme ?? settings.color_theme,
+          custom_grade_params: ((restoredSettings?.color_theme ?? settings.color_theme) === 'custom'
+            ? (restoredSettings?.custom_grade_params ?? settings.custom_grade_params)
+            : undefined) as Record<string, number> | undefined,
+          philosopher: restoredSettings?.philosopher ?? undefined,
+          philosopher_count: restoredSettings?.philosopher_count ?? undefined,
+          grade_philosopher: restoredSettings?.grade_philosopher ?? undefined,
+          philosopher_is_user: restoredSettings?.philosopher_is_user ?? undefined,
+        }],
+        resolution: restoredSettings?.resolution ?? settings.resolution,
+        seconds_per_image: restoredSettings?.seconds_per_image ?? settings.seconds_per_image,
+        total_seconds: restoredSettings?.total_seconds ?? settings.total_seconds,
+        max_per_query: restoredSettings?.max_per_query ?? settings.max_per_query,
+        color_theme: restoredSettings?.color_theme ?? settings.color_theme,
         image_source: resolvedSource,
       }, abort.signal)
       if (res.pexels_fallback) setStagingUsedPexels(true)
@@ -501,7 +625,7 @@ export default function Dashboard({ session }: Props) {
   const handleColourGrade = useCallback(async (
     terms: string[],
     batchTitle: string | null,
-    restoredSettings: Partial<VideoSettings> | null,
+    restoredSettings: ReEditRestoreSettings | null,
     theme: string,
   ) => {
     if (trialExpired) { setError('Your trial has ended. Upgrade to continue generating.'); return }
@@ -511,11 +635,24 @@ export default function Dashboard({ session }: Props) {
     setPendingCount(prev => prev + 1)
     try {
       const merged = { ...settings, ...(restoredSettings ?? {}), color_theme: theme }
+      const effectiveCustomGradeParams = theme === 'custom'
+        ? (restoredSettings?.custom_grade_params ?? settings.custom_grade_params)
+        : undefined
       const res = await generateVideo({
         search_terms: terms,
         ...merged,
         batch_title: batchTitle ? `${batchTitle} · ${theme}` : theme,
         image_source: resolvedSource,
+        custom_grade_params: effectiveCustomGradeParams,
+        accent_folder: restoredSettings?.accent_folder ?? undefined,
+        philosopher: restoredSettings?.philosopher ?? undefined,
+        philosopher_count: restoredSettings?.philosopher_count ?? undefined,
+        grade_philosopher: restoredSettings?.grade_philosopher ?? undefined,
+        philosopher_is_user: restoredSettings?.philosopher_is_user ?? undefined,
+        preset_name: restoredSettings?.preset_name ?? undefined,
+        text_overlay: restoredSettings?.text_overlay ?? undefined,
+        ai_voiceover: restoredSettings?.ai_voiceover ?? undefined,
+        layered_config: restoredSettings?.layered_config ?? undefined,
       })
       setActiveJobs(prev => [{ jobId: res.job_id, title: batchTitle ? `${batchTitle} · ${theme}` : theme }, ...prev])
     } catch (e: unknown) {
@@ -532,6 +669,299 @@ export default function Dashboard({ session }: Props) {
     setActiveJobs(prev => [{ jobId: newJobId, title }, ...prev])
   }
 
+  function getValidClipBatches() {
+    return batches.filter(b => b.terms.length > 0)
+  }
+
+  function setModeAndResetPreview(nextMode: ContentMode) {
+    setContentMode(nextMode)
+    setFetchedClips(null)
+    setSelectedClips([])
+    setClipPreviewBatch(null)
+    setClipsError(null)
+  }
+
+  function scrollToStep(ref: RefObject<HTMLDivElement | null>) {
+    window.requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  function handleTemplateApply(
+    targetMode: TemplateTargetMode,
+    theme: string,
+    bundles: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string }[],
+    appliedAccent?: string | null,
+    customGradeParams?: CustomGradeParams,
+  ) {
+    const effectiveTargetMode: ContentMode = targetMode
+    setModeAndResetPreview(effectiveTargetMode)
+    const templateLabel = bundles[0]?.title ?? 'Template'
+    setTemplateLoadedLabel(templateLabel)
+    if (templateFeedbackTimerRef.current) clearTimeout(templateFeedbackTimerRef.current)
+    templateFeedbackTimerRef.current = setTimeout(() => {
+      setTemplateLoadedLabel(null)
+    }, 2600)
+
+    if (effectiveTargetMode === 'clips') {
+      setClipsSettings(prev => ({ ...prev, color_theme: theme }))
+    } else {
+      setSettings(prev => ({ ...prev, color_theme: theme, custom_grade_params: customGradeParams ?? undefined }))
+      setAccentFolder(appliedAccent ?? null)
+    }
+
+    if (bundles.length > 0) {
+      setPendingBundles(bundles.map(b => ({
+        ...b,
+        colorTheme: theme,
+        customGradeParams: customGradeParams ?? undefined,
+        accentFolder: appliedAccent ?? null,
+        layeredBackgroundVideoQuery: effectiveTargetMode === 'layered' ? b.layeredBackgroundVideoQuery : undefined,
+      })))
+      scrollToStep(step1Ref)
+      return
+    }
+
+    scrollToStep(step2Ref)
+  }
+
+  function getClipBatchTitle(batch: BatchOutput) {
+    return batch.title?.trim() || batch.terms.join(', ') || 'Video Clips'
+  }
+
+  function getClipBatchTheme(batch: BatchOutput) {
+    return batch.color_theme ?? clipsSettings.color_theme
+  }
+
+  function getCurrentClipPreviewBatch() {
+    if (!clipPreviewBatch) return null
+    const validBatches = getValidClipBatches()
+    if (validBatches.length === 1) return validBatches[0]
+    return validBatches.find(b =>
+      (b.title ?? '') === (clipPreviewBatch.title ?? '')
+      && b.terms.join('\n') === clipPreviewBatch.terms.join('\n'),
+    ) ?? clipPreviewBatch
+  }
+
+  useEffect(() => {
+    if (contentMode !== 'clips' || !clipPreviewBatch) return
+    const validBatches = getValidClipBatches()
+    const matchingBatch = validBatches.find(b =>
+      (b.title ?? '') === (clipPreviewBatch.title ?? '')
+      && b.terms.join('\n') === clipPreviewBatch.terms.join('\n'),
+    )
+    if (!matchingBatch) {
+      setFetchedClips(null)
+      setSelectedClips([])
+      setClipPreviewBatch(null)
+    }
+  }, [batches, clipPreviewBatch, contentMode])
+
+  function getClipBatchOverlay(batch: BatchOutput) {
+    const overlay = batch.text_overlay
+    return overlay?.enabled && overlay.text.trim() ? overlay : null
+  }
+
+  async function handleSearchClips(perTerm = 4, append = false) {
+    const validBatches = getValidClipBatches()
+    if (validBatches.length === 0) { setClipsError('Enter at least one search term.'); return }
+    if (validBatches.length > 1) {
+      setClipsError('Preview & select currently supports one clip batch at a time. Use Generate directly for multiple batches.')
+      return
+    }
+    const batch = validBatches[0]
+    setClipsError(null)
+    setClipsSearching(true)
+    if (!append) {
+      setFetchedClips(null)
+      setSelectedClips([])
+    }
+    setClipPreviewBatch(batch)
+    setClipPreviewPerTerm(perTerm)
+    try {
+      const res = await fetchVideoClips(batch.terms, perTerm, getClipBatchTheme(batch))
+      setFetchedClips(res.clips)
+      setSelectedClips(prev => {
+        const existing = new Map(prev.map(c => [c.id, c]))
+        const initialSelectionCount = batch.terms.length * clipsSettings.clips_per_term
+        return res.clips
+          .filter((clip, idx) => existing.has(clip.id) || idx < initialSelectionCount)
+          .map(c => existing.get(c.id) ?? ({
+            id: c.id,
+            download_url: c.download_url,
+            preview_url: c.preview_url,
+            thumbnail: c.thumbnail,
+            duration: c.duration,
+            trim_start: 0,
+            trim_end: 0,
+          }))
+      })
+    } catch (e: unknown) {
+      setClipPreviewBatch(null)
+      setClipsError(e instanceof Error ? e.message : 'Clip search failed')
+    } finally {
+      setClipsSearching(false)
+    }
+  }
+
+  async function handleGenerateClips(clips: SelectedClip[]) {
+    if (clips.length === 0) { setClipsError('Select at least one clip.'); return }
+    if (trialExpired) { setClipsError('Your trial has ended. Upgrade to continue generating.'); return }
+    const currentBatch = getCurrentClipPreviewBatch()
+    if (!currentBatch) { setClipsError('No clip batch selected for generation.'); return }
+    setClipsError(null)
+    setClipsGenerating(true)
+    setPendingCount(prev => prev + 1)
+    try {
+      const batchTitle = getClipBatchTitle(currentBatch)
+      const res = await generateFromClips({
+        clips: clips.map(c => ({
+          id: c.id,
+          download_url: c.download_url,
+          trim_start: c.trim_start,
+          trim_end: c.trim_end,
+          duration: c.duration,
+        })),
+        resolution: clipsSettings.resolution,
+        fps: clipsSettings.fps,
+        color_theme: getClipBatchTheme(currentBatch),
+        transition: clipsSettings.transition,
+        transition_duration: clipsSettings.transition_duration,
+        max_clip_duration: clipsSettings.max_clip_duration,
+        batch_title: batchTitle,
+        text_overlay: getClipBatchOverlay(currentBatch),
+        ai_voiceover: currentBatch.ai_voiceover ?? undefined,
+      })
+      setActiveJobs(prev => [{ jobId: res.job_id, title: batchTitle }, ...prev])
+      setFetchedClips(null)
+      setSelectedClips([])
+      setClipPreviewBatch(null)
+    } catch (e: unknown) {
+      setClipsError(e instanceof Error ? e.message : 'Unknown error')
+      setPendingCount(prev => Math.max(0, prev - 1))
+    } finally {
+      setClipsGenerating(false)
+    }
+  }
+
+  async function handleAutoGenerateClips() {
+    const validBatches = getValidClipBatches()
+    if (validBatches.length === 0) { setClipsError('Enter at least one search term.'); return }
+    if (trialExpired) { setClipsError('Your trial has ended. Upgrade to continue generating.'); return }
+    setClipsError(null)
+    setClipsSearching(true)
+    setPendingCount(prev => prev + validBatches.length)
+    try {
+      const submitted: { jobId: string; title: string | null }[] = []
+      for (const batch of validBatches) {
+        const res = await fetchVideoClips(batch.terms, clipsSettings.clips_per_term, getClipBatchTheme(batch))
+        const clips: SelectedClip[] = res.clips.map(c => ({
+          id: c.id,
+          download_url: c.download_url,
+          preview_url: c.preview_url,
+          thumbnail: c.thumbnail,
+          duration: c.duration,
+          trim_start: 0,
+          trim_end: 0,
+        }))
+        const title = getClipBatchTitle(batch)
+        const job = await generateFromClips({
+          clips: clips.map(c => ({
+            id: c.id,
+            download_url: c.download_url,
+            trim_start: c.trim_start,
+            trim_end: c.trim_end,
+            duration: c.duration,
+          })),
+          resolution: clipsSettings.resolution,
+          fps: clipsSettings.fps,
+          color_theme: getClipBatchTheme(batch),
+          transition: clipsSettings.transition,
+          transition_duration: clipsSettings.transition_duration,
+          max_clip_duration: clipsSettings.max_clip_duration,
+          batch_title: title,
+          text_overlay: getClipBatchOverlay(batch),
+          ai_voiceover: batch.ai_voiceover ?? undefined,
+        })
+        submitted.push({ jobId: job.job_id, title: batch.title })
+      }
+      setActiveJobs(prev => [...submitted, ...prev])
+      setFetchedClips(null)
+      setSelectedClips([])
+      setClipPreviewBatch(null)
+      setClipsSearching(false)
+    } catch (e: unknown) {
+      setClipsError(e instanceof Error ? e.message : 'Clip search failed')
+      setPendingCount(prev => Math.max(0, prev - validBatches.length))
+      setClipsSearching(false)
+    }
+  }
+
+  async function handleGenerateLayered() {
+    if (submittingRef.current) return
+    if (trialExpired) {
+      setLayeredError('Your trial has ended. Upgrade to continue generating.')
+      return
+    }
+    const validBatches = batches.filter(b => b.terms.length > 0)
+    if (validBatches.length === 0) {
+      setLayeredError('Enter at least one search term.')
+      return
+    }
+    const missingBgBatch = validBatches.find(b => !(b.layered_background_video_urls?.length))
+    if (missingBgBatch) {
+      setLayeredError(`Select at least one background video for ${missingBgBatch.title?.trim() || 'each layered batch'}.`)
+      return
+    }
+    setLayeredError(null)
+    submittingRef.current = true
+    setLayeredSubmitting(true)
+    setPendingCount(prev => prev + validBatches.length)
+    try {
+      const submitted: { jobId: string; title: string | null }[] = []
+      for (const batch of validBatches) {
+        const effectiveTheme = batch.color_theme ?? settings.color_theme
+        const effectiveGradeParams = effectiveTheme === 'custom'
+          ? (batch.custom_grade_params ?? settings.custom_grade_params)
+          : undefined
+        const effectiveAccent = batch.accent_folder_override !== undefined
+          ? batch.accent_folder_override
+          : accentFolder
+        const lc: LayeredConfig = {
+          background_video_urls: batch.layered_background_video_urls ?? [],
+          foreground_opacity: layeredConfig.opacity,
+          background_opacity: layeredConfig.backgroundOpacity,
+          foreground_speed: settings.seconds_per_image,
+          grade_target: layeredConfig.gradeTarget,
+          crossfade_duration: layeredConfig.crossfadeDuration,
+        }
+        const res = await generateVideo({
+          search_terms: batch.terms,
+          ...settings,
+          color_theme: effectiveTheme,
+          custom_grade_params: effectiveGradeParams,
+          batch_title: batch.title,
+          accent_folder: effectiveAccent ?? undefined,
+          philosopher: batch.philosopher ?? undefined,
+          philosopher_count: batch.philosopher_count,
+          grade_philosopher: batch.grade_philosopher || undefined,
+          philosopher_is_user: batch.philosopher_is_user || undefined,
+          image_source: resolvedSource,
+          text_overlay: batch.text_overlay ?? undefined,
+          ai_voiceover: batch.ai_voiceover ?? undefined,
+          layered_config: lc,
+        })
+        submitted.push({ jobId: res.job_id, title: batch.title })
+      }
+      setActiveJobs(prev => [...submitted, ...prev])
+    } catch (e: unknown) {
+      setLayeredError(e instanceof Error ? e.message : 'Unknown error')
+      setPendingCount(0)
+    } finally {
+      submittingRef.current = false
+      setLayeredSubmitting(false)
+    }
+  }
 
   function toggleTheme(value: string) {
     setCheckedThemes(prev => {
@@ -562,21 +992,7 @@ export default function Dashboard({ session }: Props) {
       {carouselVisible ? (
         <InspirationCarousel
           key={carouselKey}
-          onApply={(theme, bundles, appliedAccent, customGradeParams) => {
-            if (bundles.length > 0) {
-              // Embed theme/accent as per-batch overrides on the new cards
-              setPendingBundles(bundles.map(b => ({
-                ...b,
-                colorTheme: theme,
-                customGradeParams: customGradeParams ?? undefined,
-                accentFolder: appliedAccent ?? null,
-              })))
-            } else {
-              // No bundle (e.g. Gothic) — apply globally as fallback
-              setSettings(prev => ({ ...prev, color_theme: theme, custom_grade_params: customGradeParams ?? undefined }))
-              setAccentFolder(appliedAccent ?? null)
-            }
-          }}
+          onApply={handleTemplateApply}
           onHide={() => setCarouselVisible(false)}
         />
       ) : (
@@ -599,42 +1015,261 @@ export default function Dashboard({ session }: Props) {
         </button>
       )}
 
-      <div className="mx-auto max-w-7xl px-4 py-8">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="mx-auto w-full max-w-[1600px] px-4 py-8 xl:max-w-[1760px] 2xl:max-w-[1920px]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 xl:grid-cols-[minmax(0,1.85fr)_minmax(360px,0.95fr)] xl:gap-8">
 
           {/* Left column: batch editor + settings + generate */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 xl:col-span-1">
+
+            {/* Mode tabs */}
+            <div className="flex gap-1 mb-5 border-b border-stone-800">
+              <button
+                onClick={() => setModeAndResetPreview('images')}
+                data-tour="mode-images"
+                className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-px ${
+                  contentMode === 'images'
+                    ? 'border-brand-500 text-brand-400'
+                    : 'border-transparent text-stone-500 hover:text-stone-300'}`}
+              >
+                Images
+              </button>
+              <button
+                onClick={() => setModeAndResetPreview('clips')}
+                data-tour="mode-clips"
+                className={`px-4 py-2 text-sm font-medium transition border-b-2 -mb-px ${
+                  contentMode === 'clips'
+                    ? 'border-brand-500 text-brand-400'
+                    : 'border-transparent text-stone-500 hover:text-stone-300'}`}
+              >
+                Video Clips
+              </button>
+              <button
+                onClick={() => setModeAndResetPreview('layered')}
+                data-tour="mode-layered"
+                className={`px-4 py-2 text-sm font-bold transition border-b-2 -mb-px flex items-center gap-1.5 ${
+                  contentMode === 'layered'
+                    ? 'border-brand-500 text-brand-400'
+                    : 'border-transparent text-stone-500 hover:text-stone-300'}`}
+              >
+                Layered
+                <span className="rounded bg-brand-500/20 px-1 py-0.5 text-[8px] font-bold text-brand-400 tracking-wider leading-none">★ NEW</span>
+              </button>
+            </div>
+
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-brand-500/20 bg-brand-500/5 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-stone-200">
+                  {contentMode === 'images' ? 'Image videos' : contentMode === 'clips' ? 'Video clips' : 'Layered rendering'}
+                </p>
+                <p className="mt-0.5 text-[11px] text-stone-500">
+                  {contentMode === 'images'
+                    ? 'Build short-form videos from search terms and styled image sequences.'
+                    : contentMode === 'clips'
+                      ? 'Search stock footage, preview clips, and render a polished edit.'
+                      : 'Composite animated images over one or more looping background videos.'}
+                </p>
+              </div>
+            </div>
 
             {/* Step 1 */}
-            <div className="flex items-center gap-2 mb-2">
+            <div ref={step1Ref} className="flex items-center gap-2 mb-2">
               <span className="rounded bg-brand-500/20 px-2 py-0.5 text-[10px] font-bold text-brand-400 tracking-wider">STEP 1</span>
               <span className="text-xs text-stone-500">Search terms</span>
             </div>
-            <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="batch-editor">
-              <TermBundles onLoad={bundles => setPendingBundles(bundles)} />
-              <hr className="border-stone-800 my-4" />
-              <BatchEditor
-                onBatchesChange={setBatches}
-                pendingReuse={pendingReuse}
-                onReuseHandled={() => setPendingReuse(null)}
-                pendingBundles={pendingBundles}
-                onBundlesHandled={() => setPendingBundles(null)}
-                onOpenPrompt={() => setShowPromptModal(true)}
-              />
-            </div>
+
+            {(contentMode === 'images' || contentMode === 'layered' || contentMode === 'clips') && (
+              <div
+                className="rounded-2xl border border-stone-800 bg-stone-900 p-6"
+                data-tour="batch-editor"
+              >
+                {templateLoadedLabel && (
+                  <div className="mb-4 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-200">
+                    <span>Template loaded: <span className="font-semibold text-brand-100">{templateLoadedLabel}</span></span>
+                  </div>
+                )}
+                {contentMode === 'clips' ? (
+                  <>
+                    <ClipBundles
+                      onLoad={bundle => setPendingBundles([{ title: bundle.label, terms: bundle.terms }])}
+                      disabled={clipsSearching || clipsGenerating}
+                    />
+                    <p className="text-xs text-stone-500 mb-3">
+                      Use one batch per clip video. Per-batch style overrides include colour theme and text overlay.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <TermBundles onLoad={bundles => setPendingBundles(bundles)} />
+                    <hr className="border-stone-800 my-4" />
+                  </>
+                )}
+                <BatchEditor
+                  onBatchesChange={setBatches}
+                  pendingReuse={pendingReuse}
+                  onReuseHandled={() => setPendingReuse(null)}
+                  pendingBundles={pendingBundles}
+                  onBundlesHandled={() => setPendingBundles(null)}
+                  onOpenPrompt={() => setShowPromptModal(true)}
+                  highlightedBatchTitle={templateLoadedLabel}
+                  mode={contentMode}
+                />
+              </div>
+            )}
+
+            {/* Clip preview grid — shown between Step 1 and Step 2 in clips mode */}
+            {contentMode === 'clips' && fetchedClips && (
+              <div className="rounded-2xl border border-stone-800 bg-stone-900 p-4 mt-4" data-tour="clips-preview-grid">
+                {getCurrentClipPreviewBatch() && (
+                  <p className="text-xs text-stone-500 mb-3">
+                    Previewing clips for <span className="text-stone-300">{getClipBatchTitle(getCurrentClipPreviewBatch()!)}</span>.
+                  </p>
+                )}
+                <ClipPreviewGrid
+                  clips={fetchedClips}
+                  selected={selectedClips}
+                  onSelectionChange={setSelectedClips}
+                  onGenerate={handleGenerateClips}
+                  generating={clipsGenerating}
+                  maxClipDuration={clipsSettings.max_clip_duration}
+                  hasMoreOptions={clipPreviewPerTerm < 10}
+                  loadingMore={clipsSearching}
+                  onLoadMore={() => handleSearchClips(Math.min(10, clipPreviewPerTerm + 3), true)}
+                />
+              </div>
+            )}
 
             {/* Step 2 */}
-            <div className="flex items-center gap-2 mb-2 mt-6">
+            <div ref={step2Ref} className="flex items-center gap-2 mb-2 mt-6">
               <span className="rounded bg-brand-500/20 px-2 py-0.5 text-[10px] font-bold text-brand-400 tracking-wider">STEP 2</span>
               <span className="text-xs text-stone-500">Video settings</span>
             </div>
             <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="theme-selector">
-              <SettingsPanel
-                settings={settings}
-                onChange={s => { setSettings(s); setAppliedPresetName(null) }}
-                onPresetApplied={setAppliedPresetName}
-                themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
-              />
+              {contentMode === 'clips' ? (
+                <ClipsSettingsPanel
+                  settings={clipsSettings}
+                  onChange={setClipsSettings}
+                />
+              ) : (
+                <>
+                  <SettingsPanel
+                    settings={settings}
+                    onChange={s => { setSettings(s); setAppliedPresetName(null) }}
+                    onPresetApplied={setAppliedPresetName}
+                    presetSettings={(contentMode === 'layered'
+                      ? {
+                          ...settings,
+                          layered_config: {
+                            foreground_opacity: layeredConfig.opacity,
+                            background_opacity: layeredConfig.backgroundOpacity,
+                            grade_target: layeredConfig.gradeTarget,
+                            crossfade_duration: layeredConfig.crossfadeDuration,
+                          },
+                        }
+                      : settings) as unknown as Record<string, unknown>}
+                    onPresetSettingsApplied={(rawSettings, name) => {
+                      const { layered_config, ...videoSettings } = rawSettings as Partial<VideoSettings> & {
+                        layered_config?: Partial<LayeredConfig> | null
+                      }
+                      setSettings(prev => ({ ...prev, ...videoSettings }))
+                      if (contentMode === 'layered' && layered_config) {
+                        setLayeredConfig(prev => ({
+                          ...prev,
+                          opacity: layered_config.foreground_opacity ?? prev.opacity,
+                          backgroundOpacity: layered_config.background_opacity ?? prev.backgroundOpacity,
+                          gradeTarget: layered_config.grade_target ?? prev.gradeTarget,
+                          crossfadeDuration: layered_config.crossfade_duration ?? prev.crossfadeDuration,
+                        }))
+                      }
+                      setAppliedPresetName(name)
+                    }}
+                    themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
+                  />
+                  {contentMode === 'layered' && (
+                    <div className="mt-4 pt-4 border-t border-stone-800" data-tour="layered-opacity">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-stone-300">Foreground image opacity</span>
+                        <span className="text-xs tabular-nums text-stone-400">{Math.round(layeredConfig.opacity * 100)}%</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {OPACITY_PRESETS.map(p => (
+                          <button
+                            key={p.label}
+                            onClick={() => setLayeredConfig(c => ({ ...c, opacity: p.value }))}
+                            className={`flex-1 rounded-lg py-1.5 text-[11px] font-medium transition ${
+                              Math.abs(layeredConfig.opacity - p.value) < 0.01
+                                ? 'bg-brand-500/20 border border-brand-500/50 text-brand-300'
+                                : 'bg-stone-800 border border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        type="range"
+                        min={0} max={1} step={0.05}
+                        value={layeredConfig.opacity}
+                        onChange={e => setLayeredConfig(c => ({ ...c, opacity: parseFloat(e.target.value) }))}
+                        className="w-full accent-amber-500"
+                      />
+                      <div className="mt-4" data-tour="layered-bg-opacity">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-stone-300">Background video opacity</span>
+                          <span className="text-xs tabular-nums text-stone-400">{Math.round(layeredConfig.backgroundOpacity * 100)}%</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {BACKGROUND_OPACITY_PRESETS.map(p => (
+                            <button
+                              key={`bg-${p.label}`}
+                              onClick={() => setLayeredConfig(c => ({ ...c, backgroundOpacity: p.value }))}
+                              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition ${
+                                Math.abs(layeredConfig.backgroundOpacity - p.value) < 0.01
+                                  ? 'bg-brand-500/20 border border-brand-500/50 text-brand-300'
+                                  : 'bg-stone-800 border border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'
+                              }`}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                        <input
+                          type="range"
+                          min={0} max={1} step={0.05}
+                          value={layeredConfig.backgroundOpacity}
+                          onChange={e => setLayeredConfig(c => ({ ...c, backgroundOpacity: parseFloat(e.target.value) }))}
+                          className="w-full accent-amber-500"
+                        />
+                        <p className="mt-1.5 text-[10px] text-stone-600">
+                          Lower percentages fade the background video more. Higher percentages make the video more dominant behind the images.
+                        </p>
+                      </div>
+                      <div className="mt-4" data-tour="layered-grade-target">
+                        <span className="text-xs font-medium text-stone-300 block mb-2">Apply colour grade to</span>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {(['foreground', 'background', 'both'] as const).map(t => (
+                            <button
+                              key={t}
+                              onClick={() => setLayeredConfig(c => ({ ...c, gradeTarget: t }))}
+                              className={`rounded-lg py-2 text-xs font-medium transition capitalize ${
+                                layeredConfig.gradeTarget === t
+                                  ? 'bg-brand-500/20 border border-brand-500/50 text-brand-300'
+                                  : 'bg-stone-800 border border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'
+                              }`}
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-stone-600 mt-1.5">
+                          {layeredConfig.gradeTarget === 'foreground' && 'Images are graded; background video stays natural.'}
+                          {layeredConfig.gradeTarget === 'background' && 'Background video is graded; foreground images stay natural.'}
+                          {layeredConfig.gradeTarget === 'both' && 'Both foreground images and background video are graded.'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Step 3 */}
@@ -643,13 +1278,21 @@ export default function Dashboard({ session }: Props) {
               <span className="text-xs text-stone-500">Generate</span>
             </div>
 
-            {(error || stagingError) && (
+            {(contentMode === 'images'
+              ? (error || stagingError)
+              : contentMode === 'layered'
+                ? (layeredError || stagingError)
+                : clipsError) && (
               <div className="rounded-xl bg-red-950 px-4 py-3 text-sm text-red-400 mb-3">
-                {error ?? stagingError}
+                {contentMode === 'images'
+                  ? (error ?? stagingError)
+                  : contentMode === 'layered'
+                    ? (layeredError ?? stagingError)
+                    : clipsError}
               </div>
             )}
 
-            {stagingUsedPexels && !stagingError && (
+            {(contentMode === 'images' || contentMode === 'layered') && stagingUsedPexels && !stagingError && (
               <div className="rounded-xl bg-amber-950/60 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3 flex items-center gap-2">
                 <span>⚡</span>
                 <span>Unsplash rate limit hit. Switched to Pexels for this preview.</span>
@@ -657,6 +1300,44 @@ export default function Dashboard({ session }: Props) {
             )}
 
             {/* Action row */}
+            {contentMode === 'layered' ? (
+              <div data-tour="layered-generate" className="flex gap-2">
+                <button
+                  onClick={handleStagePreview}
+                  disabled={submitting || staging || trialExpired}
+                  className="flex-1 rounded-xl border border-stone-700 py-3 text-sm font-medium text-stone-300 hover:border-stone-500 hover:text-stone-100 disabled:opacity-50 transition"
+                >
+                  {staging ? 'Fetching images…' : 'Preview images →'}
+                </button>
+                <button
+                  onClick={handleGenerateLayered}
+                  disabled={layeredSubmitting || submitting || staging || batchCount === 0 || trialExpired}
+                  className="flex-1 rounded-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
+                >
+                  {layeredSubmitting || submitting ? 'Submitting…'
+                    : batchCount === 0 ? 'Add a layered batch first'
+                    : batchCount > 1 ? `Generate Layered ×${batchCount}` : 'Generate Layered'}
+                </button>
+              </div>
+            ) : contentMode === 'clips' ? (
+              <div className="flex flex-row-reverse gap-2" data-tour="clips-generate">
+                <button
+                  onClick={handleAutoGenerateClips}
+                  disabled={clipsSearching || clipsGenerating || trialExpired}
+                  className="flex-1 rounded-xl bg-brand-500 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
+                >
+                  {clipsSearching ? 'Searching…' : clipsGenerating ? 'Generating…' : 'Generate directly'}
+                </button>
+                <button
+                  onClick={() => handleSearchClips()}
+                  disabled={clipsSearching || clipsGenerating || batchCount !== 1}
+                  className="flex-1 rounded-xl border border-stone-700 py-3 text-sm font-medium text-stone-300 hover:border-stone-500 hover:text-stone-100 disabled:opacity-50 transition"
+                  title={batchCount !== 1 ? 'Preview & select supports one clip batch at a time' : undefined}
+                >
+                  {clipsSearching ? 'Searching…' : 'Preview & select clips →'}
+                </button>
+              </div>
+            ) : (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowAdvanced(true)}
@@ -697,10 +1378,11 @@ export default function Dashboard({ session }: Props) {
                 </button>
               </div>
             </div>
-            <p className="text-center text-xs text-stone-600 mt-2">or press Ctrl+Enter</p>
+            )}
+            {(contentMode === 'images' || contentMode === 'layered') && <p className="text-center text-xs text-stone-600 mt-2">or press Ctrl+Enter</p>}
 
-            {/* Variants inline panel */}
-            {showVariants && (
+            {/* Variants inline panel — images mode only */}
+            {contentMode === 'images' && showVariants && (
               <div className="rounded-xl border border-stone-800 bg-stone-900/80 p-4 space-y-3 mt-3">
                 <div className="flex items-baseline justify-between">
                   <p className="text-xs text-stone-500">Select themes (one video per theme per batch):</p>
@@ -767,7 +1449,7 @@ export default function Dashboard({ session }: Props) {
           </div>
 
           {/* Right column: active jobs + recent jobs */}
-          <div className="space-y-6">
+          <div className="space-y-6 xl:min-w-[360px]">
             {trialExpired && (
               <div className="rounded-xl border border-red-900 bg-red-950/40 px-4 py-3">
                 <p className="text-xs text-red-400 font-medium mb-1">Trial ended</p>
@@ -866,22 +1548,31 @@ export default function Dashboard({ session }: Props) {
 
             {activeJobs.length > 0 && (
               <div>
-                <div className="flex items-baseline gap-2 mb-3">
-                  <h2 className="text-sm font-semibold text-stone-300">
-                    {activeJobs.length > 1 ? `Current jobs (${activeJobs.length})` : 'Current job'}
-                  </h2>
-                  {activeJobs.length > 1 && (() => {
-                    const doneCount = activeJobs.filter(j => completedJobIds.has(j.jobId)).length
-                    const maxSecs = Math.max(...activeJobs.map(j => jobEstimates[j.jobId] ?? 0))
-                    if (doneCount > 0) {
-                      return <span className="text-xs text-stone-500">{doneCount} / {activeJobs.length} done</span>
-                    }
-                    if (maxSecs > 0) {
-                      const label = maxSecs < 60 ? `~${maxSecs}s` : `~${Math.ceil(maxSecs / 60)}m`
-                      return <span className="text-xs text-stone-600">{label} remaining</span>
-                    }
-                    return null
-                  })()}
+                <div className="mb-3 flex items-baseline justify-between gap-3">
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="text-sm font-semibold text-stone-300">
+                      {activeJobs.length > 1 ? `Current jobs (${activeJobs.length})` : 'Current job'}
+                    </h2>
+                    {activeJobs.length > 1 && (() => {
+                      const doneCount = activeJobs.filter(j => completedJobIds.has(j.jobId)).length
+                      const maxSecs = Math.max(...activeJobs.map(j => jobEstimates[j.jobId] ?? 0))
+                      if (doneCount > 0) {
+                        return <span className="text-xs text-stone-500">{doneCount} / {activeJobs.length} done</span>
+                      }
+                      if (maxSecs > 0) {
+                        const label = maxSecs < 60 ? `~${maxSecs}s` : `~${Math.ceil(maxSecs / 60)}m`
+                        return <span className="text-xs text-stone-600">{label} remaining</span>
+                      }
+                      return null
+                    })()}
+                  </div>
+                  <button
+                    onClick={dismissAllJobs}
+                    className="text-xs text-stone-500 hover:text-stone-300 transition"
+                    title="Dismiss all current jobs from this panel"
+                  >
+                    Dismiss all
+                  </button>
                 </div>
                 <div className="space-y-3">
                   {activeJobs.map(({ jobId, title }) => (
@@ -905,7 +1596,9 @@ export default function Dashboard({ session }: Props) {
             )}
 
             <div>
-              <h2 className="mb-3 text-sm font-semibold text-stone-300">Recent jobs</h2>
+              <div className="mb-3 flex items-baseline justify-between gap-3">
+                <h2 className="text-sm font-semibold text-stone-300">Recent jobs</h2>
+              </div>
               <RecentJobs onReuse={handleReuse} onEditImages={handleEditImages} onColourGrade={handleColourGrade} onRegrade={handleRegrade} />
               <p className="mt-3 text-xs text-stone-600">
                 Videos are removed after 48 hours to save space — download any you want to keep.
@@ -947,9 +1640,12 @@ export default function Dashboard({ session }: Props) {
         onOpenPrompt={() => setShowPromptModal(true)}
         onOpenVariants={() => setShowVariants(true)}
       />
-      {showPromptModal && <PromptModal fromTour={showTour} onClose={() => setShowPromptModal(false)} />}
+      {showPromptModal && <PromptModal mode={contentMode} fromTour={showTour} onClose={() => setShowPromptModal(false)} />}
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }
+
+
+

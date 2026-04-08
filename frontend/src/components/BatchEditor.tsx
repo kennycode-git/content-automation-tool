@@ -11,15 +11,89 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { uploadImages } from '../lib/api'
+import { uploadImages, listUserPhilosophers } from '../lib/api'
+import type { UserPhilosopher } from '../lib/api'
 import { buildOverlayPreviewLayout } from '../lib/overlayPreview'
 import type { CustomGradeParams } from './SettingsPanel'
 import { THEME_GRADE_DEFAULTS } from './SettingsPanel'
-import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, OverlayAlignment } from '../lib/api'
+import type { TextOverlayConfig, OverlayFont, OverlayColor, OverlayPosition, OverlayAlignment, AiVoiceoverConfig } from '../lib/api'
+import BackgroundVideoPicker from './BackgroundVideoPicker'
 
 export type { TextOverlayConfig }
 
 const STORAGE_KEY = 'cogito_classic_text'
+const USER_THEMES_KEY = 'cogito_user_themes'
+const USER_PHILOSOPHERS_UPDATED_EVENT = 'cogito:user-philosophers-updated'
+
+export interface UserColorTheme {
+  id: string
+  name: string
+  colorTag: string     // hex color string e.g. "#7c3aed"
+  gradeParams: CustomGradeParams
+}
+
+function loadUserThemes(): UserColorTheme[] {
+  try { return JSON.parse(localStorage.getItem(USER_THEMES_KEY) || '[]') } catch { return [] }
+}
+
+function saveUserThemesToStorage(themes: UserColorTheme[]) {
+  try { localStorage.setItem(USER_THEMES_KEY, JSON.stringify(themes)) } catch { /* ignore */ }
+}
+
+// ── Philosopher detection ────────────────────────────────────────────────────
+
+export const PHILOSOPHER_LIST: { key: string; display: string }[] = [
+  { key: 'watts',          display: 'Alan Watts' },
+  { key: 'aristotle',      display: 'Aristotle' },
+  { key: 'camus',          display: 'Camus' },
+  { key: 'carl_jung',      display: 'Carl Jung' },
+  { key: 'descartes',      display: 'Descartes' },
+  { key: 'diogenes',       display: 'Diogenes' },
+  { key: 'dostoevsky',     display: 'Dostoevsky' },
+  { key: 'epicurus',       display: 'Epicurus' },
+  { key: 'epictetus',      display: 'Epictetus' },
+  { key: 'heraclitus',     display: 'Heraclitus' },
+  { key: 'hegel',          display: 'Hegel' },
+  { key: 'heidegger',      display: 'Heidegger' },
+  { key: 'hume',           display: 'Hume' },
+  { key: 'kafka',          display: 'Kafka' },
+  { key: 'kant',           display: 'Kant' },
+  { key: 'kierkegaard',    display: 'Kierkegaard' },
+  { key: 'leo_tolstoy',    display: 'Leo Tolstoy' },
+  { key: 'locke',          display: 'Locke' },
+  { key: 'marcus_aurelius', display: 'Marcus Aurelius' },
+  { key: 'nietzsche',      display: 'Nietzsche' },
+  { key: 'plato',          display: 'Plato' },
+  { key: 'rousseau',       display: 'Rousseau' },
+  { key: 'sartre',         display: 'Sartre' },
+  { key: 'schopenhauer',   display: 'Schopenhauer' },
+  { key: 'seneca',         display: 'Seneca' },
+  { key: 'socrates',       display: 'Socrates' },
+  { key: 'spinoza',        display: 'Spinoza' },
+  { key: 'voltaire',       display: 'Voltaire' },
+  { key: 'tolstoy',        display: 'Tolstoy' },
+  { key: 'wittgenstein',   display: 'Wittgenstein' },
+  { key: 'zeno',           display: 'Zeno' },
+  { key: 'zhuangzi',       display: 'Zhuangzi' },
+]
+
+function asciiFold(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+export function detectPhilosopher(title: string): string | null {
+  const norm = asciiFold(title.toLowerCase().replace(/_/g, ' '))
+  let bestKey: string | null = null
+  let bestLen = 0
+  for (const { key } of PHILOSOPHER_LIST) {
+    const keyNorm = asciiFold(key.replace(/_/g, ' '))
+    if (keyNorm.length > bestLen && norm.includes(keyNorm)) {
+      bestKey = key
+      bestLen = keyNorm.length
+    }
+  }
+  return bestKey
+}
 const DEFAULT_CLASSIC_TEXT =
   '# Stoicism\nmarble statue philosophy\nancient greece\nstoic stone\n\n# Existentialism\nmeditation silence\nminimalist monk'
 
@@ -31,6 +105,13 @@ export interface BatchOutput {
   custom_grade_params?: CustomGradeParams
   accent_folder_override?: string | null // undefined = inherit global, null = explicit none
   text_overlay?: TextOverlayConfig | null
+  ai_voiceover?: AiVoiceoverConfig | null
+  layered_background_video_urls?: string[]
+  layered_background_video_query?: string
+  philosopher?: string | null            // resolved philosopher key, null = none
+  philosopher_count?: number             // 1–5 images to inject
+  grade_philosopher?: boolean            // grade philosopher images with color theme
+  philosopher_is_user?: boolean
 }
 
 interface VisualBatch {
@@ -40,6 +121,14 @@ interface VisualBatch {
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null           // undefined = inherit global, null = explicit none
   textOverlay?: TextOverlayConfig | null
+  aiVoiceover?: AiVoiceoverConfig | null
+  layeredBackgroundVideoUrls?: string[]
+  layeredBackgroundVideoQuery?: string
+  usePhilosopher?: boolean               // true = include philosopher images
+  philosopherOverride?: string | null    // manual pick; undefined = use auto-detected
+  philosopherCount?: number              // 1–5 images to inject (default 3)
+  gradePhilosopher?: boolean             // grade philosopher images (default true)
+  philosopherIsUser?: boolean            // true = user's own philosopher (not system)
 }
 
 interface PendingBundle {
@@ -48,6 +137,7 @@ interface PendingBundle {
   colorTheme?: string
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null
+  layeredBackgroundVideoQuery?: string
 }
 
 interface Props {
@@ -57,6 +147,18 @@ interface Props {
   pendingBundles?: PendingBundle[] | null
   onBundlesHandled?: () => void
   onOpenPrompt?: () => void
+  highlightedBatchTitle?: string | null
+  mode?: 'images' | 'clips' | 'layered'
+}
+
+const DEFAULT_VISUAL_BATCH = {
+  title: 'Stoicism',
+  terms: 'marble statue philosophy\nancient greece\nstoic stone',
+}
+
+const DEFAULT_CLIPS_BATCH = {
+  title: 'Night Sky',
+  terms: 'Stargazing\nEarth from space',
 }
 
 // ── Style popover constants ────────────────────────────────────────────────────
@@ -81,7 +183,7 @@ const BATCH_THEME_OPTIONS: { value: string | undefined; label: string; shortLabe
 
 // Themes with an available preview video in /theme-previews/
 const THEMES_WITH_PREVIEW_VIDEO = new Set([
-  'dark', 'sepia', 'warm', 'low_exp', 'grey', 'blue', 'red', 'bw', 'midnight', 'dusk',
+  'dark', 'sepia', 'warm', 'low_exp', 'grey', 'blue', 'red', 'bw', 'midnight', 'dusk', 'mocha', 'noir',
 ])
 
 const BATCH_ACCENT_OPTIONS: { value: string | null | undefined; label: string; dot: string }[] = [
@@ -90,7 +192,17 @@ const BATCH_ACCENT_OPTIONS: { value: string | null | undefined; label: string; d
   { value: 'blue',    label: 'Blue',   dot: 'bg-blue-500' },
   { value: 'red',     label: 'Red',    dot: 'bg-red-500' },
   { value: 'gold',    label: 'Gold',   dot: 'bg-amber-400' },
+  { value: 'green',   label: 'Green',  dot: 'bg-emerald-500' },
+  { value: 'purple',  label: 'Purple', dot: 'bg-purple-500' },
 ]
+
+const ACCENT_PREVIEW_PATH: Record<string, string> = {
+  blue: '/accent-previews/blue.mp4',
+  red: '/accent-previews/red.mp4',
+  gold: '/accent-previews/gold.mp4',
+  green: '/accent-previews/green.mp4',
+  purple: '/accent-previews/purple.mp4',
+}
 
 const DEFAULT_GRADE: CustomGradeParams = {
   brightness: 1.0, contrast: 1.0, saturation: 1.0,
@@ -119,7 +231,6 @@ const CUSTOM_SLIDERS: { key: keyof CustomGradeParams; label: string; min: number
   { key: 'hue_shift',  label: 'Hue Shift',  min: -180, max: 180, step: 1,    unit: '°' },
 ]
 
-const PHILOSOPHER_NAMES = ['Marcus Aurelius', 'Seneca', 'Nietzsche', 'Socrates', 'Aristotle', 'Epictetus']
 
 const DEFAULT_OVERLAY: TextOverlayConfig = {
   enabled: true,
@@ -129,7 +240,7 @@ const DEFAULT_OVERLAY: TextOverlayConfig = {
   background_box: false,
   alignment: 'center',
   position: 'bottom-center',
-  font_size_pct: 0.045,
+  font_size_pct: 0.015,
   margin_pct: 0.05,
   outline: false,
 }
@@ -220,24 +331,44 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
   const dragStartRef = useRef<{ y: number; h: number } | null>(null)
   const BASE_H = 540
   const BASE_W = 304
-
-  function PreviewBox({ h, w }: { h: number; w: number }) {
+  function PreviewBox() {
+    const h = BASE_H
+    const w = BASE_W
     const layout = buildOverlayPreviewLayout(ov, w, h)
     let visibleIndex = -1
-
     return (
-      <div style={{ width: w, height: h, background: '#0e0e0e', borderRadius: 4, overflow: 'hidden', border: '1px solid #333', flexShrink: 0, position: 'relative', boxSizing: 'border-box' }}>
+      <div
+        style={{
+          width: w, height: h,
+          background: '#0e0e0e',
+          borderRadius: 4,
+          overflow: 'hidden',
+          border: '1px solid #333',
+          flexShrink: 0,
+          position: 'relative',
+          boxSizing: 'border-box',
+        }}
+      >
         {layout.lines.map((line, i) => {
           if (!line) return null
           visibleIndex += 1
           return (
-            <div key={i} style={{ position: 'absolute', left: layout.blockLeft, top: layout.positions[visibleIndex], width: layout.blockWidth }}>
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                left: layout.blockLeft,
+                top: layout.positions[visibleIndex],
+                width: layout.blockWidth,
+              }}
+            >
               <div style={layout.textStyle}>{line}</div>
             </div>
           )
         })}
       </div>
     )
+
   }
 
   function onDragHandlePointerDown(e: React.PointerEvent) {
@@ -269,7 +400,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
               transformOrigin: 'top left',
             }}
           >
-            <PreviewBox h={BASE_H} w={BASE_W} />
+            <PreviewBox />
           </div>
         </div>
         {/* Magnify button */}
@@ -302,7 +433,7 @@ function OverlayPreview({ ov }: { ov: TextOverlayConfig }) {
           onClick={() => setEnlarged(false)}
         >
           <div className="relative" onClick={e => e.stopPropagation()}>
-            <PreviewBox h={BASE_H} w={BASE_W} />
+            <PreviewBox />
             <button
               onClick={() => setEnlarged(false)}
               className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center
@@ -334,13 +465,17 @@ function BatchStylePopover({
   batch,
   onChange,
   onClose,
-  onApplyOverlayToAll,
-}: {
-  batch: VisualBatch
-  onChange: (patch: Partial<VisualBatch>) => void
-  onClose: () => void
-  onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
-}) {
+    onApplyOverlayToAll,
+    userPhilosophers = [],
+    mode = 'images',
+  }: {
+    batch: VisualBatch
+    onChange: (patch: Partial<VisualBatch>) => void
+    onClose: () => void
+    onApplyOverlayToAll?: (overlay: TextOverlayConfig) => void
+    userPhilosophers?: UserPhilosopher[]
+    mode?: 'images' | 'clips' | 'layered'
+  }) {
   const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
   const [fineTuneOpen, setFineTuneOpen] = useState(batch.colorTheme === 'custom')
   const [overlayPresets, setOverlayPresets] = useState<OverlayPreset[]>(() => {
@@ -348,6 +483,10 @@ function BatchStylePopover({
   })
   const [savingPreset, setSavingPreset] = useState(false)
   const [presetName, setPresetName] = useState('')
+  const [userThemes, setUserThemes] = useState<UserColorTheme[]>(loadUserThemes)
+  const [savingTheme, setSavingTheme] = useState(false)
+  const [themeName, setThemeName] = useState('')
+  const [themeColorTag, setThemeColorTag] = useState('#7c3aed')
 
   function saveOverlayPreset(ov: TextOverlayConfig) {
     const name = presetName.trim() || 'Preset'
@@ -366,6 +505,26 @@ function BatchStylePopover({
     try { localStorage.setItem(OVERLAY_PRESETS_KEY, JSON.stringify(updated)) } catch { /* ignore */ }
   }
 
+  function saveUserTheme(gradeParams: CustomGradeParams) {
+    const name = themeName.trim() || 'My Theme'
+    const theme: UserColorTheme = { id: crypto.randomUUID(), name, colorTag: themeColorTag, gradeParams }
+    const updated = [...userThemes, theme]
+    setUserThemes(updated)
+    saveUserThemesToStorage(updated)
+    setSavingTheme(false)
+    setThemeName('')
+  }
+
+  function deleteUserTheme(id: string) {
+    const updated = userThemes.filter(t => t.id !== id)
+    setUserThemes(updated)
+    saveUserThemesToStorage(updated)
+    // If deleted theme is currently selected, clear it
+    if (batch.colorTheme === `user:${id}`) {
+      onChange({ colorTheme: undefined, customGradeParams: undefined })
+    }
+  }
+
   return (
     <>
       {/* Click-away overlay */}
@@ -382,7 +541,7 @@ function BatchStylePopover({
                 key={`${hoveredPreview.type}-${hoveredPreview.value}`}
                 src={hoveredPreview.type === 'theme'
                   ? `/theme-previews/${hoveredPreview.value}.mp4`
-                  : `/accent-previews/${hoveredPreview.value}.mp4`}
+                  : (ACCENT_PREVIEW_PATH[hoveredPreview.value] ?? `/accent-previews/${hoveredPreview.value}.mp4`)}
                 autoPlay
                 muted
                 loop
@@ -438,6 +597,31 @@ function BatchStylePopover({
               })}
             </div>
 
+            {/* User saved themes */}
+            {userThemes.length > 0 && (
+              <div className="mt-1 pt-1 border-t border-stone-800 grid grid-cols-2 gap-1">
+                {userThemes.map(theme => (
+                  <button
+                    key={theme.id}
+                    onClick={() => onChange({ colorTheme: `user:${theme.id}`, customGradeParams: theme.gradeParams })}
+                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-left transition group/ut ${
+                      batch.colorTheme === `user:${theme.id}`
+                        ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
+                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0 flex-shrink-0" style={{ background: theme.colorTag }} />
+                    <span className="flex-1 truncate text-left">{theme.name}</span>
+                    <span
+                      role="button"
+                      onClick={e => { e.stopPropagation(); deleteUserTheme(theme.id) }}
+                      className="text-[9px] text-stone-700 hover:text-red-400 opacity-0 group-hover/ut:opacity-100 transition ml-auto"
+                    >✕</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Fine-tune grade — collapsible, available for any selected theme */}
             {batch.colorTheme !== undefined && batch.colorTheme !== 'none' && (
               <div className="mt-2 pt-2 border-t border-stone-800">
@@ -465,37 +649,39 @@ function BatchStylePopover({
                           Starting from {BATCH_THEME_OPTIONS.find(o => o.value === batch.colorTheme)?.label ?? ''} defaults — adjusting switches to Custom grade
                         </p>
                       )}
-                      <div className="flex items-start gap-2">
+                      {/* Live grade preview */}
+                      <div className="relative rounded-lg overflow-hidden w-full h-20">
                         <video
-                          src="/theme-previews/eastern-philosophy.mp4"
+                          src={THEMES_WITH_PREVIEW_VIDEO.has(batch.colorTheme ?? '') ? `/theme-previews/${batch.colorTheme}.mp4` : '/theme-previews/eastern-philosophy.mp4'}
                           autoPlay muted loop playsInline
-                          className="w-12 rounded-md shrink-0 object-cover"
-                          style={{ aspectRatio: '9/16', filter: gradeToFilter(gradeParams) }}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          style={{ filter: gradeToFilter(gradeParams) }}
                         />
-                        <div className="flex-1 space-y-1.5">
-                          {CUSTOM_SLIDERS.map(s => (
-                            <div key={s.key}>
-                              <div className="flex items-center justify-between mb-0.5">
-                                <span className="text-[9px] text-stone-400">{s.label}</span>
-                                <span className="text-[9px] font-mono text-stone-300">
-                                  {gradeParams[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
-                                </span>
-                              </div>
-                              <input
-                                type="range"
-                                min={s.min}
-                                max={s.max}
-                                step={s.step}
-                                value={gradeParams[s.key]}
-                                onChange={e => onChange({
-                                  colorTheme: 'custom',
-                                  customGradeParams: { ...gradeParams, [s.key]: parseFloat(e.target.value) },
-                                })}
-                                className="w-full accent-violet-500"
-                              />
+                        <span className="absolute bottom-1 left-2 text-[8px] text-white/50 bg-black/30 px-1.5 py-0.5 rounded-full">Live preview</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {CUSTOM_SLIDERS.map(s => (
+                          <div key={s.key}>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-[9px] text-stone-400">{s.label}</span>
+                              <span className="text-[9px] font-mono text-stone-300">
+                                {gradeParams[s.key].toFixed(s.step < 1 ? 2 : 0)}{s.unit}
+                              </span>
                             </div>
-                          ))}
-                        </div>
+                            <input
+                              type="range"
+                              min={s.min}
+                              max={s.max}
+                              step={s.step}
+                              value={gradeParams[s.key]}
+                              onChange={e => onChange({
+                                colorTheme: 'custom',
+                                customGradeParams: { ...gradeParams, [s.key]: parseFloat(e.target.value) },
+                              })}
+                              className="w-full accent-violet-500"
+                            />
+                          </div>
+                        ))}
                       </div>
                       {!isCustom && (
                         <button
@@ -505,6 +691,42 @@ function BatchStylePopover({
                           Use as Custom grade →
                         </button>
                       )}
+                      {/* Save as named theme */}
+                      {savingTheme ? (
+                        <div className="flex items-center gap-1 mt-1 pt-1 border-t border-stone-800">
+                          <input
+                            type="text"
+                            value={themeName}
+                            onChange={e => setThemeName(e.target.value)}
+                            placeholder="Theme name…"
+                            maxLength={30}
+                            className="flex-1 bg-stone-800 border border-stone-700 rounded px-2 py-1 text-[10px] text-stone-200 focus:outline-none focus:border-stone-500"
+                            onKeyDown={e => e.key === 'Enter' && saveUserTheme(gradeParams)}
+                          />
+                          <input
+                            type="color"
+                            value={themeColorTag}
+                            onChange={e => setThemeColorTag(e.target.value)}
+                            className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent"
+                            title="Pick a colour tag"
+                          />
+                          <button
+                            onClick={() => saveUserTheme(gradeParams)}
+                            className="text-[9px] text-green-400 hover:text-green-300 transition whitespace-nowrap"
+                          >Save</button>
+                          <button
+                            onClick={() => { setSavingTheme(false); setThemeName('') }}
+                            className="text-[9px] text-stone-500 hover:text-stone-300 transition"
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setSavingTheme(true)}
+                          className="text-[9px] text-violet-400 hover:text-violet-300 transition mt-1"
+                        >
+                          + Save as named theme
+                        </button>
+                      )}
                     </div>
                   )
                 })()}
@@ -512,57 +734,119 @@ function BatchStylePopover({
             )}
           </div>
 
-          <hr className="border-stone-800" />
+          {mode !== 'clips' && (
+            <>
+              <hr className="border-stone-800" />
 
-          {/* Accent */}
-          <div>
-            <p className="mb-2 text-[10px] font-semibold tracking-widest uppercase text-stone-500">Accent images</p>
-            <div className="flex flex-wrap gap-1.5">
-              {BATCH_ACCENT_OPTIONS.map(opt => {
-                const key = opt.value === undefined ? '_global' : opt.value === null ? '_none' : opt.value
-                const isSelected = batch.accentFolder === opt.value
-                const hasPreview = typeof opt.value === 'string'
-                return (
-                  <button
-                    key={key}
-                    onClick={() => onChange({ accentFolder: opt.value })}
-                    onMouseEnter={hasPreview ? () => setHoveredPreview({ type: 'accent', value: opt.value as string }) : undefined}
-                    onMouseLeave={hasPreview ? () => setHoveredPreview(null) : undefined}
-                    className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition ${
-                      isSelected
-                        ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
-                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
-                    {opt.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <hr className="border-stone-800" />
-
-          {/* Philosopher — coming soon */}
-          <div className="opacity-40 pointer-events-none select-none">
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Philosopher</p>
-              <span className="text-[9px] font-semibold bg-stone-800 text-stone-500 border border-stone-700/60 px-1.5 py-0.5 rounded-full">Soon</span>
-            </div>
-            <div className="grid grid-cols-3 gap-1">
-              {PHILOSOPHER_NAMES.map(name => (
-                <div
-                  key={name}
-                  className="flex items-center justify-center px-2 py-1.5 rounded-lg border border-stone-700 bg-stone-800/60 text-[10px] text-stone-500 text-center leading-tight"
-                >
-                  {name}
+              <div>
+                <p className="mb-2 text-[10px] font-semibold tracking-widest uppercase text-stone-500">Accent images</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {BATCH_ACCENT_OPTIONS.map(opt => {
+                    const key = opt.value === undefined ? '_global' : opt.value === null ? '_none' : opt.value
+                    const isSelected = batch.accentFolder === opt.value
+                    const hasPreview = typeof opt.value === 'string'
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => onChange({ accentFolder: opt.value })}
+                        onMouseEnter={hasPreview ? () => setHoveredPreview({ type: 'accent', value: opt.value as string }) : undefined}
+                        onMouseLeave={hasPreview ? () => setHoveredPreview(null) : undefined}
+                        className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition ${
+                          isSelected
+                            ? 'bg-stone-700 text-stone-100 ring-1 ring-stone-500'
+                            : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${opt.dot}`} />
+                        {opt.label}
+                      </button>
+                    )
+                  })}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          <hr className="border-stone-800" />
+              <hr className="border-stone-800" />
+
+              {(() => {
+            const detectedKey = detectPhilosopher(batch.title)
+            const detectedDisplay = detectedKey ? PHILOSOPHER_LIST.find(p => p.key === detectedKey)?.display : null
+            const resolvedKey = batch.philosopherOverride !== undefined ? batch.philosopherOverride : detectedKey
+            return (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Philosopher</p>
+                    {detectedDisplay && (
+                      <span className="text-[9px] bg-stone-800 text-amber-500/80 border border-stone-700 px-1.5 py-0.5 rounded-full">
+                        Auto: {detectedDisplay}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => onChange({ usePhilosopher: !batch.usePhilosopher, gradePhilosopher: batch.gradePhilosopher !== false })}
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${batch.usePhilosopher ? 'bg-brand-500' : 'bg-stone-700'}`}
+                  >
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${batch.usePhilosopher ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                {batch.usePhilosopher && (
+                  <div className="space-y-2">
+                    <select
+                      value={resolvedKey ?? ''}
+                      onChange={e => {
+                        const val = e.target.value
+                        const isUser = userPhilosophers.some(p => p.key === val)
+                        onChange({ philosopherOverride: val || null, philosopherIsUser: isUser })
+                      }}
+                      className="w-full bg-stone-800 border border-stone-700 rounded-lg px-2 py-1.5 text-[11px] text-stone-200 focus:outline-none focus:border-stone-500"
+                    >
+                      {!resolvedKey && <option value="">Select philosopher…</option>}
+                      <optgroup label="System">
+                        {PHILOSOPHER_LIST.map(p => (
+                          <option key={p.key} value={p.key}>{p.display}</option>
+                        ))}
+                      </optgroup>
+                      {userPhilosophers.length > 0 && (
+                        <optgroup label="My philosophers">
+                          {userPhilosophers.map(p => (
+                            <option key={p.key} value={p.key}>{p.name}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-stone-500">Images to inject</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={1}
+                          max={5}
+                          step={1}
+                          value={batch.philosopherCount ?? 3}
+                          onChange={e => onChange({ philosopherCount: Number(e.target.value) })}
+                          className="w-20 accent-amber-500"
+                        />
+                        <span className="text-[10px] text-stone-300 w-3 text-right">{batch.philosopherCount ?? 3}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-stone-500">Grade images with theme</span>
+                      <button
+                        onClick={() => onChange({ gradePhilosopher: batch.gradePhilosopher === false })}
+                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${batch.gradePhilosopher !== false ? 'bg-brand-500' : 'bg-stone-700'}`}
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${batch.gradePhilosopher !== false ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+              <hr className="border-stone-800" />
+            </>
+          )}
 
           {/* Text overlay */}
           <div>
@@ -572,7 +856,7 @@ function BatchStylePopover({
                 onClick={() => {
                   const current = batch.textOverlay
                   if (!current) {
-                    onChange({ textOverlay: { ...DEFAULT_OVERLAY, enabled: true } })
+                      onChange({ textOverlay: { ...DEFAULT_OVERLAY, enabled: true } })
                   } else {
                     onChange({ textOverlay: { ...current, enabled: !current.enabled } })
                   }
@@ -800,15 +1084,15 @@ function BatchStylePopover({
                     <div className="flex items-center justify-between mb-0.5">
                       <p className="text-[9px] font-semibold tracking-widest uppercase text-stone-600">Size</p>
                       <span className="text-[10px] font-mono text-stone-300">
-                        {Math.round((ov.font_size_pct ?? 0.045) * 1000) / 10}%
+                        {Math.round((ov.font_size_pct ?? 0.015) * 1000) / 10}%
                       </span>
                     </div>
                     <input
                       type="range"
-                      min={0.01}
-                      max={0.12}
-                      step={0.002}
-                      value={ov.font_size_pct ?? 0.045}
+                      min={0.005}
+                      max={0.05}
+                      step={0.001}
+                      value={ov.font_size_pct ?? 0.015}
                       onChange={e => onChange({ textOverlay: { ...ov, font_size_pct: parseFloat(e.target.value) } })}
                       className="w-full accent-brand-500"
                     />
@@ -846,7 +1130,6 @@ function BatchStylePopover({
               )
             })()}
           </div>
-
         </div>
       </div>
     </>
@@ -862,7 +1145,20 @@ function parseBatchText(text: string): string[] {
     .filter(l => l && !l.startsWith('#'))
 }
 
-function parseClassicIntoBatches(text: string): BatchOutput[] {
+function limitTermsForMode(terms: string[], mode: 'images' | 'clips' | 'layered' = 'images'): string[] {
+  return mode === 'clips' ? terms.slice(0, 3) : terms
+}
+
+function sanitizeTermsInput(text: string, mode: 'images' | 'clips' | 'layered' = 'images'): string {
+  if (mode !== 'clips') return text
+  return text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .slice(0, 3)
+    .join('\n')
+}
+
+function parseClassicIntoBatches(text: string, mode: 'images' | 'clips' | 'layered' = 'images'): BatchOutput[] {
   const lines = text.split('\n')
   const batches: BatchOutput[] = []
   let title: string | null = null
@@ -871,49 +1167,110 @@ function parseClassicIntoBatches(text: string): BatchOutput[] {
   for (const line of lines) {
     const trimmed = line.trim()
     if (trimmed.startsWith('#')) {
-      if (terms.length > 0) batches.push({ title, terms })
+      if (terms.length > 0) batches.push({ title, terms: limitTermsForMode(terms, mode) })
       title = trimmed.slice(1).trim() || null
       terms = []
     } else if (trimmed) {
       terms.push(trimmed)
     }
   }
-  if (terms.length > 0) batches.push({ title, terms })
+  if (terms.length > 0) batches.push({ title, terms: limitTermsForMode(terms, mode) })
   return batches
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHandled, pendingBundles, onBundlesHandled, onOpenPrompt }: Props) {
+export default function BatchEditor({
+  onBatchesChange,
+  pendingReuse,
+  onReuseHandled,
+  pendingBundles,
+  onBundlesHandled,
+  onOpenPrompt,
+  highlightedBatchTitle,
+  mode = 'images',
+}: Props) {
   const [classicMode, setClassicMode] = useState(false)
   const [classicText, setClassicText] = useState<string>(() => {
     try { return localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CLASSIC_TEXT }
     catch { return DEFAULT_CLASSIC_TEXT }
   })
   const [batches, setBatches] = useState<VisualBatch[]>([
-    { title: 'Stoicism', terms: 'marble statue philosophy\nancient greece\nstoic stone' },
+    mode === 'clips' ? DEFAULT_CLIPS_BATCH : DEFAULT_VISUAL_BATCH,
   ])
   const [uploadedPaths, setUploadedPaths] = useState<Record<number, string[]>>({})
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const [openPopover, setOpenPopover] = useState<number | null>(null)
+  const [userPhilosophers, setUserPhilosophers] = useState<UserPhilosopher[]>([])
+
+  useEffect(() => {
+    const refreshUserPhilosophers = () => {
+      listUserPhilosophers().then(setUserPhilosophers).catch(() => {})
+    }
+    refreshUserPhilosophers()
+    window.addEventListener(USER_PHILOSOPHERS_UPDATED_EVENT, refreshUserPhilosophers)
+    return () => window.removeEventListener(USER_PHILOSOPHERS_UPDATED_EVENT, refreshUserPhilosophers)
+  }, [])
+
+  useEffect(() => {
+    setBatches(prev => {
+      let next = prev
+      if (
+        mode === 'clips' &&
+        prev.length === 1 &&
+        prev[0].title === DEFAULT_VISUAL_BATCH.title &&
+        prev[0].terms === DEFAULT_VISUAL_BATCH.terms
+      ) {
+        next = [{ ...DEFAULT_CLIPS_BATCH }]
+      }
+      else if (
+        mode !== 'clips' &&
+        prev.length === 1 &&
+        prev[0].title === DEFAULT_CLIPS_BATCH.title &&
+        prev[0].terms === DEFAULT_CLIPS_BATCH.terms
+      ) {
+        next = [{ ...DEFAULT_VISUAL_BATCH }]
+      }
+      if (next !== prev) {
+        queueMicrotask(() => onBatchesChange(visualToBatchOutputs(next, uploadedPaths)))
+      }
+      return next
+    })
+  }, [mode, onBatchesChange, uploadedPaths])
 
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
-    return vBatches.map((b, i) => ({
-      title: b.title.trim() || null,
-      terms: parseBatchText(b.terms),
-      uploaded_image_paths: paths[i] ?? [],
-      color_theme: b.colorTheme,
-      custom_grade_params: b.customGradeParams,
-      accent_folder_override: b.accentFolder,
-      text_overlay: b.textOverlay,
-    }))
+    return vBatches.map((b, i) => {
+      const supportsPhilosopher = mode === 'images' || mode === 'layered'
+      const resolvedPhilosopher = supportsPhilosopher && b.usePhilosopher
+        ? (b.philosopherOverride !== undefined ? b.philosopherOverride : detectPhilosopher(b.title))
+        : null
+      const resolvedColorTheme = b.colorTheme?.startsWith('user:')
+        ? 'custom'
+        : b.colorTheme
+      return {
+        title: b.title.trim() || null,
+        terms: limitTermsForMode(parseBatchText(b.terms), mode),
+        uploaded_image_paths: mode === 'images' ? (paths[i] ?? []) : undefined,
+        color_theme: resolvedColorTheme,
+        custom_grade_params: b.customGradeParams,
+        accent_folder_override: mode !== 'clips' ? b.accentFolder : undefined,
+        text_overlay: b.textOverlay,
+        ai_voiceover: b.aiVoiceover,
+        layered_background_video_urls: mode === 'layered' ? (b.layeredBackgroundVideoUrls ?? []) : undefined,
+        layered_background_video_query: mode === 'layered' ? (b.layeredBackgroundVideoQuery ?? undefined) : undefined,
+        philosopher: resolvedPhilosopher || undefined,
+        philosopher_count: supportsPhilosopher && resolvedPhilosopher ? (b.philosopherCount ?? 3) : undefined,
+        grade_philosopher: supportsPhilosopher && resolvedPhilosopher ? (b.gradePhilosopher !== false) : undefined,
+        philosopher_is_user: supportsPhilosopher && resolvedPhilosopher && b.philosopherIsUser ? true : undefined,
+      }
+    })
   }
 
   // Emit initial batches on mount
   useEffect(() => {
     if (classicMode) {
-      onBatchesChange(parseClassicIntoBatches(classicText))
+      onBatchesChange(parseClassicIntoBatches(classicText, mode))
     } else {
       onBatchesChange(visualToBatchOutputs(batches, uploadedPaths))
     }
@@ -926,7 +1283,10 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
     if (!pendingReuse || pendingReuse === prevReuse.current) return
     prevReuse.current = pendingReuse
     if (!classicMode) {
-      const newCard: VisualBatch = { title: pendingReuse.title ?? 'Duplicated', terms: pendingReuse.terms.join('\n') }
+      const newCard: VisualBatch = {
+        title: pendingReuse.title ?? 'Duplicated',
+        terms: sanitizeTermsInput(pendingReuse.terms.join('\n'), mode),
+      }
       const updated = [...batches, newCard]
       setBatches(updated)
       onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
@@ -936,7 +1296,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
       const newBlock = `${header}\n${termStr}`
       setClassicText(newBlock)
       try { localStorage.setItem(STORAGE_KEY, newBlock) } catch { /* ignore */ }
-      onBatchesChange(parseClassicIntoBatches(newBlock))
+      onBatchesChange(parseClassicIntoBatches(newBlock, mode))
     }
     onReuseHandled?.()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -950,19 +1310,20 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
 
     if (classicMode) {
       const blocks = pendingBundles.map(b =>
-        `# ${b.title ?? 'Batch'}\n${b.terms.join('\n')}`
+        `# ${b.title ?? 'Batch'}\n${limitTermsForMode(b.terms, mode).join('\n')}`
       ).join('\n\n')
       const newText = classicText.trim() ? `${classicText.trim()}\n\n${blocks}` : blocks
       setClassicText(newText)
       try { localStorage.setItem(STORAGE_KEY, newText) } catch { /* ignore */ }
-      onBatchesChange(parseClassicIntoBatches(newText))
+      onBatchesChange(parseClassicIntoBatches(newText, mode))
     } else {
       const newCards: VisualBatch[] = pendingBundles.map(b => ({
         title: b.title ?? 'Batch',
-        terms: b.terms.join('\n'),
+        terms: limitTermsForMode(b.terms, mode).join('\n'),
         colorTheme: b.colorTheme,
         customGradeParams: b.customGradeParams,
         accentFolder: b.accentFolder,
+        layeredBackgroundVideoQuery: mode === 'layered' ? b.layeredBackgroundVideoQuery : undefined,
       }))
       const onlyEmptyBatch = batches.length === 1 && !batches[0].terms.trim()
       const updated = onlyEmptyBatch ? newCards : [...batches, ...newCards]
@@ -974,13 +1335,39 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
   }, [pendingBundles])
 
   function handleClassicChange(text: string) {
-    setClassicText(text)
-    try { localStorage.setItem(STORAGE_KEY, text) } catch { /* ignore */ }
-    onBatchesChange(parseClassicIntoBatches(text))
+    const nextText = text
+    setClassicText(nextText)
+    try { localStorage.setItem(STORAGE_KEY, nextText) } catch { /* ignore */ }
+    onBatchesChange(parseClassicIntoBatches(nextText, mode))
+  }
+
+  function visualBatchesToClassicText(vBatches: VisualBatch[]): string {
+    const blocks = vBatches
+      .map((batch, idx) => {
+        const title = batch.title.trim() || `Batch ${idx + 1}`
+        const terms = limitTermsForMode(parseBatchText(batch.terms), mode)
+        if (terms.length === 0) return ''
+        return `# ${title}\n${terms.join('\n')}`
+      })
+      .filter(Boolean)
+    return blocks.join('\n\n')
+  }
+
+  function handleToggleEditorMode() {
+    if (classicMode) {
+      setClassicMode(false)
+      return
+    }
+    const nextText = visualBatchesToClassicText(batches)
+    setClassicText(nextText)
+    try { localStorage.setItem(STORAGE_KEY, nextText) } catch { /* ignore */ }
+    setClassicMode(true)
+    onBatchesChange(parseClassicIntoBatches(nextText, mode))
   }
 
   function handleBatchTermsChange(idx: number, terms: string) {
-    const updated = batches.map((b, i) => (i === idx ? { ...b, terms } : b))
+    const nextTerms = sanitizeTermsInput(terms, mode)
+    const updated = batches.map((b, i) => (i === idx ? { ...b, terms: nextTerms } : b))
     setBatches(updated)
     onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
   }
@@ -1054,12 +1441,13 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
       const trimmed = line.trim()
       if (trimmed.startsWith('#')) {
         if (current.terms.trim()) result.push(current)
-        const title = trimmed.slice(1).trim() || `Batch ${result.length + 2}`
-        current = { title, terms: '' }
-      } else if (trimmed) {
-        current.terms += (current.terms ? '\n' : '') + trimmed
-      }
+      const title = trimmed.slice(1).trim() || `Batch ${result.length + 2}`
+      current = { title, terms: '' }
+    } else if (trimmed) {
+      const candidate = current.terms ? `${current.terms}\n${trimmed}` : trimmed
+      current.terms = sanitizeTermsInput(candidate, mode)
     }
+  }
     if (current.terms.trim()) result.push(current)
     const final = result.length ? result : [{ title: 'Batch 1', terms: '' }]
     setBatches(final)
@@ -1094,7 +1482,7 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
             Clear
           </button>
           <button
-            onClick={() => setClassicMode(m => !m)}
+            onClick={handleToggleEditorMode}
             className="text-xs text-brand-500 hover:underline"
           >
             {classicMode ? 'Visual editor' : 'Classic text'}
@@ -1127,18 +1515,26 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
           {batches.map((batch, idx) => {
             const themeOpt = BATCH_THEME_OPTIONS.find(o => o.value === batch.colorTheme)
             const hasThemeOverride = batch.colorTheme !== undefined
-            const hasAccentOverride = batch.accentFolder !== undefined
+            const hasAccentOverride = mode !== 'clips' && batch.accentFolder !== undefined
             const hasTextOverlay = !!(batch.textOverlay?.enabled && batch.textOverlay.text.trim())
-            const hasOverride = hasThemeOverride || hasAccentOverride || hasTextOverlay
+            const hasLayeredBg = mode === 'layered' && (batch.layeredBackgroundVideoUrls?.length ?? 0) > 0
+            const hasOverride = hasThemeOverride || hasAccentOverride || hasTextOverlay || hasLayeredBg
+            const isHighlightedBatch = !!highlightedBatchTitle && batch.title.trim() === highlightedBatchTitle.trim()
 
             return (
               <div
                 key={idx}
-                className={`rounded-xl border bg-stone-800 p-3 transition-colors ${dragOverIdx === idx ? 'border-brand-500/60 bg-stone-800/80' : 'border-stone-700'}`}
-                onDragOver={e => { e.preventDefault(); setDragOverIdx(idx) }}
-                onDragEnter={e => { e.preventDefault(); setDragOverIdx(idx) }}
-                onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverIdx(null) }}
-                onDrop={e => { e.preventDefault(); setDragOverIdx(null); handleFileUpload(idx, e.dataTransfer.files) }}
+                className={`rounded-xl border bg-stone-800 p-3 transition-all duration-500 ${
+                  isHighlightedBatch
+                    ? 'border-brand-500 shadow-[0_0_0_1px_rgba(217,132,39,0.35),0_0_22px_rgba(217,132,39,0.18)]'
+                    : mode === 'images' && dragOverIdx === idx
+                      ? 'border-brand-500/60 bg-stone-800/80'
+                      : 'border-stone-700'
+                }`}
+                onDragOver={mode === 'images' ? (e => { e.preventDefault(); setDragOverIdx(idx) }) : undefined}
+                onDragEnter={mode === 'images' ? (e => { e.preventDefault(); setDragOverIdx(idx) }) : undefined}
+                onDragLeave={mode === 'images' ? (e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverIdx(null) }) : undefined}
+                onDrop={mode === 'images' ? (e => { e.preventDefault(); setDragOverIdx(null); handleFileUpload(idx, e.dataTransfer.files) }) : undefined}
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 flex-1 min-w-0 group">
@@ -1163,9 +1559,26 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                   value={batch.terms}
                   onChange={e => handleBatchTermsChange(idx, e.target.value)}
                   rows={3}
-                  placeholder="one search term per line"
+                  placeholder={mode === 'clips' ? 'up to 3 search terms, one per line' : 'one search term per line'}
                   className="w-full rounded-lg border border-stone-700 bg-stone-900 px-2 py-1.5 font-mono text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
                 />
+                {mode === 'clips' && (
+                  <p className="mt-1 text-[10px] text-stone-600">
+                    Video clip batches are capped at 3 search terms.
+                  </p>
+                )}
+
+                {mode === 'layered' && (
+                  <BackgroundVideoPicker
+                    selectedUrls={batch.layeredBackgroundVideoUrls ?? []}
+                    onChange={urls => handleBatchOverride(idx, { layeredBackgroundVideoUrls: urls })}
+                    compact
+                    initialQuery={batch.layeredBackgroundVideoQuery}
+                    dataTourRoot={idx === 0 ? 'layered-bg-panel' : undefined}
+                    dataTourSearch={idx === 0 ? 'layered-bg-search' : undefined}
+                    dataTourFavorites={idx === 0 ? 'layered-bg-favorites' : undefined}
+                  />
+                )}
 
                 {/* Bottom row: style override button + image upload */}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1207,24 +1620,27 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
                         onChange={patch => handleBatchOverride(idx, patch)}
                         onClose={() => setOpenPopover(null)}
                         onApplyOverlayToAll={batches.length > 1 ? handleApplyOverlayToAll : undefined}
+                        userPhilosophers={userPhilosophers}
+                        mode={mode}
                       />
                     )}
                   </div>
 
-                  {/* Image upload */}
-                  <label className="cursor-pointer rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200">
-                    {uploading[idx] ? 'Uploading…' : 'Upload photos'}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      multiple
-                      className="hidden"
-                      disabled={uploading[idx]}
-                      onChange={e => handleFileUpload(idx, e.target.files)}
-                    />
-                  </label>
+                  {mode === 'images' && (
+                    <label className="cursor-pointer rounded border border-stone-700 px-2 py-0.5 text-xs text-stone-400 hover:border-stone-500 hover:text-stone-200">
+                      {uploading[idx] ? 'Uploading…' : 'Upload photos'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        className="hidden"
+                        disabled={uploading[idx]}
+                        onChange={e => handleFileUpload(idx, e.target.files)}
+                      />
+                    </label>
+                  )}
 
-                  {(uploadedPaths[idx]?.length ?? 0) > 0 && (
+                  {mode === 'images' && (uploadedPaths[idx]?.length ?? 0) > 0 && (
                     uploadedPaths[idx].map((path, pi) => (
                       <span key={pi} className="flex items-center gap-1 rounded border border-stone-700 bg-stone-900 px-2 py-0.5 text-xs text-stone-400">
                         <span className="max-w-[120px] truncate">{path.split('/').pop()}</span>
@@ -1255,3 +1671,4 @@ export default function BatchEditor({ onBatchesChange, pendingReuse, onReuseHand
     </div>
   )
 }
+

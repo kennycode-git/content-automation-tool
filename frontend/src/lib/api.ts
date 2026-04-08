@@ -74,6 +74,32 @@ export interface TextOverlayConfig {
   outline?: boolean
 }
 
+export type VoiceoverProvider = 'elevenlabs'
+export type VoiceoverModel = 'eleven_v3' | 'eleven_multilingual_v2' | 'eleven_flash_v2_5' | 'eleven_turbo_v2_5'
+export type VoiceoverScriptMode = 'auto_from_batch' | 'custom'
+export type SubtitleFormat = 'burned' | 'srt'
+
+export interface AiVoiceoverConfig {
+  enabled: boolean
+  provider: VoiceoverProvider
+  model_id: VoiceoverModel
+  voice_id?: string | null
+  voice_label?: string | null
+  script_mode: VoiceoverScriptMode
+  script_text?: string | null
+  subtitles_enabled: boolean
+  subtitle_format: SubtitleFormat
+}
+
+export interface LayeredConfig {
+  background_video_urls: string[]
+  foreground_opacity: number
+  background_opacity: number
+  foreground_speed: number
+  grade_target: 'foreground' | 'background' | 'both'
+  crossfade_duration: number
+}
+
 export interface GenerateRequest {
   search_terms: string[]
   resolution?: string
@@ -91,8 +117,12 @@ export interface GenerateRequest {
   image_source?: 'unsplash' | 'pexels' | 'both'
   custom_grade_params?: CustomGradeParams
   philosopher?: string | null
+  philosopher_count?: number
   grade_philosopher?: boolean
+  philosopher_is_user?: boolean
   text_overlay?: TextOverlayConfig | null
+  ai_voiceover?: AiVoiceoverConfig | null
+  layered_config?: LayeredConfig | null
 }
 
 export interface GenerateResponse {
@@ -108,6 +138,7 @@ export interface JobStatus {
   thumbnail_url?: string | null
   error_message: string | null
   batch_title?: string | null
+  mode?: string | null
   search_terms?: string[] | null
   resolution?: string | null
   seconds_per_image?: number | null
@@ -116,9 +147,22 @@ export interface JobStatus {
   allow_repeats?: boolean | null
   color_theme?: string | null
   max_per_query?: number | null
+  image_source?: string | null
+  accent_folder?: string | null
+  philosopher?: string | null
+  philosopher_count?: number | null
+  grade_philosopher?: boolean | null
+  philosopher_is_user?: boolean | null
+  transition?: string | null
+  transition_duration?: number | null
+  max_clip_duration?: number | null
+  clip_count?: number | null
+  layered_config?: LayeredConfig | null
   preset_name?: string | null
   preview_images?: string[] | null
   custom_grade_params?: CustomGradeParams | null
+  text_overlay?: TextOverlayConfig | null
+  ai_voiceover?: AiVoiceoverConfig | null
   images_cached?: boolean | null
   created_at: string
   completed_at: string | null
@@ -152,7 +196,11 @@ async function authHeaders(): Promise<HeadersInit> {
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.detail ?? `HTTP ${res.status}`)
+    const detail = body.detail
+    const msg = Array.isArray(detail)
+      ? detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+      : (detail ?? `HTTP ${res.status}`)
+    throw new Error(msg)
   }
   return res.json() as Promise<T>
 }
@@ -208,6 +256,13 @@ export interface RegradeRequest {
   seconds_per_image?: number
   total_seconds?: number
   selected_paths?: string[]
+  custom_grade_params?: CustomGradeParams | null
+  accent_folder?: string | null
+  philosopher?: string | null
+  philosopher_count?: number
+  grade_philosopher?: boolean
+  philosopher_is_user?: boolean
+  layered_config?: LayeredConfig | null
 }
 
 export async function regradeJob(jobId: string, req: RegradeRequest): Promise<GenerateResponse> {
@@ -222,6 +277,15 @@ export async function regradeJob(jobId: string, req: RegradeRequest): Promise<Ge
 export async function getRawImages(jobId: string): Promise<PreviewBatchResult> {
   const res = await fetch(`${API_URL}/api/jobs/${jobId}/raw-images`, {
     headers: await authHeaders(),
+  })
+  return handleResponse<PreviewBatchResult>(res)
+}
+
+export async function reviewRegradeImages(jobId: string, req: RegradeRequest): Promise<PreviewBatchResult> {
+  const res = await fetch(`${API_URL}/api/jobs/${jobId}/review-images`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
   })
   return handleResponse<PreviewBatchResult>(res)
 }
@@ -273,6 +337,11 @@ export interface PreviewBatchRequest {
   uploaded_image_paths?: string[]
   color_theme?: string
   custom_grade_params?: Record<string, number>
+  accent_folder?: string | null
+  philosopher?: string | null
+  philosopher_count?: number
+  grade_philosopher?: boolean
+  philosopher_is_user?: boolean
 }
 
 export interface PreviewStageRequest {
@@ -287,12 +356,21 @@ export interface PreviewStageRequest {
 
 export interface PreviewImageItem {
   storage_path: string
+  render_storage_path?: string | null
   signed_url: string
+  is_philosopher?: boolean
+  is_accent?: boolean
+  source_key?: string | null
 }
 
 export interface PreviewBatchResult {
   batch_title: string | null
   search_terms: string[]
+  color_theme?: string | null
+  accent_folder?: string | null
+  philosopher?: string | null
+  grade_philosopher?: boolean
+  philosopher_is_user?: boolean
   images: PreviewImageItem[]
 }
 
@@ -370,7 +448,68 @@ export async function findMoreImages(req: FindMoreRequest): Promise<FindMoreResp
   return handleResponse<FindMoreResponse>(res)
 }
 
+export interface RefreshPhilosopherRequest {
+  philosopher: string
+  resolution?: string
+  color_theme?: string
+  grade_philosopher?: boolean
+  philosopher_is_user?: boolean
+  exclude_source_keys?: string[]
+}
+
+export interface RefreshPhilosopherResponse {
+  image: PreviewImageItem
+}
+
+export async function refreshPhilosopherImage(req: RefreshPhilosopherRequest): Promise<RefreshPhilosopherResponse> {
+  if (DEV_BYPASS) {
+    return {
+      image: {
+        storage_path: `dev/philosopher/${crypto.randomUUID()}.jpg`,
+        signed_url: '',
+        is_philosopher: true,
+        source_key: crypto.randomUUID(),
+      },
+    }
+  }
+  const res = await fetch(`${API_URL}/api/preview-refresh-philosopher`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<RefreshPhilosopherResponse>(res)
+}
+
 // ─── Image upload ─────────────────────────────────────────────────────────────
+
+export interface RefreshAccentRequest {
+  accent_folder: string
+  resolution?: string
+  exclude_source_keys?: string[]
+}
+
+export interface RefreshAccentResponse {
+  image: PreviewImageItem
+}
+
+export async function refreshAccentImage(req: RefreshAccentRequest): Promise<RefreshAccentResponse> {
+  if (DEV_BYPASS) {
+    return {
+      image: {
+        storage_path: `dev/accent/${crypto.randomUUID()}.jpg`,
+        signed_url: '',
+        is_accent: true,
+        source_key: crypto.randomUUID(),
+      },
+    }
+  }
+  const res = await fetch(`${API_URL}/api/preview-refresh-accent`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<RefreshAccentResponse>(res)
+}
 
 export async function uploadImages(files: File[]): Promise<{ paths: string[] }> {
   const token = await getAccessToken()
@@ -430,6 +569,14 @@ export interface SchedulePostRequest {
   draft_mode?: boolean
 }
 
+export interface PostNowRequest {
+  job_id: string
+  tiktok_account_id: string
+  caption?: string
+  hashtags?: string[]
+  privacy_level?: string
+}
+
 export async function getTikTokAuthUrl(): Promise<{ url: string }> {
   const res = await fetch(`${API_URL}/api/tiktok/auth-url`, { headers: await authHeaders() })
   return handleResponse<{ url: string }>(res)
@@ -479,6 +626,15 @@ export async function getScheduledPosts(): Promise<ScheduledPost[]> {
   return handleResponse<ScheduledPost[]>(res)
 }
 
+export async function postNow(req: PostNowRequest): Promise<{ id: string; publish_id: string }> {
+  const res = await fetch(`${API_URL}/api/tiktok/post-now`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<{ id: string; publish_id: string }>(res)
+}
+
 export async function cancelScheduledPost(id: string): Promise<void> {
   const res = await fetch(`${API_URL}/api/tiktok/scheduled/${id}`, {
     method: 'DELETE',
@@ -488,4 +644,146 @@ export async function cancelScheduledPost(id: string): Promise<void> {
     const body = await res.json().catch(() => ({}))
     throw new Error(body.detail ?? `HTTP ${res.status}`)
   }
+}
+
+// ── User philosophers ─────────────────────────────────────────────────────────
+
+export interface UserPhilosopher {
+  key: string
+  name: string
+  image_count: number
+  created_at: string
+}
+
+export async function listUserPhilosophers(): Promise<UserPhilosopher[]> {
+  if (DEV_BYPASS) return []
+  const res = await fetch(`${API_URL}/api/philosophers`, { headers: await authHeaders() })
+  return handleResponse<UserPhilosopher[]>(res)
+}
+
+export async function createUserPhilosopher(name: string): Promise<UserPhilosopher> {
+  const res = await fetch(`${API_URL}/api/philosophers`, {
+    method: 'POST',
+    headers: { ...await authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  return handleResponse<UserPhilosopher>(res)
+}
+
+export async function deleteUserPhilosopher(key: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/philosophers/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    headers: await authHeaders(),
+  })
+  if (!res.ok && res.status !== 204) throw new Error(await res.text())
+}
+
+export async function uploadPhilosopherImages(key: string, files: File[]): Promise<{ uploaded: number }> {
+  const form = new FormData()
+  files.forEach(f => form.append('files', f))
+  const token = await getAccessToken()
+  const res = await fetch(`${API_URL}/api/philosophers/${encodeURIComponent(key)}/images`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  return handleResponse<{ uploaded: number }>(res)
+}
+
+// ─── Video Clips ──────────────────────────────────────────────────────────────
+
+export interface ClipSearchResult {
+  id: string
+  duration: number
+  thumbnail: string
+  preview_url: string
+  download_url: string
+  width: number
+  height: number
+}
+
+export interface SelectedClip {
+  id: string
+  download_url: string
+  preview_url: string
+  thumbnail: string
+  duration: number
+  trim_start: number
+  trim_end: number   // 0 = use full clip duration
+}
+
+export interface ClipGenerateRequest {
+  clips: Array<{
+    id: string
+    download_url: string
+    trim_start: number
+    trim_end: number
+    duration: number
+  }>
+  resolution?: string
+  fps?: number
+  color_theme?: string
+  transition?: 'cut' | 'fade_black' | 'crossfade'
+  transition_duration?: number
+  max_clip_duration?: number
+  batch_title?: string | null
+  text_overlay?: TextOverlayConfig | null
+  ai_voiceover?: AiVoiceoverConfig | null
+}
+
+export async function fetchVideoClips(
+  terms: string[],
+  perTerm: number,
+  colorTheme: string,
+  signal?: AbortSignal,
+): Promise<{ clips: ClipSearchResult[] }> {
+  if (DEV_BYPASS) return { clips: [] }
+  const params = new URLSearchParams({
+    terms: terms.join(','),
+    per_term: String(perTerm),
+    color_theme: colorTheme,
+  })
+  const res = await fetch(`${API_URL}/api/clips/search?${params}`, {
+    headers: await authHeaders(),
+    signal,
+  })
+  return handleResponse<{ clips: ClipSearchResult[] }>(res)
+}
+
+export async function generateFromClips(req: ClipGenerateRequest): Promise<GenerateResponse> {
+  if (DEV_BYPASS) return { job_id: crypto.randomUUID(), status: 'queued' }
+  const res = await fetch(`${API_URL}/api/clips/generate`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(req),
+  })
+  return handleResponse<GenerateResponse>(res)
+}
+
+// ─── Layered rendering ────────────────────────────────────────────────────────
+
+export interface BgVideoResult {
+  id: string
+  duration: number
+  thumbnail: string
+  preview_url: string
+  download_url: string
+  width: number
+  height: number
+}
+
+export interface BgVideoSearchResponse {
+  page: number
+  per_page: number
+  has_more: boolean
+  items: BgVideoResult[]
+}
+
+export async function searchBgVideos(query: string, count = 9, page = 1): Promise<BgVideoSearchResponse> {
+  if (DEV_BYPASS) return { page, per_page: count, has_more: false, items: [] }
+  const params = new URLSearchParams({ query, count: String(count), page: String(page) })
+  const res = await fetch(`${API_URL}/api/layered/search-backgrounds?${params}`, {
+    headers: await authHeaders(),
+  })
+  return handleResponse<BgVideoSearchResponse>(res)
 }

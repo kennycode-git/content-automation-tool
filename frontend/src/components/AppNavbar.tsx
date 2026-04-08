@@ -53,9 +53,12 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
   return (
     <nav className="border-b border-stone-800 bg-stone-900 px-6 py-3 flex items-center justify-between">
       <div className="flex items-center gap-5">
-        <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="" className="h-[40px] w-auto" />
-          <img src="/just%20text.png" alt="PassiveClip" className="hidden sm:block h-9 w-auto" />
+        <div className="flex items-center gap-2 min-w-0">
+          <img src="/logo.png" alt="PassiveClip" className="h-8 w-auto object-contain sm:hidden" />
+          <div className="hidden sm:flex items-center gap-2">
+            <img src="/logo.png" alt="" className="h-[40px] w-auto object-contain" />
+            <img src="/just%20text.png" alt="PassiveClip" className="h-9 w-auto object-contain" />
+          </div>
         </div>
 
         {/* Tool tabs */}
@@ -80,7 +83,7 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
           >
             Image
           </Link>
-          <div className="group relative">
+          <div className="group relative hidden sm:block">
             <span className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-stone-600 cursor-default select-none">
               Scheduling
               <span className="text-[9px] font-semibold tracking-wide bg-stone-800 text-stone-600 border border-stone-700/60 px-1.5 py-0.5 rounded-full">
@@ -89,7 +92,7 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
             </span>
             <div className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-2 w-52 rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50">
               <p className="text-xs font-semibold text-white mb-1">Scheduled Publishing</p>
-              <p className="text-xs text-stone-300 leading-relaxed">Queue your generated videos to post automatically. Set a date and time, choose your platform, and let PassiveClip handle the rest with no manual uploads needed.</p>
+              <p className="text-xs text-stone-300 leading-relaxed">TikTok publishing is staying disabled on live until app approval is fully in place.</p>
             </div>
           </div>
           <div className="hidden lg:flex items-center gap-0.5">
@@ -113,10 +116,10 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
         {onShowTour && (
           <button
             onClick={onShowTour}
-            className="text-xs text-stone-500 hover:text-stone-300 transition"
-            title="Show tour"
+            className="text-xs font-medium px-2.5 py-1 rounded-md border border-stone-700 text-stone-400 hover:text-stone-200 hover:border-stone-500 transition"
+            title="Show tutorial"
           >
-            ?
+            Tutorial
           </button>
         )}
 
@@ -135,10 +138,12 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
               <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-stone-700 bg-stone-900 shadow-2xl z-20 overflow-hidden">
                 {/* Credits / usage */}
                 {usageInfo && (
-                  usageInfo.plan === 'pro' ? (
+                  (usageInfo.plan === 'pro' || (usageInfo.plan === 'trial' && usageInfo.limit === null)) ? (
                     <div className="px-4 py-3 border-b border-stone-800">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-semibold text-stone-100">Unlimited</span>
+                        <span className="text-sm font-semibold text-stone-100">
+                          {usageInfo.plan === 'trial' ? 'Unlimited for now' : 'Unlimited'}
+                        </span>
                         <span className="text-xs text-stone-500">{usageInfo.render_count} used</span>
                       </div>
                       <div className="h-2 w-full rounded-full bg-stone-800 overflow-hidden">

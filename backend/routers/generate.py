@@ -59,6 +59,17 @@ def _trial_expired(sub: dict) -> bool:
         return False
 
 
+def _get_render_count(db, user_id: str, *, lifetime: bool = False) -> int:
+    query = db.table("usage").select("render_count").eq("user_id", user_id)
+    if not lifetime:
+        query = query.eq("month", _current_month())
+    usage_result = query.execute()
+    rows = usage_result.data or []
+    if lifetime:
+        return sum(int(row.get("render_count", 0) or 0) for row in rows)
+    return int(rows[0]["render_count"]) if rows else 0
+
+
 @router.post("/generate", response_model=GenerateResponse, status_code=202)
 async def generate(
     body: GenerateRequest,
@@ -90,14 +101,7 @@ async def generate(
         # --- Usage gate ---
         limit = PLAN_LIMITS.get(plan)
         if limit is not None:
-            usage_result = (
-                db.table("usage")
-                .select("render_count")
-                .eq("user_id", user_id)
-                .eq("month", _current_month())
-                .execute()
-            )
-            count = usage_result.data[0]["render_count"] if usage_result.data else 0
+            count = _get_render_count(db, user_id)
             if count >= limit:
                 raise HTTPException(
                     status_code=429,
@@ -122,8 +126,12 @@ async def generate(
         image_source=body.image_source,
         custom_grade_params=body.custom_grade_params.model_dump() if body.custom_grade_params else None,
         philosopher=body.philosopher or None,
+        philosopher_count=body.philosopher_count,
         grade_philosopher=body.grade_philosopher,
+        philosopher_is_user=body.philosopher_is_user,
         text_overlay=body.text_overlay.model_dump() if body.text_overlay else None,
+        ai_voiceover=body.ai_voiceover.model_dump() if body.ai_voiceover else None,
+        layered_config=body.layered_config.model_dump() if body.layered_config else None,
     )
     job_id = await create_job(user_id, config, db)
 
@@ -221,12 +229,7 @@ async def generate_variants(
         # --- Usage gate (check enough renders remain for all variants) ---
         limit = PLAN_LIMITS.get(plan)
         if limit is not None:
-            usage_result = (
-                db.table("usage").select("render_count")
-                .eq("user_id", user_id).eq("month", _current_month())
-                .execute()
-            )
-            count = usage_result.data[0]["render_count"] if usage_result.data else 0
+            count = _get_render_count(db, user_id)
             if count + len(body.themes) > limit:
                 raise HTTPException(
                     status_code=429,
@@ -349,23 +352,9 @@ async def get_usage(user_id: str = Depends(get_current_user_id)):
     plan = sub.get("plan", "none")
 
     trial_expires_at = sub.get("trial_expires_at") if plan == "trial" else None
-    trial_expired = False
-    if plan == "trial" and trial_expires_at:
-        try:
-            expires = datetime.fromisoformat(trial_expires_at.replace("Z", "+00:00"))
-            trial_expired = datetime.now(timezone.utc) > expires
-        except Exception:
-            pass
-
-    usage_result = (
-        db.table("usage")
-        .select("render_count")
-        .eq("user_id", user_id)
-        .eq("month", _current_month())
-        .execute()
-    )
-    render_count = usage_result.data[0]["render_count"] if usage_result.data else 0
-    limit = PLAN_LIMITS.get(plan)
+    trial_expired = False if plan == "trial" else False
+    render_count = _get_render_count(db, user_id, lifetime=(plan == "trial"))
+    limit = None if plan == "trial" else PLAN_LIMITS.get(plan)
 
     return {
         "plan": plan,

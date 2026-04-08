@@ -8,11 +8,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { listPresets, createPreset, deletePreset } from '../lib/api'
-import type { VideoSettings } from './SettingsPanel'
 
 interface Props {
-  currentSettings: VideoSettings
-  onApply: (settings: Partial<VideoSettings>, name: string) => void
+  currentSettings: Record<string, unknown>
+  onApply: (settings: Record<string, unknown>, name: string) => void
 }
 
 export default function PresetManager({ currentSettings, onApply }: Props) {
@@ -59,7 +58,7 @@ export default function PresetManager({ currentSettings, onApply }: Props) {
             className="flex items-center gap-1 rounded-full border border-stone-700 bg-stone-800 px-2.5 py-0.5"
           >
             <button
-              onClick={() => onApply(p.settings as Partial<VideoSettings>, p.name)}
+              onClick={() => onApply(p.settings, p.name)}
               className="text-xs text-stone-300 hover:text-brand-400"
             >
               {p.name}

@@ -154,18 +154,20 @@ def _build_drawtext(overlay: dict, width: int, height: int) -> Optional[str]:
     n = len(lines)
 
     # Measure actual pixel width of the widest line using PIL font metrics.
-    # This gives accurate block centering — widest line dead-centre on screen,
-    # others aligned within that block. Same approach as TikTok / CapCut.
+    # This gives an accurate block width so the text block can be genuinely
+    # centered on screen (widest line dead-center, others left/right-aligned
+    # within the block) — matching how TikTok/CapCut position text.
     try:
         pil_font = ImageFont.truetype(font_path, fontsize)
         measured_widths = [int(pil_font.getlength(ln)) for ln in lines if ln]
         max_block_w = min(max(measured_widths, default=1), int(usable_width))
     except Exception:
+        # Fallback to approximation if PIL fails
         char_w = fontsize * 0.52
         max_line_len = max((len(ln) for ln in lines if ln), default=10)
         max_block_w = min(int(max_line_len * char_w), int(usable_width))
 
-    # block_left: position the text block horizontally based on position grid
+    # block_left: left edge of the text block on the frame
     if horiz == "left":
         block_left = mx
     elif horiz == "right":
@@ -300,7 +302,8 @@ def build_ffmpeg_command(
         "-r", str(fps),
         "-pix_fmt", "yuv420p",
         "-threads", "2",
-        "-preset", "ultrafast",
+        "-preset", "veryfast",
+        "-crf", "18",
         "-movflags", "faststart",
         out_file,
     ]

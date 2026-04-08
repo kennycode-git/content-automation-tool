@@ -69,7 +69,7 @@ export default function Pricing() {
   return (
     <div
       className="relative flex min-h-screen flex-col items-center justify-center bg-stone-950 px-4 py-16 cursor-pointer"
-      onClick={() => navigate('/dashboard')}
+      onClick={() => navigate('/account')}
     >
       <div onClick={e => e.stopPropagation()} className="flex flex-col items-center cursor-default">
       <h1 className="mb-10 text-3xl font-bold text-brand-500">Choose your plan</h1>
@@ -117,13 +117,6 @@ export default function Pricing() {
           </div>
         ))}
       </div>
-
-      <p className="mt-8 text-xs text-stone-600">
-        Already have an account?{' '}
-        <a href="/login" className="text-brand-500 hover:underline">
-          Sign in
-        </a>
-      </p>
       </div>
       <p className="absolute bottom-4 text-xs text-stone-700 pointer-events-none select-none">
         Click anywhere outside to go back

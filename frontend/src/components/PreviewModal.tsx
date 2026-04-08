@@ -11,25 +11,35 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { PreviewBatchResult } from '../lib/api'
-import { uploadImages, findMoreImages } from '../lib/api'
+import { uploadImages, findMoreImages, refreshAccentImage, refreshPhilosopherImage } from '../lib/api'
 
 export interface ConfirmedBatch {
   batch_title: string | null
   search_terms: string[]
-  images: Array<{ storage_path: string; display_url: string }>
+  images: Array<{ storage_path: string; render_storage_path?: string; display_url: string }>
 }
 
 interface CuratedImage {
   id: string              // stable key for React reconciliation
   storage_path: string    // '' while upload is pending
+  render_storage_path?: string
   display_url: string     // objectURL (user-added) or signed_url (staged)
   uploading?: boolean
   upload_failed?: boolean
+  is_philosopher?: boolean
+  is_accent?: boolean
+  source_key?: string | null
+  refreshing?: boolean
 }
 
 interface CuratedBatch {
   batch_title: string | null
   search_terms: string[]
+  color_theme?: string | null
+  accent_folder?: string | null
+  philosopher?: string | null
+  grade_philosopher?: boolean
+  philosopher_is_user?: boolean
   images: CuratedImage[]
 }
 
@@ -47,10 +57,19 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
     batches.map(b => ({
       batch_title: b.batch_title,
       search_terms: b.search_terms,
+      color_theme: b.color_theme,
+      accent_folder: b.accent_folder,
+      philosopher: b.philosopher,
+      grade_philosopher: b.grade_philosopher,
+      philosopher_is_user: b.philosopher_is_user,
       images: b.images.map(img => ({
         id: crypto.randomUUID(),
         storage_path: img.storage_path,
+        render_storage_path: img.render_storage_path ?? img.storage_path,
         display_url: img.signed_url,
+        is_philosopher: img.is_philosopher,
+        is_accent: img.is_accent,
+        source_key: img.source_key,
       })),
     }))
   )
@@ -162,7 +181,7 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
             if (placeholderIdx === -1) return img
             const path = paths[placeholderIdx]
             if (!path) return { ...img, uploading: false, upload_failed: true }
-            return { ...img, storage_path: path, uploading: false }
+            return { ...img, storage_path: path, render_storage_path: path, uploading: false }
           })
           return { ...b, images }
         })
@@ -238,7 +257,11 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
       const newImages: CuratedImage[] = result.images.map(img => ({
         id: crypto.randomUUID(),
         storage_path: img.storage_path,
+        render_storage_path: img.render_storage_path ?? img.storage_path,
         display_url: img.signed_url,
+        is_philosopher: img.is_philosopher,
+        is_accent: img.is_accent,
+        source_key: img.source_key,
       }))
       setCuratedBatches(prev =>
         prev.map((b, i) =>
@@ -253,6 +276,150 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
     }
   }
 
+  async function handleRefreshPhilosopher(batchIdx: number, imageId: string) {
+    const currentBatch = curatedBatches[batchIdx]
+    const currentImage = currentBatch?.images.find(img => img.id === imageId)
+    if (!currentBatch?.philosopher || !currentImage || currentImage.refreshing) return
+
+    setCuratedBatches(prev =>
+      prev.map((b, i) =>
+        i === batchIdx
+          ? {
+              ...b,
+              images: b.images.map(img => (
+                img.id === imageId ? { ...img, refreshing: true, upload_failed: false } : img
+              )),
+            }
+          : b
+      )
+    )
+
+    try {
+      const excludeSourceKeys = currentBatch.images
+        .filter(img => img.is_philosopher && img.id !== imageId && img.source_key)
+        .map(img => img.source_key as string)
+      if (currentImage.source_key) excludeSourceKeys.push(currentImage.source_key)
+
+      const result = await refreshPhilosopherImage({
+        philosopher: currentBatch.philosopher,
+        resolution,
+        color_theme: currentBatch.color_theme ?? colorTheme,
+        grade_philosopher: currentBatch.grade_philosopher,
+        philosopher_is_user: currentBatch.philosopher_is_user,
+        exclude_source_keys: excludeSourceKeys,
+      })
+
+      setCuratedBatches(prev =>
+        prev.map((b, i) =>
+          i === batchIdx
+            ? {
+                ...b,
+                images: b.images.map(img => (
+                  img.id === imageId
+                    ? {
+                        ...img,
+                        storage_path: result.image.storage_path,
+                        render_storage_path: result.image.render_storage_path ?? result.image.storage_path,
+                        display_url: result.image.signed_url,
+                        source_key: result.image.source_key,
+                        is_philosopher: true,
+                        refreshing: false,
+                        upload_failed: false,
+                      }
+                    : img
+                )),
+              }
+            : b
+        )
+      )
+    } catch (err) {
+      setCuratedBatches(prev =>
+        prev.map((b, i) =>
+          i === batchIdx
+            ? {
+                ...b,
+                images: b.images.map(img => (
+                  img.id === imageId ? { ...img, refreshing: false } : img
+                )),
+              }
+            : b
+        )
+      )
+      alert(err instanceof Error ? err.message : 'Could not refresh philosopher image.')
+    }
+  }
+
+  async function handleRefreshAccent(batchIdx: number, imageId: string) {
+    const currentBatch = curatedBatches[batchIdx]
+    const currentImage = currentBatch?.images.find(img => img.id === imageId)
+    if (!currentBatch?.accent_folder || !currentImage || currentImage.refreshing) return
+
+    setCuratedBatches(prev =>
+      prev.map((b, i) =>
+        i === batchIdx
+          ? {
+              ...b,
+              images: b.images.map(img => (
+                img.id === imageId ? { ...img, refreshing: true, upload_failed: false } : img
+              )),
+            }
+          : b
+      )
+    )
+
+    try {
+      const excludeSourceKeys = currentBatch.images
+        .filter(img => img.is_accent && img.id !== imageId && img.source_key)
+        .map(img => img.source_key as string)
+      if (currentImage.source_key) excludeSourceKeys.push(currentImage.source_key)
+
+      const result = await refreshAccentImage({
+        accent_folder: currentBatch.accent_folder,
+        resolution,
+        exclude_source_keys: excludeSourceKeys,
+      })
+
+      setCuratedBatches(prev =>
+        prev.map((b, i) =>
+          i === batchIdx
+            ? {
+                ...b,
+                images: b.images.map(img => (
+                  img.id === imageId
+                    ? {
+                        ...img,
+                        storage_path: result.image.storage_path,
+                        render_storage_path: result.image.render_storage_path ?? result.image.storage_path,
+                        display_url: result.image.signed_url,
+                        source_key: result.image.source_key,
+                        is_accent: true,
+                        is_philosopher: false,
+                        refreshing: false,
+                        upload_failed: false,
+                      }
+                    : img
+                )),
+              }
+            : b
+        )
+      )
+    } catch (err) {
+      setCuratedBatches(prev =>
+        prev.map((b, i) =>
+          i === batchIdx
+            ? {
+                ...b,
+                images: b.images.map(img => (
+                  img.id === imageId ? { ...img, refreshing: false } : img
+                )),
+              }
+            : b
+        )
+      )
+      alert(err instanceof Error ? err.message : 'Could not refresh accent image.')
+    }
+  }
+
   function handleConfirm() {
     const clean: ConfirmedBatch[] = curatedBatches
       .map(b => ({
@@ -260,7 +427,11 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
         search_terms: b.search_terms,
         images: b.images
           .filter(img => !img.upload_failed && img.storage_path !== '')
-          .map(img => ({ storage_path: img.storage_path, display_url: img.display_url })),
+          .map(img => ({
+            storage_path: img.storage_path,
+            render_storage_path: img.render_storage_path ?? img.storage_path,
+            display_url: img.display_url,
+          })),
       }))
       .filter(b => b.images.length > 0)
     onConfirm(clean)
@@ -353,7 +524,7 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
               Find more images
             </button>
             {findMoreOpen && (
-              <div className="absolute right-0 top-full mt-1.5 z-20 w-64 rounded-xl border border-stone-700 bg-stone-900 p-4 shadow-xl">
+              <div className="absolute left-0 top-full mt-1.5 z-20 w-64 rounded-xl border border-stone-700 bg-stone-900 p-4 shadow-xl">
                 <p className="mb-3 text-xs font-medium text-stone-300">Find more images</p>
                 <div className="mb-1 flex items-center justify-between text-xs text-stone-400">
                   <span>How many to find</span>
@@ -444,6 +615,12 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
                     className={`h-full w-full object-cover transition ${isSelected ? 'brightness-75' : ''}`}
                     loading="lazy"
                   />
+                  {/* Philosopher badge */}
+                  {(img.is_philosopher || img.is_accent) && !isSelected && (
+                    <span className="absolute left-1 top-1 rounded bg-amber-900/80 px-1 py-0.5 text-[9px] font-bold text-amber-300 leading-none pointer-events-none">
+                      {img.is_philosopher ? 'P' : 'A'}
+                    </span>
+                  )}
                   {/* Selection checkmark */}
                   {isSelected && (
                     <div className="absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand-500">
@@ -463,6 +640,29 @@ export default function PreviewModal({ batches, onConfirm, onCancel, resolution 
                     <div className="absolute inset-0 flex items-center justify-center bg-red-950/80">
                       <span className="text-xs text-red-400">Failed</span>
                     </div>
+                  )}
+                  {img.refreshing && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-stone-900/70">
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-brand-400 border-t-transparent" />
+                    </div>
+                  )}
+                  {img.is_philosopher && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleRefreshPhilosopher(activeTab, img.id) }}
+                      className="absolute bottom-1 left-1 rounded-md bg-stone-900/85 px-1.5 py-1 text-[10px] font-medium text-stone-200 opacity-0 transition hover:bg-brand-500 hover:text-white group-hover:opacity-100"
+                      title="Swap for another philosopher image"
+                    >
+                      Refresh
+                    </button>
+                  )}
+                  {img.is_accent && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleRefreshAccent(activeTab, img.id) }}
+                      className="absolute bottom-1 left-1 rounded-md bg-stone-900/85 px-1.5 py-1 text-[10px] font-medium text-stone-200 opacity-0 transition hover:bg-brand-500 hover:text-white group-hover:opacity-100"
+                      title="Swap for another accent image"
+                    >
+                      Refresh
+                    </button>
                   )}
                   {/* Single remove button — stops propagation so it doesn't toggle selection */}
                   <button

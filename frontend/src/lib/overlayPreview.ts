@@ -96,15 +96,20 @@ export function buildOverlayPreviewLayout(
   width: number,
   height: number,
 ): {
+  fontFamily: string
+  fontSize: number
+  lineHeight: number
   blockLeft: number
   blockWidth: number
   lines: string[]
+  visibleLines: string[]
+  vertical: 'top' | 'middle' | 'bottom'
   positions: number[]
   textStyle: CSSProperties
 } {
   const fontFamily = OVERLAY_FONT_CSS_FAMILY[ov.font as OverlayFont] ?? 'Georgia, serif'
   const color = overlayColorHex(ov)
-  const fontSize = Math.max(3, Math.round(height * (ov.font_size_pct ?? 0.045)))
+  const fontSize = Math.max(3, Math.round(height * (ov.font_size_pct ?? 0.015)))
   const marginPct = ov.margin_pct ?? 0.05
   const marginX = Math.round(width * marginPct)
   const marginY = Math.round(height * marginPct)
@@ -159,9 +164,14 @@ export function buildOverlayPreviewLayout(
   }
 
   return {
+    fontFamily,
+    fontSize,
+    lineHeight,
     blockLeft,
     blockWidth,
     lines,
+    visibleLines: safeLines,
+    vertical,
     positions,
     textStyle,
   }

@@ -22,9 +22,29 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 ALLOWED_RESOLUTIONS = {"1080x1920", "1920x1080", "1080x1080"}
 ALLOWED_COLOR_THEMES = {"none", "warm", "dark", "grey", "blue", "red", "bw", "sepia", "low_exp", "custom", "mocha", "noir", "midnight", "dusk"}
-ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold"}
+ALLOWED_ACCENT_FOLDERS = {"blue", "red", "gold", "purple", "green"}
 ALLOWED_IMAGE_SOURCES = {"unsplash", "pexels", "both"}
-ALLOWED_PHILOSOPHERS = {"marcus_aurelius", "seneca", "epictetus", "nietzsche", "socrates", "aristotle"}
+ALLOWED_PHILOSOPHERS = {
+    "marcus_aurelius", "seneca", "epictetus", "nietzsche", "socrates", "aristotle",
+    "plato", "kant", "descartes", "hegel", "schopenhauer", "camus", "sartre",
+    "heidegger", "spinoza", "locke", "hume", "voltaire", "rousseau", "kierkegaard",
+    "wittgenstein", "diogenes", "heraclitus", "epicurus", "zeno",
+    "kafka", "dostoevsky", "watts",
+    "carl_jung", "leo_tolstoy", "tolstoy", "zhuangzi",
+}
+
+
+class UserPhilosopherCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+
+
+class UserPhilosopherResponse(BaseModel):
+    key: str
+    name: str
+    image_count: int
+    created_at: str
+
+
 ALLOWED_OVERLAY_FONTS = {
     "garamond", "cormorant", "playfair", "crimson", "philosopher", "lora",
     "outfit", "raleway", "josefin", "inter",
@@ -38,6 +58,14 @@ ALLOWED_OVERLAY_POSITIONS = {
     "bottom-left", "bottom-center", "bottom-right",
 }
 ALLOWED_OVERLAY_ALIGNMENTS = {"left", "center", "right"}
+ALLOWED_VOICEOVER_MODELS = {
+    "eleven_v3",
+    "eleven_multilingual_v2",
+    "eleven_flash_v2_5",
+    "eleven_turbo_v2_5",
+}
+ALLOWED_VOICEOVER_SCRIPT_MODES = {"auto_from_batch", "custom"}
+ALLOWED_SUBTITLE_FORMATS = {"burned", "srt"}
 
 
 class TextOverlayConfig(BaseModel):
@@ -90,6 +118,54 @@ class TextOverlayConfig(BaseModel):
         return v
 
 
+class AiVoiceoverConfig(BaseModel):
+    enabled: bool = False
+    provider: str = Field(default="elevenlabs")
+    model_id: str = Field(default="eleven_multilingual_v2")
+    voice_id: Optional[str] = Field(default=None, max_length=120)
+    voice_label: Optional[str] = Field(default=None, max_length=80)
+    script_mode: str = Field(default="auto_from_batch")
+    script_text: Optional[str] = Field(default=None, max_length=2000)
+    subtitles_enabled: bool = True
+    subtitle_format: str = Field(default="burned")
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        if v != "elevenlabs":
+            raise ValueError("provider must be 'elevenlabs'")
+        return v
+
+    @field_validator("model_id")
+    @classmethod
+    def validate_model_id(cls, v: str) -> str:
+        if v not in ALLOWED_VOICEOVER_MODELS:
+            raise ValueError(f"model_id must be one of: {', '.join(sorted(ALLOWED_VOICEOVER_MODELS))}")
+        return v
+
+    @field_validator("script_mode")
+    @classmethod
+    def validate_script_mode(cls, v: str) -> str:
+        if v not in ALLOWED_VOICEOVER_SCRIPT_MODES:
+            raise ValueError(f"script_mode must be one of: {', '.join(sorted(ALLOWED_VOICEOVER_SCRIPT_MODES))}")
+        return v
+
+    @field_validator("subtitle_format")
+    @classmethod
+    def validate_subtitle_format(cls, v: str) -> str:
+        if v not in ALLOWED_SUBTITLE_FORMATS:
+            raise ValueError(f"subtitle_format must be one of: {', '.join(sorted(ALLOWED_SUBTITLE_FORMATS))}")
+        return v
+
+    @model_validator(mode="after")
+    def validate_post_init(self) -> "AiVoiceoverConfig":
+        if self.enabled and not (self.voice_id or "").strip():
+            raise ValueError("voice_id is required when ai_voiceover is enabled")
+        if self.script_mode == "custom" and not (self.script_text or "").strip():
+            raise ValueError("script_text is required when script_mode is 'custom'")
+        return self
+
+
 class CustomGradeParams(BaseModel):
     """User-defined parametric colour grade applied via grade_custom() in image_grader.py."""
     brightness: float = Field(default=1.0, ge=0.0, le=2.0)
@@ -99,6 +175,15 @@ class CustomGradeParams(BaseModel):
     warmth:     float = Field(default=0.0, ge=-1.0, le=1.0)
     tint:       float = Field(default=0.0, ge=-1.0, le=1.0)
     hue_shift:  float = Field(default=0.0, ge=-180.0, le=180.0)
+
+
+class LayeredConfig(BaseModel):
+    background_video_urls: List[str] = Field(..., min_length=1, max_length=5)
+    foreground_opacity: float = Field(default=0.55, ge=0.0, le=1.0)
+    background_opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    foreground_speed: float = Field(default=0.25, ge=0.05, le=5.0)
+    grade_target: str = Field(default="both")
+    crossfade_duration: float = Field(default=0.5, ge=0.2, le=2.0)
 
 
 class GenerateRequest(BaseModel):
@@ -123,8 +208,12 @@ class GenerateRequest(BaseModel):
     image_source: str = Field(default="unsplash")
     custom_grade_params: Optional[CustomGradeParams] = None
     philosopher: Optional[str] = Field(default=None)
+    philosopher_count: int = Field(default=3, ge=1, le=5)
     grade_philosopher: bool = False
+    philosopher_is_user: bool = False
     text_overlay: Optional[TextOverlayConfig] = None
+    ai_voiceover: Optional[AiVoiceoverConfig] = None
+    layered_config: Optional[LayeredConfig] = None
 
     @field_validator("search_terms")
     @classmethod
@@ -164,15 +253,11 @@ class GenerateRequest(BaseModel):
             raise ValueError(f"image_source must be one of: {', '.join(sorted(ALLOWED_IMAGE_SOURCES))}")
         return v
 
-    @field_validator("philosopher")
-    @classmethod
-    def validate_philosopher(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in ALLOWED_PHILOSOPHERS:
-            raise ValueError(f"philosopher must be one of: {', '.join(sorted(ALLOWED_PHILOSOPHERS))}")
-        return v
-
-    @model_validator(mode="after")
-    def check_custom_params(self) -> "GenerateRequest":
+    @model_validator(mode='after')
+    def validate_post_init(self) -> 'GenerateRequest':
+        if self.philosopher and not self.philosopher_is_user:
+            if self.philosopher not in ALLOWED_PHILOSOPHERS:
+                raise ValueError(f"philosopher must be one of the allowed list, or set philosopher_is_user=True for custom philosophers")
         if self.color_theme == "custom" and self.custom_grade_params is None:
             raise ValueError("custom_grade_params is required when color_theme is 'custom'")
         return self
@@ -186,15 +271,33 @@ class JobStatusResponse(BaseModel):
     thumbnail_url: Optional[str] = None
     error_message: Optional[str] = None
     batch_title: Optional[str] = None
+    mode: Optional[str] = None
     # Config fields extracted from JSONB for display
     search_terms: Optional[List[str]] = None
+    fps: Optional[int] = None
+    allow_repeats: Optional[bool] = None
     color_theme: Optional[str] = None
     resolution: Optional[str] = None
     seconds_per_image: Optional[float] = None
     total_seconds: Optional[float] = None
     max_per_query: Optional[int] = None
+    image_source: Optional[str] = None
+    accent_folder: Optional[str] = None
+    philosopher: Optional[str] = None
+    philosopher_count: Optional[int] = None
+    grade_philosopher: Optional[bool] = None
+    philosopher_is_user: Optional[bool] = None
+    transition: Optional[str] = None
+    transition_duration: Optional[float] = None
+    max_clip_duration: Optional[int] = None
+    clip_count: Optional[int] = None
+    layered_config: Optional[LayeredConfig] = None
     preset_name: Optional[str] = None
     preview_images: Optional[List[str]] = None
+    custom_grade_params: Optional[CustomGradeParams] = None
+    text_overlay: Optional[TextOverlayConfig] = None
+    ai_voiceover: Optional[AiVoiceoverConfig] = None
+    images_cached: Optional[bool] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 
@@ -206,6 +309,7 @@ class JobListItem(BaseModel):
     output_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     batch_title: Optional[str] = None
+    mode: Optional[str] = None
     search_terms: Optional[List[str]] = None
     resolution: Optional[str] = None
     seconds_per_image: Optional[float] = None
@@ -214,7 +318,21 @@ class JobListItem(BaseModel):
     allow_repeats: Optional[bool] = None
     color_theme: Optional[str] = None
     max_per_query: Optional[int] = None
+    image_source: Optional[str] = None
+    accent_folder: Optional[str] = None
+    philosopher: Optional[str] = None
+    philosopher_count: Optional[int] = None
+    grade_philosopher: Optional[bool] = None
+    philosopher_is_user: Optional[bool] = None
+    transition: Optional[str] = None
+    transition_duration: Optional[float] = None
+    max_clip_duration: Optional[int] = None
+    clip_count: Optional[int] = None
+    layered_config: Optional[LayeredConfig] = None
     preset_name: Optional[str] = None
+    custom_grade_params: Optional[CustomGradeParams] = None
+    text_overlay: Optional[TextOverlayConfig] = None
+    ai_voiceover: Optional[AiVoiceoverConfig] = None
     images_cached: Optional[bool] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
@@ -226,14 +344,26 @@ class RegradeRequest(BaseModel):
     seconds_per_image: Optional[float] = Field(default=None, ge=0.05, le=5.0)
     total_seconds: Optional[float] = Field(default=None, ge=1.0, le=120.0)
     selected_paths: Optional[List[str]] = None  # subset of cached image paths; None = use all
+    custom_grade_params: Optional[CustomGradeParams] = None
+    accent_folder: Optional[str] = Field(default=None)
+    philosopher: Optional[str] = Field(default=None)
+    philosopher_count: Optional[int] = Field(default=None, ge=1, le=5)
+    grade_philosopher: Optional[bool] = None
+    philosopher_is_user: Optional[bool] = None
+    layered_config: Optional[LayeredConfig] = None
 
     @field_validator("color_theme")
     @classmethod
     def validate_color_theme(cls, v: str) -> str:
-        # 'custom' not supported for re-grade (requires PIL grade params not cached)
-        allowed = ALLOWED_COLOR_THEMES - {"custom"}
-        if v not in allowed:
-            raise ValueError(f"color_theme must be one of: {', '.join(sorted(allowed))}")
+        if v not in ALLOWED_COLOR_THEMES:
+            raise ValueError(f"color_theme must be one of: {', '.join(sorted(ALLOWED_COLOR_THEMES))}")
+        return v
+
+    @field_validator("accent_folder")
+    @classmethod
+    def validate_accent_folder(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ALLOWED_ACCENT_FOLDERS:
+            raise ValueError(f"accent_folder must be one of: {', '.join(sorted(ALLOWED_ACCENT_FOLDERS))}")
         return v
 
 
@@ -248,6 +378,11 @@ class PreviewBatchRequest(BaseModel):
     uploaded_image_paths: Optional[List[str]] = None
     color_theme: Optional[str] = None
     custom_grade_params: Optional[CustomGradeParams] = None
+    accent_folder: Optional[str] = Field(default=None)
+    philosopher: Optional[str] = Field(default=None)
+    philosopher_count: int = Field(default=3, ge=1, le=5)
+    grade_philosopher: bool = False
+    philosopher_is_user: bool = False
 
     @field_validator("search_terms")
     @classmethod
@@ -258,6 +393,14 @@ class PreviewBatchRequest(BaseModel):
             if not term.strip():
                 raise ValueError("Search terms must not be blank.")
         return [t.strip() for t in v]
+
+
+    @field_validator("accent_folder")
+    @classmethod
+    def validate_accent_folder(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ALLOWED_ACCENT_FOLDERS:
+            raise ValueError(f"accent_folder must be one of: {', '.join(sorted(ALLOWED_ACCENT_FOLDERS))}")
+        return v
 
 
 class PreviewStageRequest(BaseModel):
@@ -293,12 +436,21 @@ class PreviewStageRequest(BaseModel):
 
 class PreviewImageItem(BaseModel):
     storage_path: str
+    render_storage_path: Optional[str] = None
     signed_url: str
+    is_philosopher: bool = False
+    is_accent: bool = False
+    source_key: Optional[str] = None
 
 
 class PreviewBatchResult(BaseModel):
     batch_title: Optional[str]
     search_terms: List[str]
+    color_theme: Optional[str] = None
+    accent_folder: Optional[str] = None
+    philosopher: Optional[str] = None
+    grade_philosopher: bool = False
+    philosopher_is_user: bool = False
     images: List[PreviewImageItem]
 
 
@@ -340,6 +492,125 @@ class PreviewFindMoreResponse(BaseModel):
     images: List[PreviewImageItem]
 
 
+class PreviewRefreshPhilosopherRequest(BaseModel):
+    philosopher: str = Field(..., min_length=1, max_length=80)
+    resolution: str = Field(default="1080x1920")
+    color_theme: str = Field(default="none")
+    grade_philosopher: bool = False
+    philosopher_is_user: bool = False
+    exclude_source_keys: List[str] = Field(default_factory=list, max_length=50)
+
+    @field_validator("resolution")
+    @classmethod
+    def validate_resolution(cls, v: str) -> str:
+        if v not in ALLOWED_RESOLUTIONS:
+            raise ValueError(f"resolution must be one of: {', '.join(sorted(ALLOWED_RESOLUTIONS))}")
+        return v
+
+    @field_validator("color_theme")
+    @classmethod
+    def validate_color_theme(cls, v: str) -> str:
+        if v not in ALLOWED_COLOR_THEMES:
+            raise ValueError(f"color_theme must be one of: {', '.join(sorted(ALLOWED_COLOR_THEMES))}")
+        return v
+
+
+class PreviewRefreshPhilosopherResponse(BaseModel):
+    image: PreviewImageItem
+
+
+class PreviewRefreshAccentRequest(BaseModel):
+    accent_folder: str
+    resolution: str = Field(default="1080x1920")
+    exclude_source_keys: List[str] = Field(default_factory=list, max_length=50)
+
+    @field_validator("accent_folder")
+    @classmethod
+    def validate_accent_folder(cls, v: str) -> str:
+        if v not in ALLOWED_ACCENT_FOLDERS:
+            raise ValueError(f"accent_folder must be one of: {', '.join(sorted(ALLOWED_ACCENT_FOLDERS))}")
+        return v
+
+    @field_validator("resolution")
+    @classmethod
+    def validate_resolution(cls, v: str) -> str:
+        if v not in ALLOWED_RESOLUTIONS:
+            raise ValueError(f"resolution must be one of: {', '.join(sorted(ALLOWED_RESOLUTIONS))}")
+        return v
+
+
+class PreviewRefreshAccentResponse(BaseModel):
+    image: PreviewImageItem
+
+
+ALLOWED_TRANSITIONS = {"cut", "fade_black", "crossfade"}
+
+
+class ClipTrim(BaseModel):
+    """A single Pexels video clip with optional trim points."""
+    id: str = Field(..., pattern=r'^pv_\d+$')
+    download_url: str
+    trim_start: float = Field(default=0.0, ge=0.0, le=600.0)
+    trim_end: float = Field(default=0.0, ge=0.0, le=600.0)   # 0 = use full clip duration
+    duration: int = Field(..., ge=1, le=600)
+
+    @field_validator("download_url")
+    @classmethod
+    def validate_download_url(cls, v: str) -> str:
+        if not v.startswith("https://videos.pexels.com/"):
+            raise ValueError("download_url must be a Pexels video URL")
+        return v
+
+
+class ClipGenerateRequest(BaseModel):
+    clips: List[ClipTrim] = Field(..., min_length=1, max_length=20)
+    resolution: str = Field(default="1080x1920")
+    fps: int = Field(default=30, ge=15, le=60)
+    color_theme: str = Field(default="none")
+    transition: str = Field(default="cut")
+    transition_duration: float = Field(default=0.5, ge=0.2, le=2.0)
+    max_clip_duration: int = Field(default=5, ge=3, le=10)
+    batch_title: Optional[str] = Field(default=None, max_length=120)
+    text_overlay: Optional[TextOverlayConfig] = None
+    ai_voiceover: Optional[AiVoiceoverConfig] = None
+
+    @field_validator("resolution")
+    @classmethod
+    def validate_resolution(cls, v: str) -> str:
+        if v not in ALLOWED_RESOLUTIONS:
+            raise ValueError(f"resolution must be one of: {', '.join(sorted(ALLOWED_RESOLUTIONS))}")
+        return v
+
+    @field_validator("color_theme")
+    @classmethod
+    def validate_color_theme(cls, v: str) -> str:
+        # clips mode doesn't support 'custom' grade (PIL-based, not applicable to video)
+        allowed = ALLOWED_COLOR_THEMES - {"custom"}
+        if v not in allowed:
+            raise ValueError(f"color_theme must be one of: {', '.join(sorted(allowed))}")
+        return v
+
+    @field_validator("transition")
+    @classmethod
+    def validate_transition(cls, v: str) -> str:
+        if v not in ALLOWED_TRANSITIONS:
+            raise ValueError(f"transition must be one of: {', '.join(sorted(ALLOWED_TRANSITIONS))}")
+        return v
+
+
+class ClipSearchResult(BaseModel):
+    id: str
+    duration: int
+    thumbnail: str
+    preview_url: str
+    download_url: str
+    width: int
+    height: int
+
+
+class ClipSearchResponse(BaseModel):
+    clips: List[ClipSearchResult]
+
 
 ALLOWED_PRIVACY_LEVELS = {
     "PUBLIC_TO_EVERYONE",
@@ -357,6 +628,21 @@ class SchedulePostRequest(BaseModel):
     privacy_level: str = Field(default="PUBLIC_TO_EVERYONE")
     scheduled_at: datetime
     draft_mode: bool = False
+
+    @field_validator("privacy_level")
+    @classmethod
+    def validate_privacy_level(cls, v: str) -> str:
+        if v not in ALLOWED_PRIVACY_LEVELS:
+            raise ValueError(f"privacy_level must be one of: {', '.join(sorted(ALLOWED_PRIVACY_LEVELS))}")
+        return v
+
+
+class PostNowRequest(BaseModel):
+    job_id: str
+    tiktok_account_id: str
+    caption: str = Field(default="", max_length=2200)
+    hashtags: List[str] = Field(default=[])
+    privacy_level: str = Field(default="PUBLIC_TO_EVERYONE")
 
     @field_validator("privacy_level")
     @classmethod

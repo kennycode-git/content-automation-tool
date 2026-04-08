@@ -297,3 +297,57 @@ def delete_raw_images(user_id: str, job_id: str) -> None:
     client = get_client()
     client.storage.from_(BUCKET).remove(paths)
     logger.info("Deleted %d raw images for job %s", len(paths), job_id)
+
+
+def list_user_philosopher_images(user_id: str, key: str) -> list:
+    """List images in user-uploads/{user_id}/philosophers/{key}/."""
+    IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+    client = get_client()
+    prefix = f"{user_id}/philosophers/{key}"
+    result = client.storage.from_(USER_UPLOADS_BUCKET).list(prefix)
+    items = result if isinstance(result, list) else (getattr(result, "data", None) or [])
+    paths = []
+    for item in items:
+        name = item.get("name") if isinstance(item, dict) else getattr(item, "name", None)
+        item_id = item.get("id") if isinstance(item, dict) else getattr(item, "id", None)
+        if name and item_id is not None and any(name.lower().endswith(ext) for ext in IMAGE_EXTS):
+            paths.append(f"{prefix}/{name}")
+    logger.info("Listed %d user philosopher images for %s/%s", len(paths), user_id, key)
+    return paths
+
+
+def download_user_philosopher_image(path: str) -> bytes:
+    """Download a single file from user-uploads bucket."""
+    client = get_client()
+    return client.storage.from_(USER_UPLOADS_BUCKET).download(path)
+
+
+def upload_user_philosopher_image(user_id: str, key: str, filename: str, data: bytes) -> str:
+    """Upload an image to user-uploads/{user_id}/philosophers/{key}/."""
+    import re
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)[:80]
+    path = f"{user_id}/philosophers/{key}/{safe_name}"
+    client = get_client()
+    client.storage.from_(USER_UPLOADS_BUCKET).upload(
+        path=path,
+        file=data,
+        file_options={"content-type": "image/jpeg", "upsert": "true"},
+    )
+    logger.info("Uploaded user philosopher image to %s", path)
+    return path
+
+
+def delete_user_philosopher_folder(user_id: str, key: str) -> None:
+    """Delete all images in user-uploads/{user_id}/philosophers/{key}/."""
+    client = get_client()
+    prefix = f"{user_id}/philosophers/{key}"
+    result = client.storage.from_(USER_UPLOADS_BUCKET).list(prefix)
+    items = result if isinstance(result, list) else (getattr(result, "data", None) or [])
+    paths = []
+    for item in items:
+        name = item.get("name") if isinstance(item, dict) else getattr(item, "name", None)
+        if name:
+            paths.append(f"{prefix}/{name}")
+    if paths:
+        client.storage.from_(USER_UPLOADS_BUCKET).remove(paths)
+        logger.info("Deleted %d user philosopher images for %s/%s", len(paths), user_id, key)

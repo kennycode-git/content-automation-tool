@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { getUsage } from '../lib/api'
+import type { UsageInfo } from '../lib/api'
 
 interface Props {
   session: Session
@@ -19,36 +21,30 @@ interface Sub {
   status: string
 }
 
-interface Usage {
-  render_count: number
-}
-
 const PLAN_LIMITS: Record<string, number | null> = {
-  trial: 25,
-  creator: 30,
+  trial: null,
+  creator: 100,
   pro: null,
 }
 
 export default function Account({ session }: Props) {
   const navigate = useNavigate()
   const [sub, setSub] = useState<Sub | null>(null)
-  const [usage, setUsage] = useState<Usage | null>(null)
+  const [usage, setUsage] = useState<UsageInfo | null>(null)
   const [loading, setLoading] = useState(true)
-
-  const currentMonth = new Date().toISOString().slice(0, 7)
 
   useEffect(() => {
     async function load() {
       const [subRes, usageRes] = await Promise.all([
         supabase.from('subscriptions').select('plan, status').eq('user_id', session.user.id).maybeSingle(),
-        supabase.from('usage').select('render_count').eq('user_id', session.user.id).eq('month', currentMonth).maybeSingle(),
+        getUsage(),
       ])
       setSub(subRes.data ?? null)
-      setUsage(usageRes.data ?? null)
+      setUsage(usageRes ?? null)
       setLoading(false)
     }
     load()
-  }, [session.user.id, currentMonth])
+  }, [session.user.id])
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -80,12 +76,14 @@ export default function Account({ session }: Props) {
                 {sub?.status ?? 'No active subscription'}
               </p>
               {sub?.plan === 'trial' && (
-                <p className="mt-1 text-xs text-stone-500">21-day trial</p>
+                <p className="mt-1 text-xs text-stone-500">Open trial access</p>
               )}
             </div>
 
             <div className="rounded-xl border border-stone-700 bg-stone-800 p-4">
-              <p className="text-xs text-stone-500 uppercase tracking-wide">Renders this month</p>
+              <p className="text-xs text-stone-500 uppercase tracking-wide">
+                {sub?.plan === 'trial' ? 'Renders used so far' : 'Renders this month'}
+              </p>
               <p className="mt-1 text-lg font-semibold text-stone-100">
                 {used}
                 {limit !== null && <span className="text-stone-500"> / {limit}</span>}
