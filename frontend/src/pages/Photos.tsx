@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { useSearchParams } from 'react-router-dom'
 import { stagePreview } from '../lib/api'
 import type { PreviewImageItem } from '../lib/api'
 import AppNavbar from '../components/AppNavbar'
@@ -51,6 +52,7 @@ const RESOLUTIONS = [
 ]
 
 export default function Photos({ session }: Props) {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [searchText, setSearchText] = useState(() => _cache?.searchText ?? '')
   const [imageCount, setImageCount] = useState(() => _cache?.imageCount ?? 30)
   const [resolution, setResolution] = useState(() => _cache?.resolution ?? '1080x1920')
@@ -161,6 +163,18 @@ export default function Photos({ session }: Props) {
 
   const [enlargedIdx, setEnlargedIdx] = useState<number | null>(null)
   const [showPromptModal, setShowPromptModal] = useState(false)
+  const workspaceRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (searchParams.get('focus') !== 'workspace') return
+    const t = window.setTimeout(() => {
+      workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      const next = new URLSearchParams(searchParams)
+      next.delete('focus')
+      setSearchParams(next, { replace: true })
+    }, 120)
+    return () => window.clearTimeout(t)
+  }, [searchParams, setSearchParams])
 
   async function handleDownloadOne(img: PreviewImageItem, i: number) {
     try {
@@ -186,7 +200,7 @@ export default function Photos({ session }: Props) {
     <div className="min-h-screen bg-stone-950">
       <AppNavbar session={session} activeTool="photos" />
 
-      <div className="mx-auto w-full max-w-[1500px] px-4 py-8 xl:max-w-[1680px] 2xl:max-w-[1840px]">
+      <div ref={workspaceRef} className="mx-auto w-full max-w-[1500px] px-4 py-8 xl:max-w-[1680px] 2xl:max-w-[1840px]">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)] xl:gap-8">
 
           {/* Left: Settings */}

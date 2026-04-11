@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 const DEV_BYPASS = import.meta.env.VITE_DEV_BYPASS === 'true'
 import { generateVideo, generateVariants, stagePreview, deleteJob, getUsage, fetchVideoClips, generateFromClips } from '../lib/api'
@@ -39,8 +40,10 @@ import PromptModal from '../components/PromptModal'
 import AppNavbar from '../components/AppNavbar'
 import InspirationCarousel from '../components/InspirationCarousel'
 import type { TemplateTargetMode } from '../components/InspirationCarousel'
+import DevWhatsNewModal, { DEV_WHATS_NEW_STORAGE_KEY } from '../components/DevWhatsNewModal'
 
 type ContentMode = 'images' | 'clips' | 'layered'
+type DashboardFocusTarget = 'preview' | 'philosopher' | 'layered' | 'clips' | 'reedit'
 type ReEditRestoreSettings = Omit<Partial<VideoSettings>, 'custom_grade_params'> & {
   layered_config?: LayeredConfig | null
   custom_grade_params?: CustomGradeParams | null
@@ -98,7 +101,54 @@ const BACKGROUND_OPACITY_PRESETS = [
   { label: 'Full', value: 1.0 },
 ]
 
+const DEV_WHATS_NEW_CARDS = [
+  {
+    id: 'broll-jobs',
+    title: 'Video b-roll jobs',
+    description: 'Try the newer b-roll workflow for building polished short-form edits from stock footage.',
+    href: '/dashboard?focus=clips',
+    badge: 'New',
+  },
+  {
+    id: 'layered-style-videos',
+    title: 'Layered style videos',
+    description: 'Explore the layered workflow for more premium-looking videos that combine images with moving backgrounds.',
+    href: '/dashboard?focus=layered',
+    badge: 'New',
+  },
+  {
+    id: 'philosopher-accent',
+    title: 'Philosopher + accent curation',
+    description: 'Explore the new features in the per-batch style settings, including philosopher controls and the new accent options.',
+    href: '/dashboard?focus=philosopher',
+    badge: 'New',
+  },
+  {
+    id: 'preview-quality',
+    title: 'Preview render quality',
+    description: 'Preview-first renders now use full-quality staged assets instead of soft preview thumbnails.',
+    href: '/dashboard?focus=preview',
+    badge: 'Quality',
+  },
+  {
+    id: 'layered-reedit',
+    title: 'More re-edit controls',
+    description: 'There are now more options for re-editing jobs directly from the Recent jobs section across the workflow.',
+    href: '/dashboard?focus=reedit',
+    badge: 'Updated',
+  },
+  {
+    id: 'photos-layout',
+    title: 'Wider image workspace',
+    description: 'The image tool now uses more desktop width so extractions feel less cramped on larger screens.',
+    href: '/photos?focus=workspace',
+    badge: 'UI',
+  },
+] as const
+
 export default function Dashboard({ session }: Props) {
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [batches, setBatches] = useState<BatchOutput[]>([])
   const [settings, setSettings] = useState<VideoSettings>(DEFAULT_SETTINGS)
   const [activeJobs, setActiveJobs] = useState<{ jobId: string; title: string | null }[]>(() => {
@@ -142,6 +192,8 @@ export default function Dashboard({ session }: Props) {
   const [previewData, setPreviewData] = useState<PreviewBatchResult[] | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showTour, setShowTour] = useState(false)
+  const [showWhatsNew, setShowWhatsNew] = useState(false)
+  const [spotlightStyleFeature, setSpotlightStyleFeature] = useState<'philosopher' | null>(null)
   const [tourPath, setTourPath] = useState<TutorialPath>('selector')
   const [carouselKey, setCarouselKey] = useState(0)
   const [carouselVisible, setCarouselVisible] = useState(true)
@@ -153,6 +205,7 @@ export default function Dashboard({ session }: Props) {
   const step1Ref = useRef<HTMLDivElement>(null)
   const step2Ref = useRef<HTMLDivElement>(null)
   const templateFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const updatesEnabled = true
 
   // Usage query
   const { data: usageInfo } = useQuery<UsageInfo>({
@@ -173,6 +226,48 @@ export default function Dashboard({ session }: Props) {
       return () => clearTimeout(t)
     }
   }, [])
+
+  useEffect(() => {
+    if (!updatesEnabled) return
+    if (!localStorage.getItem(DEV_WHATS_NEW_STORAGE_KEY)) {
+      const t = window.setTimeout(() => setShowWhatsNew(true), 550)
+      return () => window.clearTimeout(t)
+    }
+  }, [updatesEnabled])
+
+  useEffect(() => {
+    const focus = searchParams.get('focus') as DashboardFocusTarget | null
+    if (!focus) return
+
+    const targetMap: Record<DashboardFocusTarget, { mode: ContentMode; selector: string; action?: 'open-style' }> = {
+      preview: { mode: 'images', selector: '[data-tour="gen-dropdown"]' },
+      philosopher: { mode: 'images', selector: '[data-tour="batch-style-btn"]', action: 'open-style' },
+      layered: { mode: 'layered', selector: '[data-tour="mode-layered"]' },
+      clips: { mode: 'clips', selector: '[data-tour="mode-clips"]' },
+      reedit: { mode: 'images', selector: '[data-tour="recent-jobs"]' },
+    }
+
+    const config = targetMap[focus]
+    if (!config) return
+
+    setModeAndResetPreview(config.mode)
+    if (focus === 'philosopher') setSpotlightStyleFeature('philosopher')
+    const timer = window.setTimeout(() => {
+      const target = document.querySelector(config.selector)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (config.action === 'open-style') {
+        ;(target as HTMLButtonElement | null)?.click()
+        window.setTimeout(() => setSpotlightStyleFeature(null), 4500)
+      } else {
+        setSpotlightStyleFeature(null)
+      }
+      const next = new URLSearchParams(searchParams)
+      next.delete('focus')
+      setSearchParams(next, { replace: true })
+    }, 220)
+
+    return () => window.clearTimeout(timer)
+  }, [searchParams, setSearchParams])
 
   // Browser tab title: show pending job count while running
   useEffect(() => {
@@ -688,6 +783,17 @@ export default function Dashboard({ session }: Props) {
     setShowTour(true)
   }
 
+  function handleOpenWhatsNewLink(href: string) {
+    localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
+    setShowWhatsNew(false)
+    navigate(href)
+  }
+
+  function handleCloseWhatsNew() {
+    localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
+    setShowWhatsNew(false)
+  }
+
   function scrollToStep(ref: RefObject<HTMLDivElement | null>) {
     window.requestAnimationFrame(() => {
       ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -994,7 +1100,12 @@ export default function Dashboard({ session }: Props) {
         </div>
       )}
 
-      <AppNavbar session={session} activeTool="video" onShowTour={() => openTutorial('selector')} />
+      <AppNavbar
+        session={session}
+        activeTool="video"
+        onShowTour={() => openTutorial('selector')}
+        onShowUpdates={updatesEnabled ? (() => setShowWhatsNew(true)) : undefined}
+      />
 
       {carouselVisible ? (
         <InspirationCarousel
@@ -1116,16 +1227,17 @@ export default function Dashboard({ session }: Props) {
                     <hr className="border-stone-800 my-4" />
                   </>
                 )}
-                <BatchEditor
-                  onBatchesChange={setBatches}
-                  pendingReuse={pendingReuse}
+              <BatchEditor
+                onBatchesChange={setBatches}
+                pendingReuse={pendingReuse}
                   onReuseHandled={() => setPendingReuse(null)}
                   pendingBundles={pendingBundles}
                   onBundlesHandled={() => setPendingBundles(null)}
-                  onOpenPrompt={() => setShowPromptModal(true)}
-                  highlightedBatchTitle={templateLoadedLabel}
-                  mode={contentMode}
-                />
+                onOpenPrompt={() => setShowPromptModal(true)}
+                highlightedBatchTitle={templateLoadedLabel}
+                mode={contentMode}
+                spotlightStyleFeature={spotlightStyleFeature}
+              />
               </div>
             )}
 
@@ -1198,33 +1310,35 @@ export default function Dashboard({ session }: Props) {
                     themeDisabled={batches.length > 0 && batches.every(b => b.color_theme !== undefined)}
                   />
                   {contentMode === 'layered' && (
-                    <div className="mt-4 pt-4 border-t border-stone-800" data-tour="layered-opacity">
-                      <div className="flex items-center justify-between mb-2">
+                    <div className="mt-4 pt-4 border-t border-stone-800">
+                      <div className="rounded-lg" data-tour="layered-opacity">
+                        <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-stone-300">Foreground image opacity</span>
                         <span className="text-xs tabular-nums text-stone-400">{Math.round(layeredConfig.opacity * 100)}%</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {OPACITY_PRESETS.map(p => (
+                            <button
+                              key={p.label}
+                              onClick={() => setLayeredConfig(c => ({ ...c, opacity: p.value }))}
+                              className={`flex-1 rounded-lg py-1.5 text-[11px] font-medium transition ${
+                                Math.abs(layeredConfig.opacity - p.value) < 0.01
+                                  ? 'bg-brand-500/20 border border-brand-500/50 text-brand-300'
+                                  : 'bg-stone-800 border border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'
+                              }`}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                        <input
+                          type="range"
+                          min={0} max={1} step={0.05}
+                          value={layeredConfig.opacity}
+                          onChange={e => setLayeredConfig(c => ({ ...c, opacity: parseFloat(e.target.value) }))}
+                          className="w-full accent-amber-500"
+                        />
                       </div>
-                      <div className="flex flex-wrap gap-1.5 mb-3">
-                        {OPACITY_PRESETS.map(p => (
-                          <button
-                            key={p.label}
-                            onClick={() => setLayeredConfig(c => ({ ...c, opacity: p.value }))}
-                            className={`flex-1 rounded-lg py-1.5 text-[11px] font-medium transition ${
-                              Math.abs(layeredConfig.opacity - p.value) < 0.01
-                                ? 'bg-brand-500/20 border border-brand-500/50 text-brand-300'
-                                : 'bg-stone-800 border border-stone-700 text-stone-400 hover:border-stone-500 hover:text-stone-200'
-                            }`}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                      <input
-                        type="range"
-                        min={0} max={1} step={0.05}
-                        value={layeredConfig.opacity}
-                        onChange={e => setLayeredConfig(c => ({ ...c, opacity: parseFloat(e.target.value) }))}
-                        className="w-full accent-amber-500"
-                      />
                       <div className="mt-4" data-tour="layered-bg-opacity">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-medium text-stone-300">Background video opacity</span>
@@ -1609,7 +1723,7 @@ export default function Dashboard({ session }: Props) {
             )}
 
             <div>
-              <div className="mb-3 flex items-baseline justify-between gap-3">
+              <div data-tour="recent-jobs" className="mb-3 flex items-baseline justify-between gap-3">
                 <h2 className="text-sm font-semibold text-stone-300">Recent jobs</h2>
               </div>
               <RecentJobs onReuse={handleReuse} onEditImages={handleEditImages} onColourGrade={handleColourGrade} onRegrade={handleRegrade} />
@@ -1654,6 +1768,12 @@ export default function Dashboard({ session }: Props) {
         onOpenPrompt={() => setShowPromptModal(true)}
         onOpenVariants={() => setShowVariants(true)}
         onModeChange={mode => setModeAndResetPreview(mode)}
+      />
+      <DevWhatsNewModal
+        open={showWhatsNew}
+        cards={[...DEV_WHATS_NEW_CARDS]}
+        onClose={handleCloseWhatsNew}
+        onOpenLink={handleOpenWhatsNewLink}
       />
       {showPromptModal && <PromptModal mode={contentMode} fromTour={showTour} onClose={() => setShowPromptModal(false)} />}
 

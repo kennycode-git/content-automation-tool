@@ -150,7 +150,10 @@ interface Props {
   onOpenPrompt?: () => void
   highlightedBatchTitle?: string | null
   mode?: 'images' | 'clips' | 'layered'
+  spotlightStyleFeature?: 'philosopher' | null
 }
+
+type EditorMode = 'images' | 'clips' | 'layered'
 
 const DEFAULT_VISUAL_BATCH = {
   title: 'Stoicism',
@@ -159,7 +162,11 @@ const DEFAULT_VISUAL_BATCH = {
 
 const DEFAULT_CLIPS_BATCH = {
   title: 'Night Sky',
-  terms: 'Stargazing\nEarth from space',
+  terms: 'stargazing\nearth from space',
+}
+
+function getDefaultBatchesForMode(mode: EditorMode): VisualBatch[] {
+  return [{ ...(mode === 'clips' ? DEFAULT_CLIPS_BATCH : DEFAULT_VISUAL_BATCH) }]
 }
 
 // ── Style popover constants ────────────────────────────────────────────────────
@@ -479,6 +486,7 @@ function BatchStylePopover({
   onApplyVoiceoverToAll,
   userPhilosophers = [],
   mode = 'images',
+  highlightFeature = null,
 }: {
   batch: VisualBatch
   onChange: (patch: Partial<VisualBatch>) => void
@@ -487,6 +495,7 @@ function BatchStylePopover({
   onApplyVoiceoverToAll?: (voiceover: AiVoiceoverConfig) => void
   userPhilosophers?: UserPhilosopher[]
   mode?: 'images' | 'clips' | 'layered'
+  highlightFeature?: 'philosopher' | null
 }) {
   const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
   const [fineTuneOpen, setFineTuneOpen] = useState(batch.colorTheme === 'custom')
@@ -750,7 +759,11 @@ function BatchStylePopover({
             <>
               <hr className="border-stone-800" />
 
-              <div>
+              <div className={`rounded-xl transition ${
+                highlightFeature === 'philosopher'
+                  ? 'border border-brand-500/35 bg-brand-500/8 px-2 py-2 shadow-[0_0_0_1px_rgba(217,132,39,0.15)]'
+                  : ''
+              }`}>
                 <p className="mb-2 text-[10px] font-semibold tracking-widest uppercase text-stone-500">Accent images</p>
                 <div className="flex flex-wrap gap-1.5">
                   {BATCH_ACCENT_OPTIONS.map(opt => {
@@ -784,7 +797,11 @@ function BatchStylePopover({
             const detectedDisplay = detectedKey ? PHILOSOPHER_LIST.find(p => p.key === detectedKey)?.display : null
             const resolvedKey = batch.philosopherOverride !== undefined ? batch.philosopherOverride : detectedKey
             return (
-              <div>
+              <div className={`rounded-xl transition ${
+                highlightFeature === 'philosopher'
+                  ? 'border border-brand-500/35 bg-brand-500/8 px-2 py-2 shadow-[0_0_0_1px_rgba(217,132,39,0.15)]'
+                  : ''
+              }`}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <p className="text-[10px] font-semibold tracking-widest uppercase text-stone-500">Philosopher</p>
@@ -1248,15 +1265,40 @@ export default function BatchEditor({
   onOpenPrompt,
   highlightedBatchTitle,
   mode = 'images',
+  spotlightStyleFeature = null,
 }: Props) {
+  const modeDraftsRef = useRef<Record<EditorMode, {
+    classicMode: boolean
+    classicText: string
+    batches: VisualBatch[]
+    uploadedPaths: Record<number, string[]>
+  }>>({
+    images: {
+      classicMode: false,
+      classicText: DEFAULT_CLASSIC_TEXT,
+      batches: getDefaultBatchesForMode('images'),
+      uploadedPaths: {},
+    },
+    clips: {
+      classicMode: false,
+      classicText: '',
+      batches: getDefaultBatchesForMode('clips'),
+      uploadedPaths: {},
+    },
+    layered: {
+      classicMode: false,
+      classicText: DEFAULT_CLASSIC_TEXT,
+      batches: getDefaultBatchesForMode('layered'),
+      uploadedPaths: {},
+    },
+  })
+  const prevModeRef = useRef<EditorMode>(mode)
   const [classicMode, setClassicMode] = useState(false)
   const [classicText, setClassicText] = useState<string>(() => {
     try { return localStorage.getItem(STORAGE_KEY) ?? DEFAULT_CLASSIC_TEXT }
     catch { return DEFAULT_CLASSIC_TEXT }
   })
-  const [batches, setBatches] = useState<VisualBatch[]>([
-    mode === 'clips' ? DEFAULT_CLIPS_BATCH : DEFAULT_VISUAL_BATCH,
-  ])
+  const [batches, setBatches] = useState<VisualBatch[]>(getDefaultBatchesForMode(mode))
   const [uploadedPaths, setUploadedPaths] = useState<Record<number, string[]>>({})
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
@@ -1273,30 +1315,42 @@ export default function BatchEditor({
   }, [])
 
   useEffect(() => {
-    setBatches(prev => {
-      let next = prev
-      if (
-        mode === 'clips' &&
-        prev.length === 1 &&
-        prev[0].title === DEFAULT_VISUAL_BATCH.title &&
-        prev[0].terms === DEFAULT_VISUAL_BATCH.terms
-      ) {
-        next = [{ ...DEFAULT_CLIPS_BATCH }]
+    const previousMode = prevModeRef.current
+    if (previousMode === mode) return
+
+    modeDraftsRef.current[previousMode] = {
+      classicMode,
+      classicText,
+      batches,
+      uploadedPaths,
+    }
+
+    const nextDraft = modeDraftsRef.current[mode] ?? {
+      classicMode: false,
+      classicText: mode === 'clips' ? '' : DEFAULT_CLASSIC_TEXT,
+      batches: getDefaultBatchesForMode(mode),
+      uploadedPaths: {},
+    }
+
+    setClassicMode(nextDraft.classicMode)
+    setClassicText(nextDraft.classicText)
+    setBatches(nextDraft.batches)
+    setUploadedPaths(nextDraft.uploadedPaths)
+    queueMicrotask(() => {
+      if (nextDraft.classicMode) {
+        onBatchesChange(parseClassicIntoBatches(nextDraft.classicText, mode))
+      } else {
+        onBatchesChange(visualToBatchOutputs(nextDraft.batches, nextDraft.uploadedPaths))
       }
-      else if (
-        mode !== 'clips' &&
-        prev.length === 1 &&
-        prev[0].title === DEFAULT_CLIPS_BATCH.title &&
-        prev[0].terms === DEFAULT_CLIPS_BATCH.terms
-      ) {
-        next = [{ ...DEFAULT_VISUAL_BATCH }]
-      }
-      if (next !== prev) {
-        queueMicrotask(() => onBatchesChange(visualToBatchOutputs(next, uploadedPaths)))
-      }
-      return next
     })
-  }, [mode, onBatchesChange, uploadedPaths])
+
+    prevModeRef.current = mode
+  }, [batches, classicMode, classicText, mode, onBatchesChange, uploadedPaths])
+
+  useEffect(() => {
+    if (!spotlightStyleFeature || classicMode || mode !== 'images') return
+    setOpenPopover(0)
+  }, [classicMode, mode, spotlightStyleFeature])
 
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
     return vBatches.map((b, i) => {
@@ -1625,6 +1679,7 @@ export default function BatchEditor({
                   value={batch.terms}
                   onChange={e => handleBatchTermsChange(idx, e.target.value)}
                   rows={3}
+                  data-tour={mode === 'layered' && idx === 0 ? 'layered-image-search' : undefined}
                   placeholder={mode === 'clips' ? 'up to 3 search terms, one per line' : 'one search term per line'}
                   className="w-full rounded-lg border border-stone-700 bg-stone-900 px-2 py-1.5 font-mono text-xs text-stone-100 placeholder-stone-600 focus:border-brand-500 focus:outline-none"
                 />
@@ -1693,6 +1748,7 @@ export default function BatchEditor({
                         onApplyVoiceoverToAll={batches.length > 1 ? handleApplyVoiceoverToAll : undefined}
                         userPhilosophers={userPhilosophers}
                         mode={mode}
+                        highlightFeature={idx === 0 ? spotlightStyleFeature : null}
                       />
                     )}
                   </div>

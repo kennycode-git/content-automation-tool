@@ -6,13 +6,15 @@
  * Refreshes every 30s.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getRecentJobs, deleteJob, resignJob, regradeJob, deleteJobImages, listUserPhilosophers } from '../lib/api'
-import type { JobStatus, LayeredConfig, UserPhilosopher } from '../lib/api'
+import { getRecentJobs, deleteJob, resignJob, regradeJob, deleteJobImages, listUserPhilosophers, reviewRegradeImages } from '../lib/api'
+import type { JobStatus, LayeredConfig, PreviewBatchResult, UserPhilosopher } from '../lib/api'
 import type { VideoSettings } from './SettingsPanel'
 import JobMetaPopover from './JobMetaPopover'
 import BackgroundVideoPicker from './BackgroundVideoPicker'
+import PreviewModal from './PreviewModal'
+import type { ConfirmedBatch } from './PreviewModal'
 import { PHILOSOPHER_LIST, detectPhilosopher } from './BatchEditor'
 
 const COLOR_THEMES = [
@@ -234,10 +236,25 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
   const [reEditBgOpacity, setReEditBgOpacity] = useState<number | null>(null)
   const [reEditGradeTarget, setReEditGradeTarget] = useState<'foreground' | 'background' | 'both'>('both')
   const [reEditBgVideoUrls, setReEditBgVideoUrls] = useState<string[] | null>(null)
+  const [reviewImages, setReviewImages] = useState(false)
+  const [reviewData, setReviewData] = useState<PreviewBatchResult | null>(null)
+  const [reviewJob, setReviewJob] = useState<JobStatus | null>(null)
+  const [loadingReview, setLoadingReview] = useState<Record<string, boolean>>({})
   const [reEditing, setReEditing] = useState<Record<string, boolean>>({})
   const [deletingImages, setDeletingImages] = useState<Record<string, boolean>>({})
   const [clearingAll, setClearingAll] = useState(false)
   const [userPhilosophers, setUserPhilosophers] = useState<UserPhilosopher[]>([])
+  const pendingRegrade = useRef<{
+    job: JobStatus
+    theme: string
+    accent: string
+    spi: number | null
+    total: number | null
+    philosopher: string | null
+    philosopher_count: number
+    grade_philosopher: boolean
+    philosopher_is_user: boolean
+  } | null>(null)
 
   const { data: jobs = [], refetch } = useQuery({
     queryKey: ['jobs'],
@@ -287,7 +304,6 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
 
   async function handleReEditSubmit(job: JobStatus) {
     const jobId = job.job_id
-    setReEditing(prev => ({ ...prev, [jobId]: true }))
     try {
       const layeredConfig = job.mode === 'layered' && job.layered_config
         ? {
@@ -300,6 +316,44 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
           }
         : undefined
       const resolvedPhilosopher = reEditPhilosopher || null
+      if (reviewImages && job.images_cached) {
+        setLoadingReview(prev => ({ ...prev, [jobId]: true }))
+        pendingRegrade.current = {
+          job,
+          theme: reEditTheme,
+          accent: reEditAccent,
+          spi: reEditSpi,
+          total: reEditTotal,
+          philosopher: resolvedPhilosopher,
+          philosopher_count: reEditPhilosopherCount,
+          grade_philosopher: reEditGradePhilosopher,
+          philosopher_is_user: reEditPhilosopherIsUser,
+        }
+        try {
+          const data = await reviewRegradeImages(jobId, {
+            color_theme: reEditTheme,
+            accent_folder: reEditAccent === 'none' ? null : reEditAccent,
+            ...(reEditSpi != null ? { seconds_per_image: reEditSpi } : {}),
+            ...(reEditTotal != null ? { total_seconds: reEditTotal } : {}),
+            ...(reEditTheme === 'custom' && job.custom_grade_params ? { custom_grade_params: job.custom_grade_params } : {}),
+            philosopher: resolvedPhilosopher,
+            philosopher_count: reEditPhilosopherCount,
+            grade_philosopher: resolvedPhilosopher ? reEditGradePhilosopher : false,
+            philosopher_is_user: resolvedPhilosopher ? reEditPhilosopherIsUser : false,
+            ...(layeredConfig ? { layered_config: layeredConfig } : {}),
+          })
+          setReviewJob(job)
+          setReviewData(data)
+        } catch (e: unknown) {
+          pendingRegrade.current = null
+          alert(e instanceof Error ? e.message : 'Could not load cached images.')
+        } finally {
+          setLoadingReview(prev => ({ ...prev, [jobId]: false }))
+        }
+        return
+      }
+
+      setReEditing(prev => ({ ...prev, [jobId]: true }))
       if (job.images_cached) {
         const res = await regradeJob(jobId, {
           color_theme: reEditTheme,
@@ -474,11 +528,13 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
               {job.status === 'done' && (job.images_cached || (job.search_terms && job.search_terms.length > 0 && onColourGrade)) && (
                 <button
                   onClick={() => {
-                    if (reEditJob === job.job_id) {
-                      setReEditJob(null)
-                    } else {
-                      setReEditJob(job.job_id)
-                      setReEditTheme(job.color_theme ?? 'none')
+                  if (reEditJob === job.job_id) {
+                    setReEditJob(null)
+                    setReviewImages(false)
+                  } else {
+                    setReEditJob(job.job_id)
+                    setReviewImages(false)
+                    setReEditTheme(job.color_theme ?? 'none')
                       setReEditAccent(job.accent_folder ?? 'none')
                       const initialPhilosopher = inferReEditPhilosopher(job)
                       setReEditPhilosopher(initialPhilosopher)
@@ -710,16 +766,83 @@ export default function RecentJobs({ onReuse, onEditImages, onColourGrade, onReg
 
                 <button
                   onClick={() => handleReEditSubmit(job)}
-                  disabled={reEditing[job.job_id]}
+                  disabled={reEditing[job.job_id] || loadingReview[job.job_id]}
                   className="w-full rounded-lg bg-brand-500 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition"
                 >
-                  {reEditing[job.job_id] ? 'Starting…' : 'Re-render'}
+                  {loadingReview[job.job_id] ? 'Loading images…' : reEditing[job.job_id] ? 'Starting…' : 'Re-render'}
                 </button>
+
+                {job.images_cached && (
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={reviewImages}
+                      onChange={e => setReviewImages(e.target.checked)}
+                      className="accent-brand-500 w-3.5 h-3.5"
+                    />
+                    <span className="text-xs text-stone-400">Review image selection first</span>
+                  </label>
+                )}
               </div>
             )}
           </div>
         )
       })}
+      {reviewData && reviewJob && (
+        <PreviewModal
+          batches={[reviewData]}
+          onConfirm={async (confirmed: ConfirmedBatch[]) => {
+            setReviewData(null)
+            const pending = pendingRegrade.current
+            if (!pending) return
+            const job = pending.job
+            setReEditing(prev => ({ ...prev, [job.job_id]: true }))
+            try {
+              const selectedPaths = confirmed[0]?.images.map(i => i.render_storage_path ?? i.storage_path) ?? []
+              const layeredConfig = job.mode === 'layered' && job.layered_config
+                ? {
+                    ...job.layered_config,
+                    background_video_urls: reEditBgVideoUrls ?? job.layered_config.background_video_urls,
+                    foreground_opacity: reEditFgOpacity ?? job.layered_config.foreground_opacity,
+                    background_opacity: reEditBgOpacity ?? (job.layered_config.background_opacity ?? 1),
+                    foreground_speed: pending.spi ?? job.layered_config.foreground_speed,
+                    grade_target: reEditGradeTarget,
+                  }
+                : undefined
+              const res = await regradeJob(job.job_id, {
+                color_theme: pending.theme,
+                accent_folder: pending.accent === 'none' ? null : pending.accent,
+                ...(pending.spi != null ? { seconds_per_image: pending.spi } : {}),
+                ...(pending.total != null ? { total_seconds: pending.total } : {}),
+                ...(selectedPaths.length ? { selected_paths: selectedPaths } : {}),
+                ...(pending.theme === 'custom' && job.custom_grade_params ? { custom_grade_params: job.custom_grade_params } : {}),
+                philosopher: pending.philosopher,
+                philosopher_count: pending.philosopher ? pending.philosopher_count : undefined,
+                grade_philosopher: pending.philosopher ? pending.grade_philosopher : false,
+                philosopher_is_user: pending.philosopher ? pending.philosopher_is_user : false,
+                ...(layeredConfig ? { layered_config: layeredConfig } : {}),
+              })
+              const newTitle = job.batch_title
+                ? `${job.batch_title} · ${pending.theme}`
+                : pending.theme
+              onRegrade?.(res.job_id, newTitle)
+              setReEditJob(null)
+              setReviewImages(false)
+            } catch (e: unknown) {
+              alert(e instanceof Error ? e.message : 'Re-edit failed')
+            } finally {
+              setReEditing(prev => ({ ...prev, [job.job_id]: false }))
+              pendingRegrade.current = null
+              setReviewJob(null)
+            }
+          }}
+          onCancel={() => {
+            setReviewData(null)
+            setReviewJob(null)
+            pendingRegrade.current = null
+          }}
+        />
+      )}
     </div>
   )
 }

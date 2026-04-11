@@ -24,6 +24,8 @@ interface Preset {
   targetMode: TemplateTargetMode
   accentFolder?: string | null
   customGradeParams?: CustomGradeParams
+  badge?: string
+  customBatch?: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string }
 }
 
 const PRESETS: Preset[] = [
@@ -46,6 +48,19 @@ const PRESETS: Preset[] = [
     bundleLabel: 'Dark Academia',
     gradient: 'from-stone-900 via-amber-950 to-stone-950',
     targetMode: 'images',
+  },
+  {
+    id: 'raindrops',
+    label: 'Raindrops',
+    theme: 'dark',
+    bundleLabel: 'Raindrops',
+    gradient: 'from-slate-950 via-stone-900 to-slate-950',
+    targetMode: 'clips',
+    badge: 'New',
+    customBatch: {
+      title: 'Raindrops',
+      terms: ['rain on window night', 'lone figure fog'],
+    },
   },
   {
     id: 'stoic-philosophy',
@@ -155,10 +170,15 @@ export default function InspirationCarousel({ onApply, onHide }: Props) {
 
   function handleApply(preset: Preset) {
     const bundle = BUNDLES.find(b => b.label === preset.bundleLabel)
+    const resolvedBatch = preset.customBatch
+      ? [preset.customBatch]
+      : bundle
+        ? [{ title: bundle.label, terms: bundle.terms, layeredBackgroundVideoQuery: bundle.layeredBackgroundVideoQuery }]
+        : []
     onApply(
       preset.targetMode,
       preset.theme,
-      bundle ? [{ title: bundle.label, terms: bundle.terms, layeredBackgroundVideoQuery: bundle.layeredBackgroundVideoQuery }] : [],
+      resolvedBatch,
       preset.accentFolder ?? null,
       preset.customGradeParams,
     )
@@ -313,7 +333,14 @@ function StyleCard({ preset, onApply }: { preset: Preset; onApply: (p: Preset) =
 
       {/* Label */}
       <div className="px-2.5 py-2 bg-stone-900">
-        <p className="text-xs font-semibold text-stone-200 truncate">{preset.label}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-stone-200 truncate">{preset.label}</p>
+          {preset.badge && (
+            <span className="shrink-0 rounded-full border border-brand-500/25 bg-brand-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-brand-300">
+              {preset.badge}
+            </span>
+          )}
+        </div>
         <div className="flex items-center justify-between">
           <ThemePill theme={preset.theme} />
           {preset.accentFolder && <AccentDot accent={preset.accentFolder} />}

@@ -128,7 +128,7 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
 
   return (
     <div className="space-y-5">
-      <div data-tour="clips-resolution-theme">
+      <div data-tour="clips-resolution-theme" className="space-y-5">
         <label className="block text-xs font-medium text-stone-400 uppercase tracking-wide mb-2">
           Resolution
         </label>
@@ -146,16 +146,15 @@ export default function ClipsSettingsPanel({ settings, onChange }: Props) {
             </button>
           ))}
         </div>
-      </div>
-
-      <div>
-        <label className="block text-xs font-medium text-stone-400 uppercase tracking-wide mb-2">
-          Colour Grade
-        </label>
-        <ThemeDropdown value={settings.color_theme} onChange={v => set('color_theme', v)} />
-        <p className="text-xs text-stone-500 mt-1.5">
-          Applied to all clips via video filters during render.
-        </p>
+        <div>
+          <label className="block text-xs font-medium text-stone-400 uppercase tracking-wide mb-2">
+            Colour Grade
+          </label>
+          <ThemeDropdown value={settings.color_theme} onChange={v => set('color_theme', v)} />
+          <p className="text-xs text-stone-500 mt-1.5">
+            Applied to all clips via video filters during render.
+          </p>
+        </div>
       </div>
 
       <div data-tour="clips-pacing">

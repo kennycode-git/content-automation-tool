@@ -181,14 +181,14 @@ export default function VideoTutorial({
   const layeredSteps: TourStep[] = useMemo(() => [
     {
       mode: 'layered',
-      target: 'batch-editor',
+      target: 'layered-image-search',
       title: 'Build the layered batch',
       description: 'Start by adding the image search terms for your foreground layer. Each batch becomes its own finished layered video.',
     },
     {
       mode: 'layered',
-      target: 'layered-bg-search',
-      title: 'Search the background videos early',
+      target: 'layered-bg-panel',
+      title: 'Search the background videos',
       description: 'Right inside each layered batch, search for the background footage that will sit underneath the image sequence. You can select up to 5 videos and PassiveClip will blend between them for you.',
     },
     {
