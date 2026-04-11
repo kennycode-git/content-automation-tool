@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 export const DEV_WHATS_NEW_VERSION = '09/04/2026'
-export const DEV_WHATS_NEW_STORAGE_KEY = `passiveclip_dev_whats_new_seen_${DEV_WHATS_NEW_VERSION}`
+export const DEV_WHATS_NEW_STORAGE_KEY = `passiveclip_dev_whats_new_dont_show_${DEV_WHATS_NEW_VERSION}`
 
 export interface DevWhatsNewCard {
   id: string
@@ -14,12 +14,13 @@ export interface DevWhatsNewCard {
 interface Props {
   open: boolean
   cards: DevWhatsNewCard[]
-  onClose: () => void
-  onOpenLink: (href: string) => void
+  onClose: (dontShowAgain?: boolean) => void
+  onOpenLink: (href: string, dontShowAgain?: boolean) => void
 }
 
 export default function DevWhatsNewModal({ open, cards, onClose, onOpenLink }: Props) {
   const [expandedNext, setExpandedNext] = useState<'scheduling' | 'ai' | null>(null)
+  const [dontShowAgain, setDontShowAgain] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -34,12 +35,16 @@ export default function DevWhatsNewModal({ open, cards, onClose, onOpenLink }: P
     }
   }, [open])
 
+  useEffect(() => {
+    if (open) setDontShowAgain(false)
+  }, [open])
+
   if (!open) return null
 
   return (
     <div
       className="fixed inset-0 z-[220] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/80 px-3 py-4 sm:items-center sm:px-4 sm:py-6"
-      onClick={onClose}
+      onClick={() => onClose(dontShowAgain)}
     >
       <div
         className="my-0 max-h-[calc(100dvh-2rem)] w-full max-w-5xl overflow-y-auto overscroll-contain rounded-[24px] border border-stone-700 bg-[radial-gradient(circle_at_top,_rgba(217,132,39,0.16),_transparent_38%),linear-gradient(180deg,_rgba(28,25,23,0.98),_rgba(18,16,14,0.98))] p-4 shadow-[0_32px_120px_rgba(0,0,0,0.55)] sm:my-auto sm:rounded-[28px] sm:p-8"
@@ -59,7 +64,7 @@ export default function DevWhatsNewModal({ open, cards, onClose, onOpenLink }: P
           </div>
 
           <button
-            onClick={onClose}
+            onClick={() => onClose(dontShowAgain)}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-700 bg-stone-900/70 text-stone-400 transition hover:border-stone-500 hover:text-stone-100"
             aria-label="Close updates modal"
           >
@@ -71,7 +76,7 @@ export default function DevWhatsNewModal({ open, cards, onClose, onOpenLink }: P
           {cards.map(card => (
             <button
               key={card.id}
-              onClick={() => onOpenLink(card.href)}
+              onClick={() => onOpenLink(card.href, dontShowAgain)}
               className="group rounded-2xl border border-stone-700 bg-stone-900/70 p-4 text-left transition hover:border-brand-500/40 hover:bg-stone-900"
             >
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -137,14 +142,24 @@ export default function DevWhatsNewModal({ open, cards, onClose, onOpenLink }: P
           </div>
         </div>
 
-        <div className="sticky -bottom-4 -mx-4 mt-4 flex flex-col gap-3 border-t border-stone-800 bg-stone-900/95 px-4 py-4 text-xs text-stone-500 backdrop-blur sm:static sm:mx-0 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:bg-transparent sm:px-0 sm:pb-0 sm:backdrop-blur-0">
-          <p>This modal only appears once per update unless you reopen it from the navbar.</p>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-stone-700 px-3 py-2 text-stone-300 transition hover:border-stone-500 hover:text-stone-100"
-          >
-            Dismiss
-          </button>
+        <div className="sticky -bottom-4 -mx-4 mt-4 flex justify-end border-t border-stone-800 bg-stone-900/95 px-4 py-4 text-xs text-stone-500 backdrop-blur sm:static sm:mx-0 sm:mt-6 sm:bg-transparent sm:px-0 sm:pb-0 sm:backdrop-blur-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <label className="flex cursor-pointer items-center gap-2 text-stone-400 sm:order-none">
+              <input
+                type="checkbox"
+                checked={dontShowAgain}
+                onChange={event => setDontShowAgain(event.target.checked)}
+                className="h-4 w-4 rounded border-stone-600 bg-stone-950 accent-brand-500"
+              />
+              Don&apos;t show this again
+            </label>
+            <button
+              onClick={() => onClose(dontShowAgain)}
+              className="rounded-lg border border-stone-700 px-3 py-2 text-stone-300 transition hover:border-stone-500 hover:text-stone-100"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       </div>
     </div>

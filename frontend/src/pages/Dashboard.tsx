@@ -226,14 +226,14 @@ export default function Dashboard({ session }: Props) {
     }
   }, [])
 
-  function handleOpenWhatsNewLink(href: string) {
-    localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
+  function handleOpenWhatsNewLink(href: string, dontShowAgain?: boolean) {
+    if (dontShowAgain) localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
     setShowWhatsNew(false)
     window.location.href = href
   }
 
-  function handleCloseWhatsNew() {
-    localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
+  function handleCloseWhatsNew(dontShowAgain?: boolean) {
+    if (dontShowAgain) localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
     setShowWhatsNew(false)
   }
 
