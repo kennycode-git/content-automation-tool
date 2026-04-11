@@ -24,18 +24,21 @@ export default function DevWhatsNewModal({ open, cards, onClose, onOpenLink }: P
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/80 px-4 py-6">
+    <div
+      className="fixed inset-0 z-[220] flex items-start justify-center overflow-y-auto bg-black/80 px-3 py-4 sm:items-center sm:px-4 sm:py-6"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-5xl rounded-[28px] border border-stone-700 bg-[radial-gradient(circle_at_top,_rgba(217,132,39,0.16),_transparent_38%),linear-gradient(180deg,_rgba(28,25,23,0.98),_rgba(18,16,14,0.98))] p-6 shadow-[0_32px_120px_rgba(0,0,0,0.55)] sm:p-8"
+        className="my-0 max-h-[calc(100dvh-2rem)] w-full max-w-5xl overflow-y-auto rounded-[24px] border border-stone-700 bg-[radial-gradient(circle_at_top,_rgba(217,132,39,0.16),_transparent_38%),linear-gradient(180deg,_rgba(28,25,23,0.98),_rgba(18,16,14,0.98))] p-4 shadow-[0_32px_120px_rgba(0,0,0,0.55)] sm:my-auto sm:rounded-[28px] sm:p-8"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-4 flex items-start justify-between gap-4 border-b border-stone-800/70 bg-stone-900/95 px-4 py-4 backdrop-blur sm:static sm:m-0 sm:mb-0 sm:border-b-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-0">
           <div className="max-w-2xl">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-brand-500/25 bg-brand-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-brand-300">
               Updates
               <span className="text-stone-500">{DEV_WHATS_NEW_VERSION}</span>
             </div>
-            <h2 className="text-2xl font-semibold text-stone-100 sm:text-3xl">What&apos;s new in PassiveClip</h2>
+            <h2 className="text-xl font-semibold text-stone-100 sm:text-3xl">What&apos;s new in PassiveClip</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-400 sm:text-[15px]">
               We&apos;ve shipped a fresh batch of workflow fixes and upgrades across previews, layered editing, and the image tools.
               Jump straight into the parts you want to test.
@@ -51,7 +54,7 @@ export default function DevWhatsNewModal({ open, cards, onClose, onOpenLink }: P
           </button>
         </div>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:mt-6 md:grid-cols-2 xl:grid-cols-3">
           {cards.map(card => (
             <button
               key={card.id}
@@ -75,7 +78,7 @@ export default function DevWhatsNewModal({ open, cards, onClose, onOpenLink }: P
           ))}
         </div>
 
-        <div className="mt-6 rounded-2xl border border-brand-500/20 bg-[linear-gradient(180deg,_rgba(217,132,39,0.14),_rgba(120,53,15,0.12))] p-4 sm:p-5">
+        <div className="mt-4 rounded-2xl border border-brand-500/20 bg-[linear-gradient(180deg,_rgba(217,132,39,0.14),_rgba(120,53,15,0.12))] p-4 sm:mt-6 sm:p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-brand-300">What&apos;s next</p>
@@ -125,7 +128,7 @@ export default function DevWhatsNewModal({ open, cards, onClose, onOpenLink }: P
           </div>
         </div>
 
-        <div className="mt-6 flex flex-col gap-3 border-t border-stone-800 pt-4 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
+        <div className="sticky -bottom-4 -mx-4 mt-4 flex flex-col gap-3 border-t border-stone-800 bg-stone-900/95 px-4 py-4 text-xs text-stone-500 backdrop-blur sm:static sm:mx-0 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:bg-transparent sm:px-0 sm:pb-0 sm:backdrop-blur-0">
           <p>This modal only appears once per update unless you reopen it from the navbar.</p>
           <button
             onClick={onClose}
