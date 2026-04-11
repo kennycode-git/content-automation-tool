@@ -40,7 +40,7 @@ import PromptModal from '../components/PromptModal'
 import AppNavbar from '../components/AppNavbar'
 import InspirationCarousel from '../components/InspirationCarousel'
 import type { TemplateTargetMode } from '../components/InspirationCarousel'
-import DevWhatsNewModal, { DEV_WHATS_NEW_STORAGE_KEY } from '../components/DevWhatsNewModal'
+import DevWhatsNewModal, { DEV_WHATS_NEW_SESSION_DISMISSED_KEY, DEV_WHATS_NEW_STORAGE_KEY } from '../components/DevWhatsNewModal'
 
 type ContentMode = 'images' | 'clips' | 'layered'
 type DashboardFocusTarget = 'preview' | 'philosopher' | 'layered' | 'clips' | 'reedit'
@@ -230,7 +230,7 @@ export default function Dashboard({ session }: Props) {
 
   useEffect(() => {
     if (!updatesEnabled) return
-    if (!localStorage.getItem(DEV_WHATS_NEW_STORAGE_KEY)) {
+    if (!localStorage.getItem(DEV_WHATS_NEW_STORAGE_KEY) && !sessionStorage.getItem(DEV_WHATS_NEW_SESSION_DISMISSED_KEY)) {
       const t = window.setTimeout(() => setShowWhatsNew(true), 550)
       return () => window.clearTimeout(t)
     }
@@ -791,12 +791,14 @@ export default function Dashboard({ session }: Props) {
   }
 
   function handleOpenWhatsNewLink(href: string, dontShowAgain?: boolean) {
+    sessionStorage.setItem(DEV_WHATS_NEW_SESSION_DISMISSED_KEY, 'true')
     if (dontShowAgain) localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
     setShowWhatsNew(false)
     navigate(href)
   }
 
   function handleCloseWhatsNew(dontShowAgain?: boolean) {
+    sessionStorage.setItem(DEV_WHATS_NEW_SESSION_DISMISSED_KEY, 'true')
     if (dontShowAgain) localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
     setShowWhatsNew(false)
   }

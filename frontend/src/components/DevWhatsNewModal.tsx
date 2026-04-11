@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 export const DEV_WHATS_NEW_VERSION = '09/04/2026'
 export const DEV_WHATS_NEW_STORAGE_KEY = `passiveclip_dev_whats_new_dont_show_${DEV_WHATS_NEW_VERSION}`
+export const DEV_WHATS_NEW_SESSION_DISMISSED_KEY = `passiveclip_dev_whats_new_dismissed_this_visit_${DEV_WHATS_NEW_VERSION}`
 
 export interface DevWhatsNewCard {
   id: string
