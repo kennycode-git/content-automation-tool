@@ -17,9 +17,10 @@ interface Props {
   session: Session
   activeTool: 'video' | 'photos' | 'schedule'
   onShowTour?: () => void
+  onShowUpdates?: () => void
 }
 
-export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
+export default function AppNavbar({ session, activeTool, onShowTour, onShowUpdates }: Props) {
   const [showProfile, setShowProfile] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
 
@@ -113,6 +114,16 @@ export default function AppNavbar({ session, activeTool, onShowTour }: Props) {
       </div>
 
       <div className="flex items-center gap-3">
+        {onShowUpdates && (
+          <button
+            onClick={onShowUpdates}
+            className="text-xs font-medium px-2.5 py-1 rounded-md border border-brand-500/30 bg-brand-500/10 text-brand-300 hover:bg-brand-500/20 transition"
+            title="Show latest updates"
+          >
+            Updates
+          </button>
+        )}
+
         {onShowTour && (
           <button
             onClick={onShowTour}

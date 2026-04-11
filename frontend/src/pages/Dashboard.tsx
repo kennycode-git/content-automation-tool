@@ -38,6 +38,7 @@ import PromptModal from '../components/PromptModal'
 import AppNavbar from '../components/AppNavbar'
 import InspirationCarousel from '../components/InspirationCarousel'
 import type { TemplateTargetMode } from '../components/InspirationCarousel'
+import DevWhatsNewModal, { DEV_WHATS_NEW_STORAGE_KEY } from '../components/DevWhatsNewModal'
 
 type ContentMode = 'images' | 'clips' | 'layered'
 type ReEditRestoreSettings = Omit<Partial<VideoSettings>, 'custom_grade_params'> & {
@@ -97,6 +98,51 @@ const BACKGROUND_OPACITY_PRESETS = [
   { label: 'Full', value: 1.0 },
 ]
 
+const WHATS_NEW_CARDS = [
+  {
+    id: 'broll-jobs',
+    title: 'Video b-roll jobs',
+    description: 'Try the newer b-roll workflow for building polished short-form edits from stock footage.',
+    href: '/dashboard',
+    badge: 'New',
+  },
+  {
+    id: 'layered-style-videos',
+    title: 'Layered style videos',
+    description: 'Explore the layered workflow for more premium-looking videos that combine images with moving backgrounds.',
+    href: '/dashboard',
+    badge: 'New',
+  },
+  {
+    id: 'philosopher-accent',
+    title: 'Philosopher + accent curation',
+    description: 'Explore the per-batch style settings, including philosopher controls and accent options.',
+    href: '/dashboard',
+    badge: 'New',
+  },
+  {
+    id: 'preview-quality',
+    title: 'Preview render quality',
+    description: 'Preview-first renders now use full-quality staged assets instead of soft preview thumbnails.',
+    href: '/dashboard',
+    badge: 'Quality',
+  },
+  {
+    id: 'layered-reedit',
+    title: 'More re-edit controls',
+    description: 'There are more options for re-editing jobs directly from the Recent jobs section across the workflow.',
+    href: '/dashboard',
+    badge: 'Updated',
+  },
+  {
+    id: 'photos-layout',
+    title: 'Wider image workspace',
+    description: 'The image tool now uses more desktop width so extractions feel less cramped on larger screens.',
+    href: '/photos',
+    badge: 'UI',
+  },
+] as const
+
 export default function Dashboard({ session }: Props) {
   const [batches, setBatches] = useState<BatchOutput[]>([])
   const [settings, setSettings] = useState<VideoSettings>(DEFAULT_SETTINGS)
@@ -141,6 +187,7 @@ export default function Dashboard({ session }: Props) {
   const [previewData, setPreviewData] = useState<PreviewBatchResult[] | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showTour, setShowTour] = useState(false)
+  const [showWhatsNew, setShowWhatsNew] = useState(false)
   const [carouselKey, setCarouselKey] = useState(0)
   const [carouselVisible, setCarouselVisible] = useState(true)
   const [templateLoadedLabel, setTemplateLoadedLabel] = useState<string | null>(null)
@@ -171,6 +218,24 @@ export default function Dashboard({ session }: Props) {
       return () => clearTimeout(t)
     }
   }, [])
+
+  useEffect(() => {
+    if (!localStorage.getItem(DEV_WHATS_NEW_STORAGE_KEY)) {
+      const t = setTimeout(() => setShowWhatsNew(true), 550)
+      return () => clearTimeout(t)
+    }
+  }, [])
+
+  function handleOpenWhatsNewLink(href: string) {
+    localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
+    setShowWhatsNew(false)
+    window.location.href = href
+  }
+
+  function handleCloseWhatsNew() {
+    localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
+    setShowWhatsNew(false)
+  }
 
   // Browser tab title: show pending job count while running
   useEffect(() => {
@@ -987,7 +1052,12 @@ export default function Dashboard({ session }: Props) {
         </div>
       )}
 
-      <AppNavbar session={session} activeTool="video" onShowTour={() => setShowTour(true)} />
+      <AppNavbar
+        session={session}
+        activeTool="video"
+        onShowTour={() => setShowTour(true)}
+        onShowUpdates={() => setShowWhatsNew(true)}
+      />
 
       {carouselVisible ? (
         <InspirationCarousel
@@ -1639,6 +1709,12 @@ export default function Dashboard({ session }: Props) {
         onClose={() => setShowTour(false)}
         onOpenPrompt={() => setShowPromptModal(true)}
         onOpenVariants={() => setShowVariants(true)}
+      />
+      <DevWhatsNewModal
+        open={showWhatsNew}
+        cards={[...WHATS_NEW_CARDS]}
+        onClose={handleCloseWhatsNew}
+        onOpenLink={handleOpenWhatsNewLink}
       />
       {showPromptModal && <PromptModal mode={contentMode} fromTour={showTour} onClose={() => setShowPromptModal(false)} />}
 
