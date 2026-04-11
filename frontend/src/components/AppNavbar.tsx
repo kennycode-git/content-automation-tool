@@ -117,7 +117,7 @@ export default function AppNavbar({ session, activeTool, onShowTour, onShowUpdat
         {onShowUpdates && (
           <button
             onClick={onShowUpdates}
-            className="text-xs font-medium px-2.5 py-1 rounded-md border border-brand-500/30 bg-brand-500/10 text-brand-300 hover:bg-brand-500/20 transition"
+            className="hidden text-xs font-medium px-2.5 py-1 rounded-md border border-brand-500/30 bg-brand-500/10 text-brand-300 hover:bg-brand-500/20 transition sm:inline-flex"
             title="Show latest updates"
           >
             Updates
