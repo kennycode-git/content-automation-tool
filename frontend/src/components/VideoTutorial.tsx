@@ -52,19 +52,6 @@ function getTargetRect(target: string): Rect | null {
   return { top: r.top, left: r.left, width: r.width, height: r.height }
 }
 
-function getScrollableParent(el: HTMLElement | null): HTMLElement | null {
-  let current = el?.parentElement ?? null
-  while (current) {
-    const style = window.getComputedStyle(current)
-    const overflowY = style.overflowY
-    if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) {
-      return current
-    }
-    current = current.parentElement
-  }
-  return null
-}
-
 export default function VideoTutorial({
   active,
   isFirstVisit,
@@ -245,36 +232,6 @@ export default function VideoTutorial({
 
   const step = path !== 'selector' ? steps[stepIdx] : null
 
-  const scrollToCurrentTarget = useCallback((target: string) => {
-    let attempts = 0
-    const run = () => {
-      const el = document.querySelector(`[data-tour="${target}"]`) as HTMLElement | null
-      if (el) {
-        const behavior = attempts === 0 ? 'auto' : 'smooth'
-        const scroller = getScrollableParent(el)
-        if (scroller) {
-          const scrollerRect = scroller.getBoundingClientRect()
-          const rect = el.getBoundingClientRect()
-          const relativeTop = rect.top - scrollerRect.top + scroller.scrollTop
-          const desiredTop = Math.max(0, relativeTop - Math.max(80, (scroller.clientHeight - rect.height) / 2))
-          scroller.scrollTo({ top: desiredTop, behavior })
-        } else {
-          const rect = el.getBoundingClientRect()
-          const absoluteTop = window.scrollY + rect.top
-          const desiredTop = Math.max(0, absoluteTop - Math.max(120, (window.innerHeight - rect.height) / 2))
-          window.scrollTo({ top: desiredTop, behavior })
-          document.documentElement.scrollTo?.({ top: desiredTop, behavior })
-          document.body.scrollTo?.({ top: desiredTop, behavior })
-        }
-      }
-      attempts += 1
-      if (attempts < 7) {
-        window.setTimeout(run, attempts < 2 ? 120 : 260)
-      }
-    }
-    run()
-  }, [])
-
   useEffect(() => {
     if (!active) return
     setPath(startPath)
@@ -337,10 +294,11 @@ export default function VideoTutorial({
     onModeChange(currentStep.mode)
     currentStep.onEnter?.()
     const t = window.setTimeout(() => {
-      scrollToCurrentTarget(currentStep.target)
+      const el = document.querySelector(`[data-tour="${currentStep.target}"]`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 120)
     return () => window.clearTimeout(t)
-  }, [active, introMode, onModeChange, scrollToCurrentTarget, step])
+  }, [active, introMode, onModeChange, step])
 
   useEffect(() => {
     if (!active) return

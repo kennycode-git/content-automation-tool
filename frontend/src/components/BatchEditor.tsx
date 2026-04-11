@@ -1303,6 +1303,7 @@ export default function BatchEditor({
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const [openPopover, setOpenPopover] = useState<number | null>(null)
+  const highlightedBatchRef = useRef<HTMLDivElement | null>(null)
   const [userPhilosophers, setUserPhilosophers] = useState<UserPhilosopher[]>([])
 
   useEffect(() => {
@@ -1351,6 +1352,14 @@ export default function BatchEditor({
     if (!spotlightStyleFeature || classicMode || mode !== 'images') return
     setOpenPopover(0)
   }, [classicMode, mode, spotlightStyleFeature])
+
+  useEffect(() => {
+    if (!highlightedBatchTitle || classicMode) return
+    const timer = window.setTimeout(() => {
+      highlightedBatchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [batches, classicMode, highlightedBatchTitle])
 
   function visualToBatchOutputs(vBatches: VisualBatch[], paths: Record<number, string[]>): BatchOutput[] {
     return vBatches.map((b, i) => {
@@ -1644,6 +1653,7 @@ export default function BatchEditor({
             return (
               <div
                 key={idx}
+                ref={isHighlightedBatch ? highlightedBatchRef : undefined}
                 className={`rounded-xl border bg-stone-800 p-3 transition-all duration-500 ${
                   isHighlightedBatch
                     ? 'border-brand-500 shadow-[0_0_0_1px_rgba(217,132,39,0.35),0_0_22px_rgba(217,132,39,0.18)]'

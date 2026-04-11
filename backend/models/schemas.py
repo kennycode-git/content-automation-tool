@@ -404,7 +404,7 @@ class PreviewBatchRequest(BaseModel):
 
 
 class PreviewStageRequest(BaseModel):
-    batches: List[PreviewBatchRequest] = Field(..., min_length=1, max_length=10)
+    batches: List[PreviewBatchRequest] = Field(..., min_length=1, max_length=15)
     resolution: str = Field(default="1080x1920")
     seconds_per_image: float = Field(default=0.3, ge=0.05, le=5.0)
     total_seconds: float = Field(default=3.0, ge=1.0, le=120.0)

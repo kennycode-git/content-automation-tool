@@ -100,6 +100,7 @@ const BACKGROUND_OPACITY_PRESETS = [
   ...OPACITY_PRESETS,
   { label: 'Full', value: 1.0 },
 ]
+const MAX_PREVIEW_BATCHES = 15
 
 const DEV_WHATS_NEW_CARDS = [
   {
@@ -197,14 +198,14 @@ export default function Dashboard({ session }: Props) {
   const [tourPath, setTourPath] = useState<TutorialPath>('selector')
   const [carouselKey, setCarouselKey] = useState(0)
   const [carouselVisible, setCarouselVisible] = useState(true)
-  const [templateLoadedLabel, setTemplateLoadedLabel] = useState<string | null>(null)
+  const [loadedBatchFeedback, setLoadedBatchFeedback] = useState<{ label: string; source: 'template' | 'bundle' } | null>(null)
   const [imageSource, setImageSource] = useState<'auto' | 'unsplash' | 'pexels' | 'both'>('auto')
   const [showStagingOverlay, setShowStagingOverlay] = useState(false)
   const stagingAbortRef = useRef<AbortController | null>(null)
   const stagingOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const step1Ref = useRef<HTMLDivElement>(null)
   const step2Ref = useRef<HTMLDivElement>(null)
-  const templateFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const batchFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const updatesEnabled = true
 
   // Usage query
@@ -311,7 +312,7 @@ export default function Dashboard({ session }: Props) {
 
   useEffect(() => {
     return () => {
-      if (templateFeedbackTimerRef.current) clearTimeout(templateFeedbackTimerRef.current)
+      if (batchFeedbackTimerRef.current) clearTimeout(batchFeedbackTimerRef.current)
     }
   }, [])
 
@@ -493,6 +494,12 @@ export default function Dashboard({ session }: Props) {
     if (validBatches.length === 0) {
       if (contentMode === 'layered') setLayeredError('Enter at least one search term.')
       else setError('Enter at least one search term.')
+      return
+    }
+    if (validBatches.length > MAX_PREVIEW_BATCHES) {
+      const message = `Preview image selection supports up to ${MAX_PREVIEW_BATCHES} batches at once. Use Generate directly, or reduce the batch count before previewing.`
+      if (contentMode === 'layered') setLayeredError(message)
+      else setError(message)
       return
     }
     setError(null)
@@ -800,6 +807,23 @@ export default function Dashboard({ session }: Props) {
     })
   }
 
+  function showLoadedBatchFeedback(label: string, source: 'template' | 'bundle') {
+    setLoadedBatchFeedback({ label, source })
+    if (batchFeedbackTimerRef.current) clearTimeout(batchFeedbackTimerRef.current)
+    batchFeedbackTimerRef.current = setTimeout(() => {
+      setLoadedBatchFeedback(null)
+    }, 2600)
+    scrollToStep(step1Ref)
+  }
+
+  function handleQuickBundleLoad(
+    bundles: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string }[],
+  ) {
+    if (bundles.length === 0) return
+    setPendingBundles(bundles)
+    showLoadedBatchFeedback(bundles[0]?.title ?? 'Quick-start bundle', 'bundle')
+  }
+
   function handleTemplateApply(
     targetMode: TemplateTargetMode,
     theme: string,
@@ -810,11 +834,7 @@ export default function Dashboard({ session }: Props) {
     const effectiveTargetMode: ContentMode = targetMode
     setModeAndResetPreview(effectiveTargetMode)
     const templateLabel = bundles[0]?.title ?? 'Template'
-    setTemplateLoadedLabel(templateLabel)
-    if (templateFeedbackTimerRef.current) clearTimeout(templateFeedbackTimerRef.current)
-    templateFeedbackTimerRef.current = setTimeout(() => {
-      setTemplateLoadedLabel(null)
-    }, 2600)
+    showLoadedBatchFeedback(templateLabel, 'template')
 
     if (effectiveTargetMode === 'clips') {
       setClipsSettings(prev => ({ ...prev, color_theme: theme }))
@@ -831,7 +851,6 @@ export default function Dashboard({ session }: Props) {
         accentFolder: appliedAccent ?? null,
         layeredBackgroundVideoQuery: effectiveTargetMode === 'layered' ? b.layeredBackgroundVideoQuery : undefined,
       })))
-      scrollToStep(step1Ref)
       return
     }
 
@@ -1206,15 +1225,15 @@ export default function Dashboard({ session }: Props) {
                 className="rounded-2xl border border-stone-800 bg-stone-900 p-6"
                 data-tour="batch-editor"
               >
-                {templateLoadedLabel && (
+                {loadedBatchFeedback && (
                   <div className="mb-4 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-200">
-                    <span>Template loaded: <span className="font-semibold text-brand-100">{templateLoadedLabel}</span></span>
+                    <span>{loadedBatchFeedback.source === 'template' ? 'Template' : 'Bundle'} loaded: <span className="font-semibold text-brand-100">{loadedBatchFeedback.label}</span></span>
                   </div>
                 )}
                 {contentMode === 'clips' ? (
                   <>
                     <ClipBundles
-                      onLoad={bundle => setPendingBundles([{ title: bundle.label, terms: bundle.terms }])}
+                      onLoad={bundle => handleQuickBundleLoad([{ title: bundle.label, terms: bundle.terms }])}
                       disabled={clipsSearching || clipsGenerating}
                     />
                     <p className="text-xs text-stone-500 mb-3">
@@ -1223,7 +1242,7 @@ export default function Dashboard({ session }: Props) {
                   </>
                 ) : (
                   <>
-                    <TermBundles onLoad={bundles => setPendingBundles(bundles)} />
+                    <TermBundles onLoad={handleQuickBundleLoad} />
                     <hr className="border-stone-800 my-4" />
                   </>
                 )}
@@ -1234,7 +1253,7 @@ export default function Dashboard({ session }: Props) {
                   pendingBundles={pendingBundles}
                   onBundlesHandled={() => setPendingBundles(null)}
                 onOpenPrompt={() => setShowPromptModal(true)}
-                highlightedBatchTitle={templateLoadedLabel}
+                highlightedBatchTitle={loadedBatchFeedback?.label ?? null}
                 mode={contentMode}
                 spotlightStyleFeature={spotlightStyleFeature}
               />
