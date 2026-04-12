@@ -61,6 +61,7 @@ interface PendingBundleSelection {
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null
   layeredBackgroundVideoQuery?: string
+  layeredBackgroundVideoUrls?: string[]
 }
 
 interface Props {
@@ -757,7 +758,7 @@ export default function Dashboard({ session }: Props) {
   function handleTemplateApply(
     targetMode: TemplateTargetMode,
     theme: string,
-    bundles: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string }[],
+    bundles: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string; layeredBackgroundVideoUrls?: string[] }[],
     appliedAccent?: string | null,
     customGradeParams?: CustomGradeParams,
   ) {
@@ -784,6 +785,7 @@ export default function Dashboard({ session }: Props) {
         customGradeParams: customGradeParams ?? undefined,
         accentFolder: appliedAccent ?? null,
         layeredBackgroundVideoQuery: effectiveTargetMode === 'layered' ? b.layeredBackgroundVideoQuery : undefined,
+        layeredBackgroundVideoUrls: effectiveTargetMode === 'layered' ? b.layeredBackgroundVideoUrls : undefined,
       })))
       scrollToStep(step1Ref)
       return

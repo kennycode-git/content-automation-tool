@@ -138,6 +138,7 @@ interface PendingBundle {
   customGradeParams?: CustomGradeParams
   accentFolder?: string | null
   layeredBackgroundVideoQuery?: string
+  layeredBackgroundVideoUrls?: string[]
 }
 
 interface Props {
@@ -1324,6 +1325,7 @@ export default function BatchEditor({
         customGradeParams: b.customGradeParams,
         accentFolder: b.accentFolder,
         layeredBackgroundVideoQuery: mode === 'layered' ? b.layeredBackgroundVideoQuery : undefined,
+        layeredBackgroundVideoUrls: mode === 'layered' ? b.layeredBackgroundVideoUrls : undefined,
       }))
       const onlyEmptyBatch = batches.length === 1 && !batches[0].terms.trim()
       const updated = onlyEmptyBatch ? newCards : [...batches, ...newCards]
