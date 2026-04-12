@@ -25,10 +25,48 @@ interface Preset {
   accentFolder?: string | null
   customGradeParams?: CustomGradeParams
   badge?: string
-  customBatch?: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string }
+  customBatch?: {
+    title: string | null
+    terms: string[]
+    layeredBackgroundVideoQuery?: string
+    layeredBackgroundVideoUrls?: string[]
+  }
 }
 
 const PRESETS: Preset[] = [
+  {
+    id: 'stargaze',
+    label: 'Stargaze',
+    theme: 'dark',
+    bundleLabel: 'Stargaze',
+    gradient: 'from-slate-950 via-indigo-950 to-stone-950',
+    targetMode: 'layered',
+    badge: 'New',
+    accentFolder: 'gold',
+    customBatch: {
+      title: 'Stargaze',
+      terms: BUNDLES.find(b => b.label === 'Stoic Philosophy')?.terms ?? [
+        'marble roman bust dark museum shadows weathered emperor',
+        'ancient stone sculpture dark moss covered philosopher contemplating',
+        'crumbling greek column dark ruins overgrown atmospheric decay',
+      ],
+      layeredBackgroundVideoQuery: 'night sky',
+      layeredBackgroundVideoUrls: ['https://videos.pexels.com/video-files/18184370/18184370-sd_240_360_25fps.mp4'],
+    },
+  },
+  {
+    id: 'raindrops',
+    label: 'Raindrops',
+    theme: 'none',
+    bundleLabel: 'Raindrops',
+    gradient: 'from-slate-950 via-stone-900 to-slate-950',
+    targetMode: 'clips',
+    badge: 'New',
+    customBatch: {
+      title: 'Raindrops',
+      terms: ['rain on window night', 'lone figure fog'],
+    },
+  },
   {
     id: 'buddhism',
     label: 'Buddhism',
@@ -48,19 +86,6 @@ const PRESETS: Preset[] = [
     bundleLabel: 'Dark Academia',
     gradient: 'from-stone-900 via-amber-950 to-stone-950',
     targetMode: 'images',
-  },
-  {
-    id: 'raindrops',
-    label: 'Raindrops',
-    theme: 'dark',
-    bundleLabel: 'Raindrops',
-    gradient: 'from-slate-950 via-stone-900 to-slate-950',
-    targetMode: 'clips',
-    badge: 'New',
-    customBatch: {
-      title: 'Raindrops',
-      terms: ['rain on window night', 'lone figure fog'],
-    },
   },
   {
     id: 'stoic-philosophy',
@@ -147,7 +172,12 @@ interface Props {
   onApply: (
     targetMode: TemplateTargetMode,
     theme: string,
-    bundles: { title: string | null; terms: string[]; layeredBackgroundVideoQuery?: string }[],
+    bundles: {
+      title: string | null
+      terms: string[]
+      layeredBackgroundVideoQuery?: string
+      layeredBackgroundVideoUrls?: string[]
+    }[],
     accentFolder?: string | null,
     customGradeParams?: CustomGradeParams,
   ) => void
