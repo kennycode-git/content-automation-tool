@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:0;background:#f5f2ed;font-family:Arial,Helvetica,sans-serif;color:#171512;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f2ed;padding:32px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #e7dfd4;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:26px 32px 20px;background:#11100e;">
+              <table role="presentation" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="width:34px;height:34px;border-radius:10px;background:#f59e0b;color:#11100e;font-size:23px;font-weight:800;line-height:34px;text-align:center;">P</td>
+                  <td style="padding-left:12px;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.02em;">Passive<span style="color:#f59e0b;">Clip</span></td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="height:4px;background:#f59e0b;font-size:0;line-height:0;">&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="padding:38px 32px 12px;">
+                <p style="margin:0 0 10px;color:#a16207;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.14em;">Updates</p>
+              <h1 style="margin:0 0 14px;color:#171512;font-size:28px;line-height:1.18;font-weight:800;letter-spacing:-0.03em;">{{ headline }}</h1>
+              <p style="margin:0;color:#4b443c;font-size:16px;line-height:1.7;">{{ intro }}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 32px 4px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #eee6dc;border-radius:14px;background:#fffaf3;">
+                <tr>
+                  <td style="padding:20px 22px;">
+                    {{ summary_html }}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 32px 36px;">
+              <a href="{{ cta_url }}" style="display:inline-block;background:#f59e0b;color:#171512;text-decoration:none;border-radius:10px;padding:14px 22px;font-size:14px;font-weight:800;">{{ cta_label }}</a>
+                <p style="margin:22px 0 0;color:#70675d;font-size:13px;line-height:1.7;">Thanks for building with PassiveClip. We'll keep making the workflow faster, cleaner, and easier to ship.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:22px 32px;background:#faf7f2;border-top:1px solid #eee6dc;">
+              <p style="margin:0 0 8px;color:#70675d;font-size:12px;line-height:1.6;">PassiveClip · Automated video for content creators</p>
+                <p style="margin:0;color:#8a8177;font-size:11px;line-height:1.6;">You're receiving this because you opted in to product updates. <a href="{{ unsubscribe_url }}" style="color:#a16207;text-decoration:underline;">Unsubscribe</a></p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
