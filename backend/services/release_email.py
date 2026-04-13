@@ -35,6 +35,7 @@ class RenderedReleaseEmail:
     headline: str
     intro: str
     summary_text: str
+    body_html: str
     html: str
     text: str
 
@@ -86,6 +87,77 @@ def _strip_md(text: str) -> str:
     return text.strip()
 
 
+def _inline_markdown_html(text: str) -> str:
+    escaped = html.escape(text.strip())
+    escaped = re.sub(
+        r"\[([^\]]+)\]\((https?://[^)]+)\)",
+        lambda m: f'<a href="{html.escape(m.group(2), quote=True)}" style="color:#a16207;text-decoration:underline;">{m.group(1)}</a>',
+        escaped,
+    )
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", escaped)
+    return escaped
+
+
+def markdown_to_email_body_html(markdown: str) -> str:
+    """Render the release markdown into email-safe HTML without external parser dependencies."""
+    lines = markdown.splitlines()
+    parts: list[str] = []
+    list_type: str | None = None
+
+    def close_list() -> None:
+        nonlocal list_type
+        if list_type:
+            parts.append(f"</{list_type}>")
+            list_type = None
+
+    def open_list(tag: str) -> None:
+        nonlocal list_type
+        if list_type == tag:
+            return
+        close_list()
+        style = "margin:0 0 18px;padding:0 0 0 22px;color:#332d26;font-size:15px;line-height:1.65;"
+        parts.append(f'<{tag} style="{style}">')
+        list_type = tag
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            close_list()
+            continue
+        if line.startswith("# "):
+            continue
+        if line.startswith("## "):
+            close_list()
+            parts.append(
+                f'<h2 style="margin:28px 0 12px;color:#171512;font-size:21px;line-height:1.25;font-weight:800;">{_inline_markdown_html(line[3:])}</h2>'
+            )
+            continue
+        if line.startswith("### "):
+            close_list()
+            parts.append(
+                f'<h3 style="margin:24px 0 10px;color:#171512;font-size:17px;line-height:1.35;font-weight:800;">{_inline_markdown_html(line[4:])}</h3>'
+            )
+            continue
+        if line.startswith(("- ", "* ")):
+            open_list("ul")
+            parts.append(f'<li style="margin:0 0 10px;">{_inline_markdown_html(line[2:])}</li>')
+            continue
+        ordered = re.match(r"^\d+\.\s+(.+)$", line)
+        if ordered:
+            open_list("ol")
+            parts.append(f'<li style="margin:0 0 10px;">{_inline_markdown_html(ordered.group(1))}</li>')
+            continue
+
+        close_list()
+        parts.append(
+            f'<p style="margin:0 0 16px;color:#332d26;font-size:15px;line-height:1.75;">{_inline_markdown_html(line)}</p>'
+        )
+
+    close_list()
+    return "\n".join(parts)
+
+
 def markdown_to_email_points(markdown: str, max_items: int = 6) -> list[str]:
     points: list[str] = []
     for line in markdown.splitlines():
@@ -108,7 +180,7 @@ def markdown_title(markdown: str, version: str, fallback_title: str | None = Non
         stripped = line.strip()
         if stripped.startswith("# "):
             return _strip_md(stripped.lstrip("#").strip())
-    return fallback_title or f"PassiveClip {version}"
+    return fallback_title or "Passive Clip"
 
 
 async def maybe_summarise_with_llm(markdown: str, version: str, title: str) -> list[str] | None:
@@ -224,6 +296,7 @@ async def render_release_email(
     cta_url = changelog_url or (os.environ.get("PUBLIC_APP_URL") or "https://passiveclip.com")
     cta_label = "Open PassiveClip"
     summary_text = "\n".join(f"- {point}" for point in points)
+    body_html = markdown_to_email_body_html(markdown)
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     unsub_url = unsubscribe_url(recipient_user_id, recipient_email)
     html_body = _render_template(
@@ -232,7 +305,7 @@ async def render_release_email(
             "subject": html.escape(subject),
             "headline": html.escape(headline),
             "intro": html.escape(intro),
-            "summary_html": _summary_html(points),
+            "body_html": body_html,
             "cta_url": html.escape(cta_url),
             "cta_label": html.escape(cta_label),
             "unsubscribe_url": html.escape(unsub_url),
@@ -250,6 +323,7 @@ async def render_release_email(
         headline=headline,
         intro=intro,
         summary_text=summary_text,
+        body_html=body_html,
         html=html_body,
         text=text_body,
     )

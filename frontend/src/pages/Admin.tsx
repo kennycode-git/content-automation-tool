@@ -96,7 +96,7 @@ export default function Admin() {
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError]   = useState<string | null>(null)
   const [releaseVersion, setReleaseVersion] = useState('v0.3.3')
-  const [releaseTitle, setReleaseTitle] = useState('PassiveClip v0.3.3')
+  const [releaseTitle, setReleaseTitle] = useState('Passive Clip')
   const [releaseMarkdownPath, setReleaseMarkdownPath] = useState('/releases/v0.3.3.md')
   const [releaseChangelogUrl, setReleaseChangelogUrl] = useState('https://passiveclip.com')
   const [releasePreviewEmail, setReleasePreviewEmail] = useState('')
