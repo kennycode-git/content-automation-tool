@@ -207,6 +207,31 @@ async def unsubscribe(token: str):
             "</div></body></html>"
         )
 
+    if user_id == "invite":
+        try:
+            db.table("email_update_suppressions").upsert({
+                "email": email.strip().lower(),
+                "unsubscribed_at": utc_now(),
+            }, on_conflict="email").execute()
+        except Exception:
+            logger.exception("Release invite unsubscribe failed for %s", email)
+            return HTMLResponse(
+                "<!doctype html><html><body style='font-family:Arial,sans-serif;background:#f5f2ed;color:#171512;padding:40px;'>"
+                "<div style='max-width:520px;margin:0 auto;background:white;border:1px solid #e7dfd4;border-radius:16px;padding:28px;'>"
+                "<h1 style='margin-top:0;'>We couldn't unsubscribe you</h1>"
+                "<p>Please contact support and we'll update your email preference manually.</p>"
+                "</div></body></html>",
+                status_code=500,
+            )
+        logger.info("Release invite email unsubscribe: %s", email)
+        return HTMLResponse(
+            "<!doctype html><html><body style='font-family:Arial,sans-serif;background:#f5f2ed;color:#171512;padding:40px;'>"
+            "<div style='max-width:520px;margin:0 auto;background:white;border:1px solid #e7dfd4;border-radius:16px;padding:28px;'>"
+            "<h1 style='margin-top:0;'>You're unsubscribed</h1>"
+            "<p>You will no longer receive PassiveClip product update emails.</p>"
+            "</div></body></html>"
+        )
+
     try:
         db.table("email_update_preferences").upsert({
             "user_id": user_id,

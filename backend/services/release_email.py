@@ -42,8 +42,13 @@ class RenderedReleaseEmail:
 
 @dataclass
 class Recipient:
-    user_id: str
     email: str
+    user_id: str | None = None
+    source: str = "auth"
+
+    @property
+    def unsubscribe_user_id(self) -> str:
+        return self.user_id or "invite"
 
 
 def utc_now() -> str:
@@ -361,7 +366,7 @@ def _extract_auth_users(page: Any) -> list[Any]:
 
 
 def get_subscribed_recipients(db: Any) -> list[Recipient]:
-    """Read auth users and companion preferences; missing prefs default to subscribed."""
+    """Read signed-up users plus invited emails; missing prefs default to subscribed."""
     auth_page = db.auth.admin.list_users()
     users = _extract_auth_users(auth_page)
 
@@ -383,6 +388,7 @@ def get_subscribed_recipients(db: Any) -> list[Recipient]:
         prefs_by_user = {str(row["user_id"]): row for row in prefs}
 
     recipients: list[Recipient] = []
+    seen_emails: set[str] = set()
     for user in users:
         user_id = str(_field(user, "id") or "")
         email = (_field(user, "email") or "").strip().lower()
@@ -391,7 +397,37 @@ def get_subscribed_recipients(db: Any) -> list[Recipient]:
         pref = prefs_by_user.get(user_id)
         if pref is not None and pref.get("subscribed_to_product_updates") is False:
             continue
-        recipients.append(Recipient(user_id=user_id, email=email))
+        recipients.append(Recipient(user_id=user_id, email=email, source="auth"))
+        seen_emails.add(email)
+
+    invite_rows = (
+        db.table("trial_invites")
+        .select("email")
+        .execute()
+        .data or []
+    )
+    invite_emails = sorted({
+        str(row.get("email") or "").strip().lower()
+        for row in invite_rows
+        if str(row.get("email") or "").strip()
+    })
+    suppressed_rows = (
+        db.table("email_update_suppressions")
+        .select("email")
+        .in_("email", invite_emails)
+        .execute()
+        .data or []
+    ) if invite_emails else []
+    suppressed_emails = {
+        str(row.get("email") or "").strip().lower()
+        for row in suppressed_rows
+    }
+    for email in invite_emails:
+        if email in seen_emails or email in suppressed_emails:
+            continue
+        recipients.append(Recipient(email=email, source="trial_invite"))
+        seen_emails.add(email)
+
     return recipients
 
 
@@ -510,7 +546,7 @@ async def send_broadcast_job(db: Any, *, release_id: str, job_id: str, batch_siz
                         version=release["version"],
                         title=release.get("title"),
                         changelog_url=release.get("changelog_url"),
-                        recipient_user_id=recipient.user_id,
+                        recipient_user_id=recipient.unsubscribe_user_id,
                         recipient_email=recipient.email,
                         use_llm_summary=False,
                     )
