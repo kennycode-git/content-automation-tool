@@ -21,7 +21,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RELEASES_ROOT = REPO_ROOT / "releases"
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+RELEASE_ROOTS = tuple(dict.fromkeys((REPO_ROOT / "releases", BACKEND_ROOT / "releases")))
 TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "templates" / "release_update_email.html"
 
 RESEND_API_URL = "https://api.resend.com/emails"
@@ -50,15 +51,26 @@ def utc_now() -> str:
 
 def _normalise_markdown_path(markdown_path: str) -> Path:
     raw = markdown_path.replace("\\", "/").lstrip("/")
-    resolved = (REPO_ROOT / raw).resolve()
-    releases_root = RELEASES_ROOT.resolve()
-    if releases_root not in resolved.parents and resolved != releases_root:
+    if not raw.startswith("releases/"):
         raise ValueError("Release markdown must live inside the /releases directory.")
-    if resolved.suffix.lower() != ".md":
+
+    relative = raw.removeprefix("releases/")
+    if Path(relative).suffix.lower() != ".md":
         raise ValueError("Release markdown file must be a .md file.")
-    if not resolved.exists():
-        raise FileNotFoundError(f"Release markdown not found: {markdown_path}")
-    return resolved
+
+    looked_at: list[str] = []
+    for releases_root in RELEASE_ROOTS:
+        resolved = (releases_root / relative).resolve()
+        root = releases_root.resolve()
+        if root not in resolved.parents and resolved != root:
+            raise ValueError("Release markdown must live inside the /releases directory.")
+        looked_at.append(str(resolved))
+        if resolved.exists():
+            return resolved
+
+    raise FileNotFoundError(
+        f"Release markdown not found: {markdown_path}. Looked at: {', '.join(looked_at)}"
+    )
 
 
 def read_release_markdown(markdown_path: str) -> str:
