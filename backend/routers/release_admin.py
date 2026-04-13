@@ -197,11 +197,32 @@ async def unsubscribe(token: str):
         user_id, email = parse_unsubscribe_token(token)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    db.table("email_update_preferences").upsert({
-        "user_id": user_id,
-        "subscribed_to_product_updates": False,
-        "unsubscribed_at": utc_now(),
-    }, on_conflict="user_id").execute()
+
+    if user_id == "preview":
+        return HTMLResponse(
+            "<!doctype html><html><body style='font-family:Arial,sans-serif;background:#f5f2ed;color:#171512;padding:40px;'>"
+            "<div style='max-width:520px;margin:0 auto;background:white;border:1px solid #e7dfd4;border-radius:16px;padding:28px;'>"
+            "<h1 style='margin-top:0;'>Preview email link</h1>"
+            "<p>This was a preview email, so no subscription preference was changed.</p>"
+            "</div></body></html>"
+        )
+
+    try:
+        db.table("email_update_preferences").upsert({
+            "user_id": user_id,
+            "subscribed_to_product_updates": False,
+            "unsubscribed_at": utc_now(),
+        }, on_conflict="user_id").execute()
+    except Exception:
+        logger.exception("Release email unsubscribe failed for %s (%s)", email, user_id)
+        return HTMLResponse(
+            "<!doctype html><html><body style='font-family:Arial,sans-serif;background:#f5f2ed;color:#171512;padding:40px;'>"
+            "<div style='max-width:520px;margin:0 auto;background:white;border:1px solid #e7dfd4;border-radius:16px;padding:28px;'>"
+            "<h1 style='margin-top:0;'>We couldn't unsubscribe you</h1>"
+            "<p>Please contact support and we'll update your email preference manually.</p>"
+            "</div></body></html>",
+            status_code=500,
+        )
     logger.info("Release email unsubscribe: %s (%s)", email, user_id)
     return HTMLResponse(
         "<!doctype html><html><body style='font-family:Arial,sans-serif;background:#f5f2ed;color:#171512;padding:40px;'>"

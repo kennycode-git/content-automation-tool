@@ -266,12 +266,29 @@ def parse_unsubscribe_token(token: str) -> tuple[str, str]:
     return user_id, email
 
 
+def release_api_public_url() -> str:
+    """Resolve the public backend origin used by one-click email links."""
+    for key in (
+        "RELEASE_EMAIL_PUBLIC_API_URL",
+        "PUBLIC_API_URL",
+        "BACKEND_PUBLIC_URL",
+        "BACKEND_URL",
+        "API_BASE_URL",
+    ):
+        value = os.environ.get(key)
+        if value:
+            return value.split(",")[0].strip()
+
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+    if railway_domain:
+        railway_domain = railway_domain.strip().removeprefix("https://").removeprefix("http://")
+        return f"https://{railway_domain}"
+
+    return "https://passiveclip.com"
+
+
 def unsubscribe_url(user_id: str, email: str) -> str:
-    public_url = (
-        os.environ.get("PUBLIC_API_URL")
-        or os.environ.get("PUBLIC_APP_URL")
-        or os.environ.get("FRONTEND_URL", "https://passiveclip.com").split(",")[0]
-    )
+    public_url = release_api_public_url()
     token = build_unsubscribe_token(user_id, email)
     return f"{public_url.rstrip('/')}/api/releases/unsubscribe?token={token}"
 
