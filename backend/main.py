@@ -24,7 +24,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-from routers import admin, auth, clips, generate, jobs, layered, philosophers, presets, preview, release_admin, stripe_webhook, trial_auth, tiktok as tiktok_router
+from routers import admin, auth, clips, generate, jobs, layered, philosophers, presets, preview, release_admin, stripe_webhook, trial_auth, tiktok as tiktok_router, voiceover
 from services.scheduler import scheduler
 
 logging.basicConfig(
@@ -219,6 +219,7 @@ app.include_router(stripe_webhook.router, tags=["stripe"])
 app.include_router(trial_auth.router, prefix="/api", tags=["trial-auth"])
 app.include_router(clips.router, prefix="/api", tags=["clips"])
 app.include_router(admin.router, prefix="/api", tags=["admin"])
+app.include_router(voiceover.router, prefix="/api", tags=["voiceover"])
 app.include_router(philosophers.router, prefix="/api", tags=["philosophers"])
 app.include_router(tiktok_router.router, prefix="/api", tags=["tiktok"])
 app.include_router(layered.router, prefix="/api", tags=["layered"])

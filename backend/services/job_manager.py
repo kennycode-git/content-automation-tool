@@ -44,6 +44,7 @@ from db.supabase_client import get_client
 from services.image_pipeline import fetch_images, download_and_save, download_from_queue, RateLimitError
 from services.image_grader import apply_theme_grading
 from services.video_builder import render_slideshow, extract_thumbnail
+from services.voiceover import apply_ai_voiceover
 from services.storage import (
     upload_output, upload_thumbnail, get_signed_url, delete_file,
     list_accent_images, download_accent_image,
@@ -612,11 +613,30 @@ async def _run_pipeline_inner(job_id: str, user_id: str, config: JobConfig, db) 
                          result["returncode"], "\n".join(result["log"][-20:]))
             raise RuntimeError(f"ffmpeg failed (rc={result['returncode']}). Check server logs.")
 
+        final_duration = config.total_seconds
+        if config.ai_voiceover and config.ai_voiceover.get("enabled"):
+            await update_job_status(job_id, user_id, "running", db, progress_message="Generating voiceover…")
+            voiceover_output = os.path.join(tmp_root, "output_voiceover.mp4")
+            voiceover_audio = os.path.join(tmp_root, "voiceover.mp3")
+            final_duration = await asyncio.to_thread(
+                apply_ai_voiceover,
+                input_video=output_file,
+                output_video=voiceover_output,
+                audio_file=voiceover_audio,
+                width=width,
+                height=height,
+                fps=config.fps,
+                ai_voiceover=config.ai_voiceover,
+                batch_title=config.batch_title,
+                search_terms=config.search_terms,
+            )
+            output_file = voiceover_output
+
         # --- Step 3.5: Extract thumbnail ---
         thumb_url = None
         thumb_file = os.path.join(tmp_root, "thumb.jpg")
         try:
-            thumb_ok = await asyncio.to_thread(extract_thumbnail, output_file, thumb_file, config.total_seconds)
+            thumb_ok = await asyncio.to_thread(extract_thumbnail, output_file, thumb_file, final_duration)
             if thumb_ok:
                 thumb_path = await upload_thumbnail(thumb_file, user_id, job_id)
                 thumb_url = await get_signed_url(thumb_path, expiry_seconds=172800)

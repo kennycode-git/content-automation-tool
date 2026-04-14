@@ -25,6 +25,8 @@ from routers.generate import TRIAL_MODE, PLAN_LIMITS, _current_month, _trial_exp
 from services.clip_job_manager import ClipJobConfig, run_clips_pipeline
 from services.job_manager import create_job, JobConfig
 from services.pexels_video_pipeline import fetch_video_clips
+from services.voiceover_access import require_paid_voiceover
+from services.voiceover import validate_voiceover_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -87,6 +89,13 @@ async def generate_from_clips(
     Clips are downloaded and rendered server-side as a BackgroundTask.
     """
     db = get_client()
+    ai_voiceover_config = body.ai_voiceover.model_dump() if body.ai_voiceover else None
+    require_paid_voiceover(db, user_id, ai_voiceover_config)
+    if ai_voiceover_config:
+        try:
+            validate_voiceover_config(ai_voiceover_config)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if not TRIAL_MODE:
         # --- Subscription gate ---
@@ -145,7 +154,7 @@ async def generate_from_clips(
         max_clip_duration=body.max_clip_duration,
         batch_title=body.batch_title,
         text_overlay=body.text_overlay.model_dump() if body.text_overlay else None,
-        ai_voiceover=body.ai_voiceover.model_dump() if body.ai_voiceover else None,
+        ai_voiceover=ai_voiceover_config,
     )
 
     # Reuse create_job by wrapping ClipJobConfig into a compatible minimal JobConfig

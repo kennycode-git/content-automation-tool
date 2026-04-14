@@ -41,6 +41,7 @@ import AppNavbar from '../components/AppNavbar'
 import InspirationCarousel from '../components/InspirationCarousel'
 import type { TemplateTargetMode } from '../components/InspirationCarousel'
 import DevWhatsNewModal, { DEV_WHATS_NEW_SESSION_DISMISSED_KEY, DEV_WHATS_NEW_STORAGE_KEY } from '../components/DevWhatsNewModal'
+import { DEFAULT_AI_VOICEOVER } from '../components/VoiceoverPanel'
 
 type ContentMode = 'images' | 'clips' | 'layered'
 type DashboardFocusTarget = 'preview' | 'philosopher' | 'layered' | 'clips' | 'reedit'
@@ -195,6 +196,10 @@ export default function Dashboard({ session }: Props) {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showTour, setShowTour] = useState(false)
   const [showWhatsNew, setShowWhatsNew] = useState(false)
+  const [showVoiceoverUpgrade, setShowVoiceoverUpgrade] = useState(false)
+  const [voiceoverSetupIssues, setVoiceoverSetupIssues] = useState<string[] | null>(null)
+  const [globalVoiceoverEnabled, setGlobalVoiceoverEnabled] = useState(false)
+  const [pendingVoiceoverApply, setPendingVoiceoverApply] = useState<JobStatus['ai_voiceover'] | null>(null)
   const [spotlightStyleFeature, setSpotlightStyleFeature] = useState<'philosopher' | null>(null)
   const [tourPath, setTourPath] = useState<TutorialPath>('selector')
   const [carouselKey, setCarouselKey] = useState(0)
@@ -218,8 +223,46 @@ export default function Dashboard({ session }: Props) {
   })
 
   const trialExpired = usageInfo?.trial_expired === true
+  const voiceoverAllowed = DEV_BYPASS || (
+    usageInfo?.status === 'active' && ['creator', 'pro'].includes(usageInfo?.plan ?? '')
+  )
   // 'auto' = Pexels (best default); translate before sending to API
   const resolvedSource = imageSource === 'auto' ? 'pexels' : imageSource
+
+  function getVoiceoverIssue(batch: BatchOutput): string | null {
+    const cfg = batch.ai_voiceover
+    if (!cfg?.enabled) return null
+    const title = batch.title || 'Untitled batch'
+    if (!voiceoverAllowed) return `${title}: voiceover is available on paid plans only.`
+    if (!(cfg.voice_id ?? '').trim()) return `${title}: choose a narration voice.`
+    if (!(cfg.script_text ?? '').trim()) return `${title}: add the narration text.`
+    if ((cfg.visual_style ?? 'standard') === 'philosopher_foreground' && !batch.philosopher) {
+      return `${title}: philosopher foreground will fall back to standard visuals because no philosopher is selected.`
+    }
+    return null
+  }
+
+  function guardVoiceoverSetup(validBatches: BatchOutput[]): boolean {
+    const hardIssues = validBatches
+      .map(getVoiceoverIssue)
+      .filter((issue): issue is string => !!issue && !issue.includes('fall back'))
+    if (hardIssues.length > 0) {
+      if (hardIssues.some(issue => issue.includes('paid plans'))) setShowVoiceoverUpgrade(true)
+      setVoiceoverSetupIssues(hardIssues)
+      return false
+    }
+    return true
+  }
+
+  function toggleGlobalVoiceover() {
+    const nextEnabled = !globalVoiceoverEnabled
+    if (nextEnabled && !voiceoverAllowed) {
+      setShowVoiceoverUpgrade(true)
+      return
+    }
+    setGlobalVoiceoverEnabled(nextEnabled)
+    setPendingVoiceoverApply({ ...DEFAULT_AI_VOICEOVER, enabled: nextEnabled })
+  }
 
   // Auto-start tour on first visit
   useEffect(() => {
@@ -381,6 +424,7 @@ export default function Dashboard({ session }: Props) {
       setError('Enter at least one search term.')
       return
     }
+    if (!guardVoiceoverSetup(validBatches)) return
     requestNotificationPermission()
     setError(null)
     submittingRef.current = true
@@ -497,6 +541,7 @@ export default function Dashboard({ session }: Props) {
       else setError('Enter at least one search term.')
       return
     }
+    if (!guardVoiceoverSetup(validBatches)) return
     if (validBatches.length > MAX_PREVIEW_BATCHES) {
       const message = `Preview image selection supports up to ${MAX_PREVIEW_BATCHES} batches at once. Use Generate directly, or reduce the batch count before previewing.`
       if (contentMode === 'layered') setLayeredError(message)
@@ -566,6 +611,10 @@ export default function Dashboard({ session }: Props) {
         return
       }
     }
+    const voiceoverBatches = eligible
+      .map(batch => batches.find(ob => ob.title === batch.batch_title))
+      .filter((batch): batch is BatchOutput => !!batch)
+    if (!guardVoiceoverSetup(voiceoverBatches)) return
     if (contentMode === 'layered') setLayeredError(null)
     else setError(null)
     setSubmitting(true)
@@ -795,7 +844,12 @@ export default function Dashboard({ session }: Props) {
     sessionStorage.setItem(DEV_WHATS_NEW_SESSION_DISMISSED_KEY, 'true')
     if (dontShowAgain) localStorage.setItem(DEV_WHATS_NEW_STORAGE_KEY, 'true')
     setShowWhatsNew(false)
-    navigate(href)
+    const target = new URL(href, window.location.origin)
+    if (target.pathname === window.location.pathname) {
+      setSearchParams(target.searchParams)
+      return
+    }
+    navigate(`${target.pathname}${target.search}${target.hash}`)
   }
 
   function handleCloseWhatsNew(dontShowAgain?: boolean) {
@@ -945,6 +999,7 @@ export default function Dashboard({ session }: Props) {
     if (trialExpired) { setClipsError('Your trial has ended. Upgrade to continue generating.'); return }
     const currentBatch = getCurrentClipPreviewBatch()
     if (!currentBatch) { setClipsError('No clip batch selected for generation.'); return }
+    if (!guardVoiceoverSetup([currentBatch])) return
     setClipsError(null)
     setClipsGenerating(true)
     setPendingCount(prev => prev + 1)
@@ -984,6 +1039,7 @@ export default function Dashboard({ session }: Props) {
     const validBatches = getValidClipBatches()
     if (validBatches.length === 0) { setClipsError('Enter at least one search term.'); return }
     if (trialExpired) { setClipsError('Your trial has ended. Upgrade to continue generating.'); return }
+    if (!guardVoiceoverSetup(validBatches)) return
     setClipsError(null)
     setClipsSearching(true)
     setPendingCount(prev => prev + validBatches.length)
@@ -1044,6 +1100,7 @@ export default function Dashboard({ session }: Props) {
       setLayeredError('Enter at least one search term.')
       return
     }
+    if (!guardVoiceoverSetup(validBatches)) return
     const missingBgBatch = validBatches.find(b => !(b.layered_background_video_urls?.length))
     if (missingBgBatch) {
       setLayeredError(`Select at least one background video for ${missingBgBatch.title?.trim() || 'each layered batch'}.`)
@@ -1237,7 +1294,7 @@ export default function Dashboard({ session }: Props) {
                 {contentMode === 'clips' ? (
                   <>
                     <ClipBundles
-                      onLoad={bundle => handleQuickBundleLoad([{ title: bundle.label, terms: bundle.terms }])}
+                      onLoad={bundles => handleQuickBundleLoad(bundles.map(bundle => ({ title: bundle.label, terms: bundle.terms })))}
                       disabled={clipsSearching || clipsGenerating}
                     />
                     <p className="text-xs text-stone-500 mb-3">
@@ -1260,6 +1317,10 @@ export default function Dashboard({ session }: Props) {
                 highlightedBatchTitle={loadedBatchFeedback?.label ?? null}
                 mode={contentMode}
                 spotlightStyleFeature={spotlightStyleFeature}
+                voiceoverAllowed={voiceoverAllowed}
+                onVoiceoverUpgradeRequired={() => setShowVoiceoverUpgrade(true)}
+                pendingVoiceoverApply={pendingVoiceoverApply}
+                onVoiceoverApplyHandled={() => setPendingVoiceoverApply(null)}
               />
               </div>
             )}
@@ -1292,6 +1353,30 @@ export default function Dashboard({ session }: Props) {
               <span className="text-xs text-stone-500">Video settings</span>
             </div>
             <div className="rounded-2xl border border-stone-800 bg-stone-900 p-6" data-tour="theme-selector">
+              <div className="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">AI voiceover</p>
+                      <span className="rounded-full border border-amber-500/30 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-amber-300">Premium</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-stone-400">
+                      Enable ElevenLabs narration across batches, then customise text, voice, captions, and philosopher style in each batch.
+                    </p>
+                  </div>
+                  <button
+                    onClick={toggleGlobalVoiceover}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                      globalVoiceoverEnabled ? 'bg-brand-500' : 'bg-stone-700'
+                    }`}
+                    aria-label="Enable AI voiceover for all batches"
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                      globalVoiceoverEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </div>
+              </div>
               {contentMode === 'clips' ? (
                 <ClipsSettingsPanel
                   settings={clipsSettings}
@@ -1798,6 +1883,55 @@ export default function Dashboard({ session }: Props) {
         onClose={handleCloseWhatsNew}
         onOpenLink={handleOpenWhatsNewLink}
       />
+      {showVoiceoverUpgrade && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-stone-950 p-5 shadow-2xl">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-300">Premium feature</p>
+            <h2 className="mt-2 text-xl font-semibold text-stone-100">Upgrade to enable AI voiceover</h2>
+            <p className="mt-2 text-sm leading-relaxed text-stone-400">
+              ElevenLabs narration uses paid render capacity and is available on active Creator or Pro plans.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={() => setShowVoiceoverUpgrade(false)}
+                className="flex-1 rounded-xl border border-stone-700 py-2 text-sm font-medium text-stone-300 hover:border-stone-500 hover:text-stone-100 transition"
+              >
+                Not now
+              </button>
+              <a
+                href="/pricing"
+                className="flex-1 rounded-xl bg-brand-500 py-2 text-center text-sm font-semibold text-white hover:bg-brand-700 transition"
+              >
+                Upgrade plan
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+      {voiceoverSetupIssues && (
+        <div className="fixed inset-0 z-[91] flex items-center justify-center bg-black/75 px-4">
+          <div className="w-full max-w-lg rounded-2xl border border-stone-700 bg-stone-950 p-5 shadow-2xl">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-300">Voiceover setup</p>
+            <h2 className="mt-2 text-xl font-semibold text-stone-100">Finish your narration setup</h2>
+            <p className="mt-2 text-sm leading-relaxed text-stone-400">
+              Open each batch style panel and add the missing voiceover details before generating.
+            </p>
+            <div className="mt-4 space-y-2">
+              {voiceoverSetupIssues.map(issue => (
+                <p key={issue} className="rounded-lg border border-stone-800 bg-stone-900 px-3 py-2 text-xs text-stone-300">
+                  {issue}
+                </p>
+              ))}
+            </div>
+            <button
+              onClick={() => setVoiceoverSetupIssues(null)}
+              className="mt-5 w-full rounded-xl bg-brand-500 py-2 text-sm font-semibold text-white hover:bg-brand-700 transition"
+            >
+              I’ll update the batches
+            </button>
+          </div>
+        </div>
+      )}
       {showPromptModal && <PromptModal mode={contentMode} fromTour={showTour} onClose={() => setShowPromptModal(false)} />}
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />

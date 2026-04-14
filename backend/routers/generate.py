@@ -26,6 +26,8 @@ from pydantic import BaseModel, Field, field_validator
 from db.supabase_client import get_client
 from models.schemas import GenerateRequest, GenerateResponse, ALLOWED_RESOLUTIONS, ALLOWED_COLOR_THEMES
 from routers.auth import get_current_user_id
+from services.voiceover_access import require_paid_voiceover
+from services.voiceover import validate_voiceover_config
 from services.image_pipeline import fetch_images, download_and_save
 from services.job_manager import JobConfig, create_job, run_pipeline, run_variants_pipeline
 from services.storage import upload_user_image
@@ -77,6 +79,13 @@ async def generate(
     user_id: str = Depends(get_current_user_id),
 ):
     db = get_client()
+    ai_voiceover_config = body.ai_voiceover.model_dump() if body.ai_voiceover else None
+    require_paid_voiceover(db, user_id, ai_voiceover_config)
+    if ai_voiceover_config:
+        try:
+            validate_voiceover_config(ai_voiceover_config)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if not TRIAL_MODE:
         # --- Subscription gate ---
@@ -130,7 +139,7 @@ async def generate(
         grade_philosopher=body.grade_philosopher,
         philosopher_is_user=body.philosopher_is_user,
         text_overlay=body.text_overlay.model_dump() if body.text_overlay else None,
-        ai_voiceover=body.ai_voiceover.model_dump() if body.ai_voiceover else None,
+        ai_voiceover=ai_voiceover_config,
         layered_config=body.layered_config.model_dump() if body.layered_config else None,
     )
     job_id = await create_job(user_id, config, db)

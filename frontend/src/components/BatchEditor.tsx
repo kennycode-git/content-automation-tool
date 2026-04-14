@@ -95,6 +95,46 @@ export function detectPhilosopher(title: string): string | null {
   }
   return bestKey
 }
+
+function detectUserPhilosopher(title: string, userPhilosophers: UserPhilosopher[]): UserPhilosopher | null {
+  const norm = asciiFold(title.toLowerCase().replace(/_/g, ' '))
+  let best: UserPhilosopher | null = null
+  let bestLen = 0
+  for (const philosopher of userPhilosophers) {
+    const candidates = [philosopher.name, philosopher.key]
+    for (const candidate of candidates) {
+      const candidateNorm = asciiFold(candidate.toLowerCase().replace(/_/g, ' ')).trim()
+      if (candidateNorm.length > bestLen && norm.includes(candidateNorm)) {
+        best = philosopher
+        bestLen = candidateNorm.length
+      }
+    }
+  }
+  return best
+}
+
+function resolvePhilosopherFromTitle(title: string, userPhilosophers: UserPhilosopher[] = []): { key: string; isUser: boolean } | null {
+  const userMatch = detectUserPhilosopher(title, userPhilosophers)
+  const systemKey = detectPhilosopher(title)
+  const systemLength = systemKey ? asciiFold(systemKey.replace(/_/g, ' ')).length : 0
+  const userLength = userMatch ? asciiFold(userMatch.name.replace(/_/g, ' ')).length : 0
+  if (userMatch && userLength >= systemLength) return { key: userMatch.key, isUser: true }
+  if (systemKey) return { key: systemKey, isUser: false }
+  return null
+}
+
+function applyDetectedPhilosopherDefaults(batch: VisualBatch, userPhilosophers: UserPhilosopher[] = []): VisualBatch {
+  const detected = resolvePhilosopherFromTitle(batch.title, userPhilosophers)
+  if (!detected) return batch
+  const shouldApplyDetectedChoice = !batch.usePhilosopher || batch.philosopherOverride == null
+  return {
+    ...batch,
+    usePhilosopher: true,
+    philosopherOverride: shouldApplyDetectedChoice ? (detected.isUser ? detected.key : undefined) : batch.philosopherOverride,
+    philosopherIsUser: shouldApplyDetectedChoice ? detected.isUser : batch.philosopherIsUser,
+    gradePhilosopher: batch.gradePhilosopher !== false,
+  }
+}
 const DEFAULT_CLASSIC_TEXT =
   '# Stoicism\nmarble statue philosophy\nancient greece\nstoic stone\n\n# Existentialism\nmeditation silence\nminimalist monk'
 
@@ -152,6 +192,10 @@ interface Props {
   highlightedBatchTitle?: string | null
   mode?: 'images' | 'clips' | 'layered'
   spotlightStyleFeature?: 'philosopher' | null
+  voiceoverAllowed?: boolean
+  onVoiceoverUpgradeRequired?: () => void
+  pendingVoiceoverApply?: AiVoiceoverConfig | null
+  onVoiceoverApplyHandled?: () => void
 }
 
 type EditorMode = 'images' | 'clips' | 'layered'
@@ -488,6 +532,8 @@ function BatchStylePopover({
   userPhilosophers = [],
   mode = 'images',
   highlightFeature = null,
+  voiceoverAllowed = true,
+  onVoiceoverUpgradeRequired,
 }: {
   batch: VisualBatch
   onChange: (patch: Partial<VisualBatch>) => void
@@ -497,6 +543,8 @@ function BatchStylePopover({
   userPhilosophers?: UserPhilosopher[]
   mode?: 'images' | 'clips' | 'layered'
   highlightFeature?: 'philosopher' | null
+  voiceoverAllowed?: boolean
+  onVoiceoverUpgradeRequired?: () => void
 }) {
   const [hoveredPreview, setHoveredPreview] = useState<{ type: 'theme' | 'accent'; value: string } | null>(null)
   const [fineTuneOpen, setFineTuneOpen] = useState(batch.colorTheme === 'custom')
@@ -1172,6 +1220,10 @@ function BatchStylePopover({
               <button
                 onClick={() => {
                   const current = batch.aiVoiceover
+                  if (!current?.enabled && !voiceoverAllowed) {
+                    onVoiceoverUpgradeRequired?.()
+                    return
+                  }
                   if (!current) {
                     onChange({ aiVoiceover: { ...DEFAULT_AI_VOICEOVER, enabled: true } })
                   } else {
@@ -1235,23 +1287,41 @@ function sanitizeTermsInput(text: string, mode: 'images' | 'clips' | 'layered' =
     .join('\n')
 }
 
-function parseClassicIntoBatches(text: string, mode: 'images' | 'clips' | 'layered' = 'images'): BatchOutput[] {
+function parseClassicIntoBatches(
+  text: string,
+  mode: 'images' | 'clips' | 'layered' = 'images',
+  userPhilosophers: UserPhilosopher[] = [],
+): BatchOutput[] {
   const lines = text.split('\n')
   const batches: BatchOutput[] = []
   let title: string | null = null
   let terms: string[] = []
 
+  function pushBatch() {
+    if (terms.length === 0) return
+    const supportsPhilosopher = mode === 'images' || mode === 'layered'
+    const resolved = supportsPhilosopher && title ? resolvePhilosopherFromTitle(title, userPhilosophers) : null
+    batches.push({
+      title,
+      terms: limitTermsForMode(terms, mode),
+      philosopher: resolved?.key,
+      philosopher_count: resolved ? 3 : undefined,
+      grade_philosopher: resolved ? true : undefined,
+      philosopher_is_user: resolved?.isUser || undefined,
+    })
+  }
+
   for (const line of lines) {
     const trimmed = line.trim()
     if (trimmed.startsWith('#')) {
-      if (terms.length > 0) batches.push({ title, terms: limitTermsForMode(terms, mode) })
+      pushBatch()
       title = trimmed.slice(1).trim() || null
       terms = []
     } else if (trimmed) {
       terms.push(trimmed)
     }
   }
-  if (terms.length > 0) batches.push({ title, terms: limitTermsForMode(terms, mode) })
+  pushBatch()
   return batches
 }
 
@@ -1267,6 +1337,10 @@ export default function BatchEditor({
   highlightedBatchTitle,
   mode = 'images',
   spotlightStyleFeature = null,
+  voiceoverAllowed = true,
+  onVoiceoverUpgradeRequired,
+  pendingVoiceoverApply = null,
+  onVoiceoverApplyHandled,
 }: Props) {
   const modeDraftsRef = useRef<Record<EditorMode, {
     classicMode: boolean
@@ -1304,6 +1378,7 @@ export default function BatchEditor({
   const [uploading, setUploading] = useState<Record<number, boolean>>({})
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
   const [openPopover, setOpenPopover] = useState<number | null>(null)
+  const [openBackgroundPickerIdx, setOpenBackgroundPickerIdx] = useState<number | null>(0)
   const highlightedBatchRef = useRef<HTMLDivElement | null>(null)
   const [userPhilosophers, setUserPhilosophers] = useState<UserPhilosopher[]>([])
 
@@ -1340,19 +1415,23 @@ export default function BatchEditor({
     setUploadedPaths(nextDraft.uploadedPaths)
     queueMicrotask(() => {
       if (nextDraft.classicMode) {
-        onBatchesChange(parseClassicIntoBatches(nextDraft.classicText, mode))
+        onBatchesChange(parseClassicIntoBatches(nextDraft.classicText, mode, userPhilosophers))
       } else {
         onBatchesChange(visualToBatchOutputs(nextDraft.batches, nextDraft.uploadedPaths))
       }
     })
 
     prevModeRef.current = mode
-  }, [batches, classicMode, classicText, mode, onBatchesChange, uploadedPaths])
+  }, [batches, classicMode, classicText, mode, onBatchesChange, uploadedPaths, userPhilosophers])
 
   useEffect(() => {
     if (!spotlightStyleFeature || classicMode || mode !== 'images') return
     setOpenPopover(0)
   }, [classicMode, mode, spotlightStyleFeature])
+
+  useEffect(() => {
+    setOpenBackgroundPickerIdx(mode === 'layered' ? 0 : null)
+  }, [mode])
 
   useEffect(() => {
     if (!highlightedBatchTitle || classicMode) return
@@ -1393,7 +1472,7 @@ export default function BatchEditor({
   // Emit initial batches on mount
   useEffect(() => {
     if (classicMode) {
-      onBatchesChange(parseClassicIntoBatches(classicText, mode))
+      onBatchesChange(parseClassicIntoBatches(classicText, mode, userPhilosophers))
     } else {
       onBatchesChange(visualToBatchOutputs(batches, uploadedPaths))
     }
@@ -1401,15 +1480,24 @@ export default function BatchEditor({
   }, [])
 
   // Handle duplicate request from parent — mode-aware
+  useEffect(() => {
+    if (!pendingVoiceoverApply) return
+    const updated = batches.map(b => ({ ...b, aiVoiceover: { ...pendingVoiceoverApply } }))
+    setBatches(updated)
+    onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
+    onVoiceoverApplyHandled?.()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingVoiceoverApply])
+
   const prevReuse = useRef<typeof pendingReuse>(null)
   useEffect(() => {
     if (!pendingReuse || pendingReuse === prevReuse.current) return
     prevReuse.current = pendingReuse
     if (!classicMode) {
-      const newCard: VisualBatch = {
+      const newCard: VisualBatch = applyDetectedPhilosopherDefaults({
         title: pendingReuse.title ?? 'Duplicated',
         terms: sanitizeTermsInput(pendingReuse.terms.join('\n'), mode),
-      }
+      }, userPhilosophers)
       const updated = [...batches, newCard]
       setBatches(updated)
       onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
@@ -1419,7 +1507,7 @@ export default function BatchEditor({
       const newBlock = `${header}\n${termStr}`
       setClassicText(newBlock)
       try { localStorage.setItem(STORAGE_KEY, newBlock) } catch { /* ignore */ }
-      onBatchesChange(parseClassicIntoBatches(newBlock, mode))
+      onBatchesChange(parseClassicIntoBatches(newBlock, mode, userPhilosophers))
     }
     onReuseHandled?.()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1438,9 +1526,9 @@ export default function BatchEditor({
       const newText = classicText.trim() ? `${classicText.trim()}\n\n${blocks}` : blocks
       setClassicText(newText)
       try { localStorage.setItem(STORAGE_KEY, newText) } catch { /* ignore */ }
-      onBatchesChange(parseClassicIntoBatches(newText, mode))
+      onBatchesChange(parseClassicIntoBatches(newText, mode, userPhilosophers))
     } else {
-      const newCards: VisualBatch[] = pendingBundles.map(b => ({
+      const newCards: VisualBatch[] = pendingBundles.map(b => applyDetectedPhilosopherDefaults({
         title: b.title ?? 'Batch',
         terms: limitTermsForMode(b.terms, mode).join('\n'),
         colorTheme: b.colorTheme,
@@ -1448,10 +1536,14 @@ export default function BatchEditor({
         accentFolder: b.accentFolder,
         layeredBackgroundVideoQuery: mode === 'layered' ? b.layeredBackgroundVideoQuery : undefined,
         layeredBackgroundVideoUrls: mode === 'layered' ? b.layeredBackgroundVideoUrls : undefined,
-      }))
+      }, userPhilosophers)
+      )
       const onlyEmptyBatch = batches.length === 1 && !batches[0].terms.trim()
       const updated = onlyEmptyBatch ? newCards : [...batches, ...newCards]
       setBatches(updated)
+      if (mode === 'layered') {
+        setOpenBackgroundPickerIdx(onlyEmptyBatch ? 0 : batches.length)
+      }
       onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
     }
     onBundlesHandled?.()
@@ -1462,7 +1554,7 @@ export default function BatchEditor({
     const nextText = text
     setClassicText(nextText)
     try { localStorage.setItem(STORAGE_KEY, nextText) } catch { /* ignore */ }
-    onBatchesChange(parseClassicIntoBatches(nextText, mode))
+    onBatchesChange(parseClassicIntoBatches(nextText, mode, userPhilosophers))
   }
 
   function visualBatchesToClassicText(vBatches: VisualBatch[]): string {
@@ -1486,7 +1578,7 @@ export default function BatchEditor({
     setClassicText(nextText)
     try { localStorage.setItem(STORAGE_KEY, nextText) } catch { /* ignore */ }
     setClassicMode(true)
-    onBatchesChange(parseClassicIntoBatches(nextText, mode))
+    onBatchesChange(parseClassicIntoBatches(nextText, mode, userPhilosophers))
   }
 
   function handleBatchTermsChange(idx: number, terms: string) {
@@ -1497,7 +1589,9 @@ export default function BatchEditor({
   }
 
   function handleBatchTitleChange(idx: number, title: string) {
-    const updated = batches.map((b, i) => (i === idx ? { ...b, title } : b))
+    const updated = batches.map((b, i) => (
+      i === idx ? applyDetectedPhilosopherDefaults({ ...b, title }, userPhilosophers) : b
+    ))
     setBatches(updated)
     onBatchesChange(visualToBatchOutputs(updated, uploadedPaths))
   }
@@ -1571,13 +1665,13 @@ export default function BatchEditor({
       const trimmed = line.trim()
       if (trimmed.startsWith('#')) {
         if (current.terms.trim()) result.push(current)
-      const title = trimmed.slice(1).trim() || `Batch ${result.length + 2}`
-      current = { title, terms: '' }
-    } else if (trimmed) {
-      const candidate = current.terms ? `${current.terms}\n${trimmed}` : trimmed
-      current.terms = sanitizeTermsInput(candidate, mode)
+        const title = trimmed.slice(1).trim() || `Batch ${result.length + 2}`
+        current = applyDetectedPhilosopherDefaults({ title, terms: '' }, userPhilosophers)
+      } else if (trimmed) {
+        const candidate = current.terms ? `${current.terms}\n${trimmed}` : trimmed
+        current.terms = sanitizeTermsInput(candidate, mode)
+      }
     }
-  }
     if (current.terms.trim()) result.push(current)
     const final = result.length ? result : [{ title: 'Batch 1', terms: '' }]
     setBatches(final)
@@ -1707,6 +1801,8 @@ export default function BatchEditor({
                     onChange={urls => handleBatchOverride(idx, { layeredBackgroundVideoUrls: urls })}
                     compact
                     initialQuery={batch.layeredBackgroundVideoQuery}
+                    expanded={openBackgroundPickerIdx === idx}
+                    onExpandedChange={expanded => setOpenBackgroundPickerIdx(expanded ? idx : null)}
                     dataTourRoot={idx === 0 ? 'layered-bg-panel' : undefined}
                     dataTourSearch={idx === 0 ? 'layered-bg-search' : undefined}
                     dataTourFavorites={idx === 0 ? 'layered-bg-favorites' : undefined}
@@ -1721,10 +1817,10 @@ export default function BatchEditor({
                     <button
                       data-tour={idx === 0 ? 'batch-style-btn' : undefined}
                       onClick={() => setOpenPopover(p => p === idx ? null : idx)}
-                      className={`flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs transition ${
+                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold shadow-sm transition ${
                         hasOverride
-                          ? 'border-stone-600 bg-stone-700/60 text-stone-300 hover:border-stone-500'
-                          : 'border-stone-700 text-stone-500 hover:border-stone-600 hover:text-stone-400'
+                          ? 'border-amber-400/70 bg-amber-500/18 text-amber-100 shadow-amber-500/10 hover:border-amber-300 hover:bg-amber-500/25'
+                          : 'border-amber-500/45 bg-amber-500/10 text-amber-200 shadow-amber-500/10 hover:border-amber-300 hover:bg-amber-500/20 hover:text-amber-50'
                       }`}
                     >
                       {hasThemeOverride ? (
@@ -1761,6 +1857,8 @@ export default function BatchEditor({
                         userPhilosophers={userPhilosophers}
                         mode={mode}
                         highlightFeature={idx === 0 ? spotlightStyleFeature : null}
+                        voiceoverAllowed={voiceoverAllowed}
+                        onVoiceoverUpgradeRequired={onVoiceoverUpgradeRequired}
                       />
                     )}
                   </div>

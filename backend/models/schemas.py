@@ -66,6 +66,14 @@ ALLOWED_VOICEOVER_MODELS = {
 }
 ALLOWED_VOICEOVER_SCRIPT_MODES = {"auto_from_batch", "custom"}
 ALLOWED_SUBTITLE_FORMATS = {"burned", "srt"}
+ALLOWED_VOICEOVER_VISUAL_STYLES = {"standard", "philosopher_foreground"}
+ALLOWED_VOICEOVER_CAPTION_STYLES = {
+    "bold_center",
+    "serif_quote",
+    "cinematic_low",
+    "mono_focus",
+    "warm_block",
+}
 
 
 class TextOverlayConfig(BaseModel):
@@ -128,6 +136,8 @@ class AiVoiceoverConfig(BaseModel):
     script_text: Optional[str] = Field(default=None, max_length=2000)
     subtitles_enabled: bool = True
     subtitle_format: str = Field(default="burned")
+    visual_style: str = Field(default="standard")
+    caption_style: str = Field(default="bold_center")
 
     @field_validator("provider")
     @classmethod
@@ -155,6 +165,20 @@ class AiVoiceoverConfig(BaseModel):
     def validate_subtitle_format(cls, v: str) -> str:
         if v not in ALLOWED_SUBTITLE_FORMATS:
             raise ValueError(f"subtitle_format must be one of: {', '.join(sorted(ALLOWED_SUBTITLE_FORMATS))}")
+        return v
+
+    @field_validator("visual_style")
+    @classmethod
+    def validate_visual_style(cls, v: str) -> str:
+        if v not in ALLOWED_VOICEOVER_VISUAL_STYLES:
+            raise ValueError(f"visual_style must be one of: {', '.join(sorted(ALLOWED_VOICEOVER_VISUAL_STYLES))}")
+        return v
+
+    @field_validator("caption_style")
+    @classmethod
+    def validate_caption_style(cls, v: str) -> str:
+        if v not in ALLOWED_VOICEOVER_CAPTION_STYLES:
+            raise ValueError(f"caption_style must be one of: {', '.join(sorted(ALLOWED_VOICEOVER_CAPTION_STYLES))}")
         return v
 
     @model_validator(mode="after")

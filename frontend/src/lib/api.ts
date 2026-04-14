@@ -78,6 +78,8 @@ export type VoiceoverProvider = 'elevenlabs'
 export type VoiceoverModel = 'eleven_v3' | 'eleven_multilingual_v2' | 'eleven_flash_v2_5' | 'eleven_turbo_v2_5'
 export type VoiceoverScriptMode = 'auto_from_batch' | 'custom'
 export type SubtitleFormat = 'burned' | 'srt'
+export type VoiceoverVisualStyle = 'standard' | 'philosopher_foreground'
+export type VoiceoverCaptionStyle = 'bold_center' | 'serif_quote' | 'cinematic_low' | 'mono_focus' | 'warm_block'
 
 export interface AiVoiceoverConfig {
   enabled: boolean
@@ -89,6 +91,14 @@ export interface AiVoiceoverConfig {
   script_text?: string | null
   subtitles_enabled: boolean
   subtitle_format: SubtitleFormat
+  visual_style?: VoiceoverVisualStyle
+  caption_style?: VoiceoverCaptionStyle
+}
+
+export interface VoiceoverVoice {
+  id: string
+  label: string
+  tone: string
 }
 
 export interface LayeredConfig {
@@ -527,9 +537,22 @@ export async function uploadImages(files: File[]): Promise<{ paths: string[] }> 
 // ─── Usage ────────────────────────────────────────────────────────────────────
 
 export async function getUsage(): Promise<UsageInfo> {
-  if (DEV_BYPASS) return { plan: 'trial', status: 'active', render_count: 3, limit: 100, trial_expires_at: null, trial_expired: false }
+  if (DEV_BYPASS) return { plan: 'pro', status: 'active', render_count: 3, limit: null, trial_expires_at: null, trial_expired: false }
   const res = await fetch(`${API_URL}/api/usage`, { headers: await authHeaders() })
   return handleResponse<UsageInfo>(res)
+}
+
+export async function listVoiceoverVoices(): Promise<VoiceoverVoice[]> {
+  if (DEV_BYPASS) {
+    return [
+      { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel', tone: 'calm, clear narration' },
+      { id: 'TxGEqnHWrfWFTfGW9XjX', label: 'Josh', tone: 'deep reflective narration' },
+      { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam', tone: 'low, authoritative voice' },
+    ]
+  }
+  const res = await fetch(`${API_URL}/api/voiceover/voices`, { headers: await authHeaders() })
+  const data = await handleResponse<{ voices: VoiceoverVoice[] }>(res)
+  return data.voices
 }
 
 // ─── TikTok ───────────────────────────────────────────────────────────────────
