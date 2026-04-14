@@ -9,6 +9,8 @@ interface Props {
   onChange: (urls: string[]) => void
   compact?: boolean
   initialQuery?: string
+  expanded?: boolean
+  onExpandedChange?: (expanded: boolean) => void
   dataTourRoot?: string
   dataTourSearch?: string
   dataTourFavorites?: string
@@ -19,6 +21,8 @@ export default function BackgroundVideoPicker({
   onChange,
   compact = false,
   initialQuery,
+  expanded,
+  onExpandedChange,
   dataTourRoot,
   dataTourSearch,
   dataTourFavorites,
@@ -40,6 +44,8 @@ export default function BackgroundVideoPicker({
       return []
     }
   })
+  const isExpanded = expanded ?? !collapsed
+  const isCollapsed = !isExpanded
 
   useEffect(() => {
     try {
@@ -58,6 +64,10 @@ export default function BackgroundVideoPicker({
     const q = (queryOverride ?? query).trim()
     if (!q) return
     setSearchError(null)
+    if (nextPage === 1) {
+      setResults([])
+      setHasMore(false)
+    }
     setSearching(true)
     try {
       const res = await searchBgVideos(q, 9, nextPage)
@@ -102,6 +112,12 @@ export default function BackgroundVideoPicker({
     })
   }
 
+  function toggleExpanded() {
+    const nextExpanded = !isExpanded
+    if (onExpandedChange) onExpandedChange(nextExpanded)
+    else setCollapsed(!nextExpanded)
+  }
+
   return (
     <div
       data-tour={dataTourRoot}
@@ -110,12 +126,12 @@ export default function BackgroundVideoPicker({
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => setCollapsed(v => !v)}
+          onClick={toggleExpanded}
           className="flex items-center gap-1.5 text-left"
-          title={collapsed ? 'Expand background video picker' : 'Collapse background video picker'}
+          title={isCollapsed ? 'Expand background video picker' : 'Collapse background video picker'}
         >
           <svg
-            className={`h-3 w-3 text-stone-500 transition-transform ${collapsed ? '-rotate-90' : 'rotate-0'}`}
+            className={`h-3 w-3 text-stone-500 transition-transform ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}
             viewBox="0 0 16 16"
             fill="currentColor"
             aria-hidden="true"
@@ -136,11 +152,42 @@ export default function BackgroundVideoPicker({
         )}
       </div>
 
-      {!collapsed && (
+      {isCollapsed && selectedUrls.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {selectedUrls.map(url => (
+            <div key={url} className="relative h-10 w-7 overflow-hidden rounded border border-brand-500 bg-stone-950">
+              <video
+                src={url}
+                muted
+                playsInline
+                autoPlay
+                loop
+                preload="metadata"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-brand-500 shadow-md">
+                <svg className="h-2 w-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+          ))}
+          <span className="text-[10px] text-stone-500">
+            {selectedUrls.length} selected
+          </span>
+        </div>
+      )}
+
+      {!isCollapsed && (
         <>
           <p className={`${compact ? 'text-[11px]' : 'text-xs'} text-stone-500 ${compact ? 'mt-1' : '-mt-3'}`}>
             Select 1-5 looping background videos for this batch.
           </p>
+          {initialQuery?.trim() && selectedUrls.length === 0 && (
+            <div className="rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-200">
+              Select your background video from the search results below.
+            </div>
+          )}
 
           <div data-tour={dataTourSearch} className={`flex flex-col gap-2 sm:flex-row ${compact ? 'mt-2' : ''}`}>
             <input
@@ -156,7 +203,7 @@ export default function BackgroundVideoPicker({
               disabled={searching || !query.trim()}
               className="rounded-lg bg-stone-700 px-4 py-2 text-sm font-medium text-stone-200 hover:bg-stone-600 disabled:opacity-50 transition sm:shrink-0"
             >
-              {searching ? '...' : 'Search'}
+              {searching ? 'Searching...' : 'Search'}
             </button>
           </div>
           <div data-tour={dataTourFavorites} className="mt-2 flex items-center gap-2">
@@ -179,7 +226,40 @@ export default function BackgroundVideoPicker({
 
       {searchError && <p className="text-xs text-red-400 mt-2">{searchError}</p>}
 
-      {!collapsed && showFavorites && (
+      {!isCollapsed && selectedUrls.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand-500/25 bg-brand-500/10 px-2 py-1.5">
+          <p className="mr-1 text-[11px] font-semibold text-brand-100">Selected:</p>
+          {selectedUrls.map(url => (
+            <div key={url} className="relative h-14 w-10 overflow-hidden rounded border border-brand-500 bg-stone-950">
+              <video
+                src={url}
+                muted
+                playsInline
+                autoPlay
+                loop
+                preload="metadata"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 shadow-md">
+                <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+          ))}
+          <div className="ml-auto">
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="text-[11px] text-brand-200/70 transition hover:text-brand-100"
+            >
+              Change
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!isCollapsed && showFavorites && (
         <div className="mt-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-stone-400">Saved favourites</p>
@@ -272,7 +352,7 @@ export default function BackgroundVideoPicker({
         </div>
       )}
 
-      {!collapsed && results.length > 0 && (
+      {!isCollapsed && results.length > 0 && (
         <>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {results.map(v => {
@@ -382,17 +462,21 @@ export default function BackgroundVideoPicker({
         </>
       )}
 
-      {!collapsed && results.length === 0 && !searching && !searchError && (
+      {!isCollapsed && results.length === 0 && !searching && !searchError && (
         <div className="rounded-lg border border-dashed border-stone-700 bg-stone-800/40 py-4 text-center mt-3">
           <p className="text-xs text-stone-500">Search for a background video to get started</p>
         </div>
       )}
 
-      {selectedUrls.length > 0 && (
+      {!isCollapsed && searching && (
+        <div className="rounded-lg border border-dashed border-stone-700 bg-stone-800/40 py-4 text-center mt-3">
+          <p className="text-xs text-stone-400">Searching for background videos...</p>
+        </div>
+      )}
+
+      {!isCollapsed && selectedUrls.length > 0 && (
         <p className="text-[10px] text-stone-500 mt-2">
-          {collapsed
-            ? `${selectedUrls.length} video${selectedUrls.length === 1 ? '' : 's'} selected. Expand to change them.`
-            : selectedUrls.length === 1
+          {selectedUrls.length === 1
               ? '1 video selected - will loop to fill duration.'
               : `${selectedUrls.length} videos selected - will crossfade between them.`}
         </p>
